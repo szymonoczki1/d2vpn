@@ -43,14 +43,16 @@ static void PrintUsage()
     Console.WriteLine("      Live packet counts and payload sizes for a group.");
     Console.WriteLine("      Observes only: packets are copied, never diverted.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn calibrate <group> [--seconds N]");
+    Console.WriteLine("  d2vpn calibrate <group> [--seconds N] [--downlink]");
     Console.WriteLine("      Derive this machine's packet-length signature for a group.");
-    Console.WriteLine("      Hold an uplink module partway through the run; the hold is found");
+    Console.WriteLine("      Hold the module partway through the run; the hold is found");
     Console.WriteLine("      from the traffic itself, so the timing is up to you. Reports the");
     Console.WriteLine("      payload sizes that crossed while uplink was collapsed - the packets");
     Console.WriteLine("      a module must pass for the session to survive a hold.");
+    Console.WriteLine("      --downlink calibrates a DL hold instead. The two need separate");
+    Console.WriteLine("      signatures: neither can be derived from the other.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn hold <group> [--seconds N] [--dry-run]");
+    Console.WriteLine("  d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]");
     Console.WriteLine("      Hold uplink on a group: drop it except the signature sizes, and");
     Console.WriteLine("      stop blocking whenever the peer asks to reconnect, so the session");
     Console.WriteLine("      survives. --dry-run reports what it WOULD drop without touching");
@@ -90,6 +92,9 @@ static PortGroup ResolveGroup(string[] args)
     return DestinyPorts.ByName(args[1])
         ?? throw new ArgumentException($"unknown group '{args[1]}'. Try: d2vpn list");
 }
+
+static bool HasFlag(string[] args, string name) =>
+    args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
 static int IntOption(string[] args, string name, int fallback)
 {
@@ -207,6 +212,9 @@ static async Task<int> CalibrateAsync(string[] args)
 {
     var group = ResolveGroup(args);
     var seconds = IntOption(args, "--seconds", 45);
+    var downlink = HasFlag(args, "--downlink");
+    var direction = downlink ? PacketDirection.Inbound : PacketDirection.Outbound;
+    var label = downlink ? "downlink" : "uplink";
 
     if (!Elevation.RequireElevated())
     {
@@ -214,14 +222,14 @@ static async Task<int> CalibrateAsync(string[] args)
     }
 
     using var source = new WinDivertPacketSource(group);
-    var calibrator = new SignatureCalibrator(group);
+    var calibrator = new SignatureCalibrator(group, new CalibrationOptions { Direction = direction });
 
     Console.WriteLine($"calibrating {group}  ({seconds}s, sniff mode - traffic is not modified)");
     Console.WriteLine($"filter: {source.FilterExpression}");
     Console.WriteLine();
     Console.WriteLine("What to do, in the game window:");
     Console.WriteLine("  1. leave it alone for the first ~10s");
-    Console.WriteLine("  2. hold your uplink module for 10-15s");
+    Console.WriteLine($"  2. hold your {label} module for 10-15s");
     Console.WriteLine("  3. release, and leave it alone until this finishes");
     Console.WriteLine();
     Console.WriteLine("The exact timing does not matter. The hold is found from the traffic,");
@@ -238,7 +246,7 @@ static async Task<int> CalibrateAsync(string[] args)
     {
         calibrator.Observe(packet);
 
-        if (packet.IsOutbound)
+        if (packet.Direction == direction)
         {
             recentOutbound++;
         }
@@ -267,9 +275,18 @@ static async Task<int> HoldAsync(string[] args)
 {
     var group = ResolveGroup(args);
     var seconds = IntOption(args, "--seconds", 45);
-    var dryRun = args.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
+    var dryRun = HasFlag(args, "--dry-run");
+    var downlink = HasFlag(args, "--downlink");
 
     var options = MeasuredDefaults.For(group);
+    if (options is not null && downlink)
+    {
+        // The defaults carry an uplink signature. Reusing it for downlink would filter the peer's
+        // traffic against a list describing ours, which is not a downlink hold in any useful sense.
+        throw new ArgumentException(
+            $"No downlink signature has been measured for {group}. "
+            + $"Run 'd2vpn calibrate {group.Name} --downlink' first.");
+    }
     if (options is null)
     {
         throw new ArgumentException(
@@ -289,7 +306,7 @@ static async Task<int> HoldAsync(string[] args)
         return 1;
     }
 
-    var module = new UplinkHoldModule(group.Name, group, options);
+    var module = new HoldModule(group.Name, group, options);
     module.SafetyTimeoutElapsed += m =>
         Console.WriteLine($"\n{m.Name}: safety timeout reached, module disabled.");
 
@@ -365,7 +382,7 @@ static async Task<int> HoldAsync(string[] args)
 /// Runs the module against sniffed traffic, reporting decisions without acting on them.
 /// </summary>
 static async Task RunDryAsync(
-    PortGroup group, UplinkHoldModule module, DateTimeOffset started, int seconds,
+    PortGroup group, HoldModule module, DateTimeOffset started, int seconds,
     CancellationToken token)
 {
     using var source = new WinDivertPacketSource(group);
@@ -444,14 +461,14 @@ static void PrintCalibration(CalibrationResult result)
     {
         if (!peer.HoldDetected)
         {
-            Console.WriteLine($"  {peer.Address,-18} {peer.BaselineOutboundRate,5:N1}/s normal   no hold");
+            Console.WriteLine($"  {peer.Address,-18} {peer.BaselineRate,5:N1}/s normal   no hold");
             continue;
         }
 
         var spans = string.Join(" + ", peer.Windows.Select(w =>
             $"{w.Start.TotalSeconds:N0}-{(w.Start + w.Duration).TotalSeconds:N0}s"));
 
-        Console.WriteLine($"  {peer.Address,-18} {peer.BaselineOutboundRate,5:N1}/s normal   "
+        Console.WriteLine($"  {peer.Address,-18} {peer.BaselineRate,5:N1}/s normal   "
             + $"HELD {spans}  ({peer.TotalHeld.TotalSeconds:N0}s total, {peer.CollapseRatio:P0} of normal)");
     }
 
@@ -508,7 +525,7 @@ static void PrintCalibration(CalibrationResult result)
     Console.WriteLine();
 
     Console.WriteLine("YOUR SIGNATURE - uplink payload sizes concentrated in the hold:");
-    Console.WriteLine($"  {string.Join(", ", result.OutboundSignature)}");
+    Console.WriteLine($"  {string.Join(", ", result.Signature)}");
     Console.WriteLine();
     Console.WriteLine("These are the packets a module must let through for the session to survive");
     Console.WriteLine("a hold. Blocking them too would make the game disconnect.");
@@ -539,10 +556,10 @@ static void PrintCalibration(CalibrationResult result)
         Console.WriteLine("Passing them on length alone would pass game state too.");
     }
 
-    if (result.PooledBlockInbound.Total > 0)
+    if (result.PooledBlockOpposite.Total > 0)
     {
         Console.WriteLine();
-        Console.WriteLine($"Downlink kept flowing throughout ({result.PooledBlockInbound.Total} packets), "
+        Console.WriteLine($"Downlink kept flowing throughout ({result.PooledBlockOpposite.Total} packets), "
             + "as expected for an uplink-only hold.");
     }
 

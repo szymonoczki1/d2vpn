@@ -30,7 +30,7 @@ public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibr
     /// Every uplink payload size that crossed during a hold, before any filtering.
     /// </summary>
     public IReadOnlyList<int> AllLengthsDuringHold =>
-        [.. HeldPeers.SelectMany(p => p.OutboundSignature).Distinct().Order()];
+        [.. HeldPeers.SelectMany(p => p.Signature).Distinct().Order()];
 
     /// <summary>
     /// The sizes a module should actually pass: those concentrated in the hold.
@@ -48,12 +48,12 @@ public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibr
     /// block must not do, so the filter is applied here rather than left as advice.
     /// </para>
     /// </remarks>
-    public IReadOnlyList<int> OutboundSignature
+    public IReadOnlyList<int> Signature
     {
         get
         {
-            var baseline = PooledBaselineOutbound;
-            var block = PooledBlockOutbound;
+            var baseline = PooledBaselineHeld;
+            var block = PooledBlockHeld;
 
             return
             [
@@ -74,8 +74,8 @@ public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibr
     {
         get
         {
-            var baseline = PooledBaselineOutbound;
-            var block = PooledBlockOutbound;
+            var baseline = PooledBaselineHeld;
+            var block = PooledBlockHeld;
 
             return
             [
@@ -93,14 +93,14 @@ public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibr
     /// <remarks>
     /// One list rather than a kept set and an excluded set, so the boundary between them is
     /// visible. <see cref="AmbiguousLength.Enrichment"/> at or above
-    /// <see cref="MinimumEnrichment"/> is what puts a size in <see cref="OutboundSignature"/>.
+    /// <see cref="MinimumEnrichment"/> is what puts a size in <see cref="Signature"/>.
     /// </remarks>
     public IReadOnlyList<AmbiguousLength> AllLengthsWithStats
     {
         get
         {
-            var baseline = PooledBaselineOutbound;
-            var block = PooledBlockOutbound;
+            var baseline = PooledBaselineHeld;
+            var block = PooledBlockHeld;
 
             return
             [
@@ -113,13 +113,13 @@ public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibr
     }
 
     /// <summary>Uplink sizes seen before a hold, pooled across held peers.</summary>
-    public LengthHistogram PooledBaselineOutbound => Pool(p => p.BaselineOutbound);
+    public LengthHistogram PooledBaselineHeld => Pool(p => p.BaselineHeld);
 
     /// <summary>Uplink sizes seen during a hold, pooled across held peers.</summary>
-    public LengthHistogram PooledBlockOutbound => Pool(p => p.BlockOutbound);
+    public LengthHistogram PooledBlockHeld => Pool(p => p.BlockHeld);
 
     /// <summary>Downlink sizes seen during a hold, pooled across held peers.</summary>
-    public LengthHistogram PooledBlockInbound => Pool(p => p.BlockInbound);
+    public LengthHistogram PooledBlockOpposite => Pool(p => p.BlockOpposite);
 
     private LengthHistogram Pool(Func<PeerCalibration, LengthHistogram> select)
     {
@@ -152,12 +152,12 @@ public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibr
     {
         get
         {
-            var baseline = PooledBaselineOutbound;
-            var block = PooledBlockOutbound;
+            var baseline = PooledBaselineHeld;
+            var block = PooledBlockHeld;
 
             return
             [
-                .. OutboundSignature
+                .. Signature
                     .Where(baseline.Contains)
                     .Select(l => AmbiguousLength.For(l, baseline, block))
             ];
@@ -218,27 +218,27 @@ public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibr
 /// What a calibration run learned about one peer.
 /// </summary>
 /// <param name="Address">The peer's address.</param>
-/// <param name="BaselineOutboundRate">Its normal uplink rate in packets per second.</param>
+/// <param name="BaselineRate">Its normal uplink rate in packets per second.</param>
 /// <param name="Windows">Its detected holds, in time order. A single keypress can produce several.</param>
-/// <param name="BaselineOutbound">Uplink sizes seen before the hold.</param>
-/// <param name="BlockOutbound">Uplink sizes seen during the hold.</param>
-/// <param name="BlockInbound">Downlink sizes seen during the hold.</param>
+/// <param name="BaselineHeld">Uplink sizes seen before the hold.</param>
+/// <param name="BlockHeld">Uplink sizes seen during the hold.</param>
+/// <param name="BlockOpposite">Downlink sizes seen during the hold.</param>
 /// <param name="Timeline">Per-second counts, for diagnosing a run that looks wrong.</param>
 public sealed record PeerCalibration(
     IPAddress Address,
-    double BaselineOutboundRate,
+    double BaselineRate,
     IReadOnlyList<BlockWindow> Windows,
-    LengthHistogram BaselineOutbound,
-    LengthHistogram BlockOutbound,
-    LengthHistogram BlockInbound,
+    LengthHistogram BaselineHeld,
+    LengthHistogram BlockHeld,
+    LengthHistogram BlockOpposite,
     IReadOnlyList<TimelineBucket> Timeline)
 {
     /// <summary>True when this peer went quiet at least once.</summary>
     public bool HoldDetected => Windows.Count > 0;
 
     /// <summary>Uplink sizes that crossed while this peer was held.</summary>
-    public IReadOnlyList<int> OutboundSignature =>
-        HoldDetected ? BlockOutbound.DistinctLengths : [];
+    public IReadOnlyList<int> Signature =>
+        HoldDetected ? BlockHeld.DistinctLengths : [];
 
     /// <summary>Total time this peer spent held, across all its holds.</summary>
     public TimeSpan TotalHeld =>
@@ -253,17 +253,17 @@ public sealed record PeerCalibration(
         get
         {
             var seconds = TotalHeld.TotalSeconds;
-            if (seconds <= 0 || BaselineOutboundRate <= 0)
+            if (seconds <= 0 || BaselineRate <= 0)
             {
                 return 1.0;
             }
 
-            return PacketsWhileHeld / seconds / BaselineOutboundRate;
+            return PacketsWhileHeld / seconds / BaselineRate;
         }
     }
 
     /// <summary>True when this peer carried enough normal traffic to judge against.</summary>
-    public bool HasUsableBaseline => BaselineOutbound.Total >= 20 && BaselineOutboundRate > 0;
+    public bool HasUsableBaseline => BaselineHeld.Total >= 20 && BaselineRate > 0;
 }
 
 /// <summary>

@@ -1,3 +1,5 @@
+using D2Vpn.Core.Network;
+
 namespace D2Vpn.Core.Calibration;
 
 /// <summary>
@@ -85,6 +87,21 @@ public sealed record CalibrationOptions
     /// collapse threshold below what a real hold produces. See <see cref="SignatureCalibrator"/>.
     /// </remarks>
     public double BaselinePercentile { get; init; } = 0.75;
+
+    /// <summary>
+    /// Which direction a collapse is expected in.
+    /// </summary>
+    /// <remarks>
+    /// Detection keys on the held direction going quiet, so it has to know which one that is. An
+    /// uplink hold collapses outbound while inbound keeps flowing; a downlink hold does the
+    /// reverse. Watching the wrong stream finds nothing at all, because the traffic that is still
+    /// flowing looks entirely normal.
+    ///
+    /// The two produce different signatures and neither can be derived from the other: an uplink
+    /// pass list is what this machine must still be able to send, a downlink one is what the peer
+    /// must still be able to send to us.
+    /// </remarks>
+    public PacketDirection Direction { get; init; } = PacketDirection.Outbound;
 
     /// <summary>The defaults.</summary>
     public static CalibrationOptions Default { get; } = new();

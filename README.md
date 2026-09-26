@@ -66,8 +66,8 @@ untouched, so it cannot stall or break a live game.
 |---|---|
 | `d2vpn list` | Show the known port groups |
 | `d2vpn watch <group> [--seconds N]` | Live packet counts and a payload-size histogram |
-| `d2vpn calibrate <group> [--seconds N]` | Derive this machine's signature for a group |
-| `d2vpn hold <group> [--seconds N] [--dry-run]` | Hold uplink on a group. `--dry-run` reports what it would drop without touching traffic |
+| `d2vpn calibrate <group> [--seconds N] [--downlink]` | Derive this machine's signature for a group, in either direction |
+| `d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]` | Hold a group in one direction. `--dry-run` reports what it would drop without touching traffic |
 
 Groups: `3074`, `27k`, `7500`, `30k`. Both `watch` and `calibrate` need an elevated terminal,
 because loading a kernel driver does.
@@ -100,6 +100,12 @@ means the resync is not working. No error code means it is.
 State is per remote address because the game talks to several peers at once, each on its own tick,
 joining and leaving mid-session. Time comes from packet timestamps rather than a clock, so a whole
 hold can be driven through in a unit test with no driver and no game running.
+
+**Uplink and downlink are separate holds needing separate signatures.** An uplink pass list is
+what this machine must still be able to send; a downlink one is what the peer must still be able
+to send to us. Neither can be derived from the other, and the calibrator has to be told which
+direction to watch - a downlink hold leaves uplink flowing perfectly normally, so watching the
+wrong stream reports that nothing happened. Only uplink on 3074 has been measured so far.
 
 ## Safety
 

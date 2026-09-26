@@ -7,17 +7,17 @@ namespace D2Vpn.Core.Tests.Modules;
 /// Drives the module through whole holds using packet timestamps, with no driver and no game.
 /// Behaviour and figures come from <c>docs/protocol.md</c>, findings 10 through 14b.
 /// </summary>
-public class UplinkHoldModuleTests
+public class HoldModuleTests
 {
     private const int Ordinary = 500;
     private const int ReconnectRequest = 128;
     private const int HandshakeReply = 233;
     private const int DataPacket = 1166;
 
-    private static UplinkHoldModule Module(HoldModuleOptions? options = null) =>
+    private static HoldModule Module(HoldModuleOptions? options = null) =>
         new("PVE", DestinyPorts.Peer, options ?? MeasuredDefaults.Peer3074);
 
-    private static PacketVerdict Out(UplinkHoldModule module, int length, double atSeconds) =>
+    private static PacketVerdict Out(HoldModule module, int length, double atSeconds) =>
         module.Decide(TestPackets.Outbound(3074, length, atSeconds));
 
     [Fact]
@@ -187,7 +187,7 @@ public class UplinkHoldModuleTests
     public void A_safety_timeout_disables_the_module_rather_than_quietly_passing()
     {
         // 30k needs this; 3074 does not. Ceilings belong to modules, never to the app.
-        var module = new UplinkHoldModule("30k", DestinyPorts.Instance, MeasuredDefaults.Instance30k);
+        var module = new HoldModule("30k", DestinyPorts.Instance, MeasuredDefaults.Instance30k);
         var fired = 0;
         module.SafetyTimeoutElapsed += _ => fired++;
         module.IsActive = true;
@@ -221,7 +221,7 @@ public class UplinkHoldModuleTests
     public void The_safety_clock_starts_at_the_first_packet_not_at_activation()
     {
         // Arming a module while nothing is flowing must not burn its budget.
-        var module = new UplinkHoldModule("30k", DestinyPorts.Instance, MeasuredDefaults.Instance30k);
+        var module = new HoldModule("30k", DestinyPorts.Instance, MeasuredDefaults.Instance30k);
         module.IsActive = true;
 
         Assert.Equal(
@@ -239,6 +239,6 @@ public class UplinkHoldModuleTests
     public void A_blank_name_is_rejected()
     {
         Assert.Throws<ArgumentException>(
-            () => new UplinkHoldModule(" ", DestinyPorts.Peer, MeasuredDefaults.Peer3074));
+            () => new HoldModule(" ", DestinyPorts.Peer, MeasuredDefaults.Peer3074));
     }
 }

@@ -87,9 +87,13 @@ public sealed class SignatureCalibrator
     {
         var peerResults = new List<PeerCalibration>();
 
-        foreach (var peer in _peers.Values.OrderByDescending(p => p.Outbound.Count))
+        foreach (var peer in _peers.Values.OrderByDescending(p => p.Outbound.Count + p.Inbound.Count))
         {
-            var analysis = StreamAnalysis.Analyse(peer.Outbound, _options);
+            // The held direction is the one expected to collapse; the other is kept for context.
+            var held = _options.Direction == PacketDirection.Outbound ? peer.Outbound : peer.Inbound;
+            var opposite = _options.Direction == PacketDirection.Outbound ? peer.Inbound : peer.Outbound;
+
+            var analysis = StreamAnalysis.Analyse(held, _options);
 
             var baselineOutbound = new LengthHistogram();
             var blockOutbound = new LengthHistogram();
@@ -98,7 +102,7 @@ public sealed class SignatureCalibrator
             bool InAnyHold(double offset) =>
                 analysis.Holds.Any(h => offset > h.Start && offset < h.End);
 
-            foreach (var o in peer.Outbound)
+            foreach (var o in held)
             {
                 if (InAnyHold(o.Offset))
                 {
@@ -116,7 +120,7 @@ public sealed class SignatureCalibrator
                 // baseline and is what lets a stray normal packet be told from a real signature.
             }
 
-            foreach (var i in peer.Inbound.Where(i => InAnyHold(i.Offset)))
+            foreach (var i in opposite.Where(i => InAnyHold(i.Offset)))
             {
                 blockInbound.Add(i.Length);
             }
@@ -125,7 +129,7 @@ public sealed class SignatureCalibrator
             foreach (var hold in analysis.Holds)
             {
                 var duration = hold.End - hold.Start;
-                var packets = peer.Outbound.Count(o => o.Offset > hold.Start && o.Offset < hold.End);
+                var packets = held.Count(o => o.Offset > hold.Start && o.Offset < hold.End);
                 windows.Add(new BlockWindow(
                     TimeSpan.FromSeconds(hold.Start),
                     TimeSpan.FromSeconds(duration),
@@ -140,7 +144,7 @@ public sealed class SignatureCalibrator
                 baselineOutbound,
                 blockOutbound,
                 blockInbound,
-                BuildTimeline(peer, analysis)));
+                BuildTimeline(held, opposite, analysis)));
         }
 
         return new CalibrationResult(Group, peerResults);
@@ -150,16 +154,17 @@ public sealed class SignatureCalibrator
     private static bool AfterLastHold(StreamAnalysis analysis, double offset) =>
         analysis.HoldDetected && offset >= analysis.Holds[^1].End;
 
-    private List<TimelineBucket> BuildTimeline(PeerStream peer, StreamAnalysis analysis)
+    private List<TimelineBucket> BuildTimeline(
+        List<Observation> held, List<Observation> opposite, StreamAnalysis analysis)
     {
         var bucketSeconds = _options.BucketSize.TotalSeconds;
         var latest = 0.0;
-        foreach (var o in peer.Outbound)
+        foreach (var o in held)
         {
             latest = Math.Max(latest, o.Offset);
         }
 
-        foreach (var i in peer.Inbound)
+        foreach (var i in opposite)
         {
             latest = Math.Max(latest, i.Offset);
         }
@@ -168,12 +173,12 @@ public sealed class SignatureCalibrator
         var outCounts = new int[lastBucket + 1];
         var inCounts = new int[lastBucket + 1];
 
-        foreach (var o in peer.Outbound)
+        foreach (var o in held)
         {
             outCounts[Math.Clamp((int)(o.Offset / bucketSeconds), 0, lastBucket)]++;
         }
 
-        foreach (var i in peer.Inbound)
+        foreach (var i in opposite)
         {
             inCounts[Math.Clamp((int)(i.Offset / bucketSeconds), 0, lastBucket)]++;
         }

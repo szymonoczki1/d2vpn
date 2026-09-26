@@ -3,7 +3,7 @@ using D2Vpn.Core.Network;
 namespace D2Vpn.Core.Modules;
 
 /// <summary>
-/// Settings for an <see cref="UplinkHoldModule"/>.
+/// Settings for a <see cref="HoldModule"/>.
 /// </summary>
 /// <remarks>
 /// Every value here is configuration with a measured default, never a constant. Packet sizes drift
@@ -60,14 +60,14 @@ public sealed record HoldModuleOptions
     public TimeSpan? SafetyTimeout { get; init; }
 
     /// <summary>
-    /// Whether downlink is left alone.
+    /// Which direction this module holds. Traffic in any other direction passes untouched.
     /// </summary>
     /// <remarks>
-    /// True for the uplink modules the AHK macros drive, written "UL" there. Measured: downlink
-    /// held a steady rate throughout every uplink hold, which is what keeps the block directional
-    /// rather than a dead connection.
+    /// Defaults to <see cref="HoldDirection.Uplink"/>, which is what the AHK macros drive and the
+    /// only direction measured so far. Downlink held a steady rate throughout every uplink hold
+    /// captured, and that is what keeps a block directional rather than a dead connection.
     /// </remarks>
-    public bool InboundAlwaysPasses { get; init; } = true;
+    public HoldDirection Direction { get; init; } = HoldDirection.Uplink;
 }
 
 /// <summary>
@@ -95,7 +95,7 @@ public static class MeasuredDefaults
         ResyncTriggerLengths = new HashSet<int> { 128, 136 },
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = null,
-        InboundAlwaysPasses = true
+        Direction = HoldDirection.Uplink
     };
 
     /// <summary>
@@ -113,7 +113,7 @@ public static class MeasuredDefaults
         ResyncTriggerLengths = new HashSet<int>(),
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = TimeSpan.FromSeconds(20),
-        InboundAlwaysPasses = true
+        Direction = HoldDirection.Uplink
     };
 
     /// <summary>The default options for a group, or <see langword="null"/> if none are known.</summary>

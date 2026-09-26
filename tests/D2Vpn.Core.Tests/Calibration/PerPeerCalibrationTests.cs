@@ -64,7 +64,7 @@ public class PerPeerCalibrationTests
 
         var held = Assert.Single(result.HeldPeers);
         Assert.Equal(PeerA, held.Address);
-        Assert.Equal([51, 128, 136, 1166], result.OutboundSignature);
+        Assert.Equal([51, 128, 136, 1166], result.Signature);
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class PerPeerCalibrationTests
         // 600-624 are peer B's ordinary sizes and must not appear.
         foreach (var size in new[] { 600, 608, 616, 624 })
         {
-            Assert.DoesNotContain(size, result.OutboundSignature);
+            Assert.DoesNotContain(size, result.Signature);
         }
     }
 
@@ -131,7 +131,7 @@ public class PerPeerCalibrationTests
         var a = result.Peers.Single(p => p.Address.Equals(PeerA));
         var b = result.Peers.Single(p => p.Address.Equals(PeerB));
 
-        Assert.Equal(10, a.BaselineOutboundRate, precision: 0);
-        Assert.Equal(30, b.BaselineOutboundRate, precision: 0);
+        Assert.Equal(10, a.BaselineRate, precision: 0);
+        Assert.Equal(30, b.BaselineRate, precision: 0);
     }
 }

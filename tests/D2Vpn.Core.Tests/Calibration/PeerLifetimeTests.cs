@@ -65,7 +65,7 @@ public class PeerLifetimeTests
         var joiner = result.Peers.Single(p => p.Address.Equals(LateJoiner));
 
         // 20/s while present. Averaging in 44 seconds of absence would report a fraction of that.
-        Assert.Equal(20, joiner.BaselineOutboundRate, precision: 0);
+        Assert.Equal(20, joiner.BaselineRate, precision: 0);
     }
 
     [Fact]
@@ -99,6 +99,6 @@ public class PeerLifetimeTests
         var joiner = result.Peers.Single(p => p.Address.Equals(LateJoiner));
 
         Assert.True(joiner.HoldDetected);
-        Assert.Equal([128, 136, 1166], joiner.OutboundSignature);
+        Assert.Equal([128, 136, 1166], joiner.Signature);
     }
 }

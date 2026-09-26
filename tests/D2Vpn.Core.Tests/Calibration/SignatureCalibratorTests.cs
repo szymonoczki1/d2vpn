@@ -100,7 +100,7 @@ public class SignatureCalibratorTests
         var result = Calibrate(RealCaptureTimeline());
 
         Assert.True(result.BlockDetected);
-        Assert.Equal(10, result.Peers[0].BaselineOutboundRate, precision: 1);
+        Assert.Equal(10, result.Peers[0].BaselineRate, precision: 1);
 
         // The start sits on the last packet of normal traffic (8.9s), not the bucket edge at 9.0.
         Assert.InRange(result.CombinedWindow!.Start.TotalSeconds, 8.8, 9.01);
@@ -146,12 +146,12 @@ public class SignatureCalibratorTests
         var result = Calibrate(packets);
 
         Assert.True(result.BlockDetected);
-        Assert.Equal([51, 128, 136, 1166], result.OutboundSignature);
+        Assert.Equal([51, 128, 136, 1166], result.Signature);
 
         // The three pre-keypress packets belong to normal traffic, not to the hold.
-        Assert.DoesNotContain(561, result.OutboundSignature);
-        Assert.DoesNotContain(563, result.OutboundSignature);
-        Assert.DoesNotContain(565, result.OutboundSignature);
+        Assert.DoesNotContain(561, result.Signature);
+        Assert.DoesNotContain(563, result.Signature);
+        Assert.DoesNotContain(565, result.Signature);
         Assert.InRange(result.CombinedWindow!.Start.TotalSeconds, 12.1, 12.3);
     }
 
@@ -160,7 +160,7 @@ public class SignatureCalibratorTests
     {
         var result = Calibrate(RealCaptureTimeline());
 
-        Assert.Equal([51, 128, 136, 190, 198, 1166], result.OutboundSignature);
+        Assert.Equal([51, 128, 136, 190, 198, 1166], result.Signature);
         Assert.True(result.SignatureIsUnambiguous);
         Assert.Empty(result.AmbiguousLengths);
     }
@@ -172,9 +172,9 @@ public class SignatureCalibratorTests
         // at the strict threshold would end the window there and lose most of the signature.
         var result = Calibrate(RealCaptureTimeline());
 
-        Assert.Contains(51, result.OutboundSignature);    // before the burst
-        Assert.Contains(1166, result.OutboundSignature);  // inside the burst
-        Assert.Contains(198, result.OutboundSignature);   // after the burst
+        Assert.Contains(51, result.Signature);    // before the burst
+        Assert.Contains(1166, result.Signature);  // inside the burst
+        Assert.Contains(198, result.Signature);   // after the burst
     }
 
     [Fact]
@@ -209,7 +209,7 @@ public class SignatureCalibratorTests
         var result = Calibrate(packets);
 
         Assert.False(result.BlockDetected);
-        Assert.Empty(result.OutboundSignature);
+        Assert.Empty(result.Signature);
     }
 
     [Fact]
@@ -255,8 +255,8 @@ public class SignatureCalibratorTests
         var result = Calibrate(RealCaptureTimeline());
 
         // Downlink was never blocked, so it keeps flowing through the window.
-        Assert.True(result.PooledBlockInbound.Total > 90);
-        Assert.Equal([1258], result.PooledBlockInbound.DistinctLengths);
+        Assert.True(result.PooledBlockOpposite.Total > 90);
+        Assert.Equal([1258], result.PooledBlockOpposite.DistinctLengths);
     }
 
     [Fact]
@@ -301,7 +301,7 @@ public class SignatureCalibratorTests
         var result = Calibrate(packets);
 
         Assert.True(result.BlockDetected);
-        Assert.Contains(128, result.OutboundSignature);
+        Assert.Contains(128, result.Signature);
 
         var ambiguous = Assert.Single(result.AmbiguousLengths);
         Assert.Equal(128, ambiguous.PayloadLength);
@@ -337,7 +337,7 @@ public class SignatureCalibratorTests
 
         Assert.True(result.BlockDetected);
         Assert.Contains(128, result.AllLengthsDuringHold);
-        Assert.DoesNotContain(128, result.OutboundSignature);
+        Assert.DoesNotContain(128, result.Signature);
 
         var excluded = Assert.Single(result.ExcludedAsOrdinary);
         Assert.Equal(128, excluded.PayloadLength);
@@ -394,12 +394,12 @@ public class SignatureCalibratorTests
         var result = Calibrate(packets);
 
         Assert.True(result.BlockDetected, "a hold at ~1/s must be found even when normal traffic is uneven");
-        Assert.Equal([51, 128, 136, 1166], result.OutboundSignature);
+        Assert.Equal([51, 128, 136, 1166], result.Signature);
 
         // The reported normal rate must describe the busy mode, not the average of both modes.
         Assert.True(
-            result.Peers[0].BaselineOutboundRate >= 10,
-            $"normal rate {result.Peers[0].BaselineOutboundRate:N1}/s should reflect active traffic, not quiet gaps");
+            result.Peers[0].BaselineRate >= 10,
+            $"normal rate {result.Peers[0].BaselineRate:N1}/s should reflect active traffic, not quiet gaps");
     }
 
     [Fact]
@@ -420,7 +420,7 @@ public class SignatureCalibratorTests
         var result = Calibrate([]);
 
         Assert.False(result.BlockDetected);
-        Assert.Empty(result.OutboundSignature);
+        Assert.Empty(result.Signature);
         Assert.False(result.HasUsableBaseline);
     }
 
@@ -431,7 +431,7 @@ public class SignatureCalibratorTests
         // hardcodes 42/128/136/233/1258 as payload lengths; 128 and 136 appear here exactly,
         // the other three do not. Shipping its full set as immutable truth would misfire.
         int[] referenceConstants = [42, 128, 136, 233, 1258];
-        var signature = Calibrate(RealCaptureTimeline()).OutboundSignature;
+        var signature = Calibrate(RealCaptureTimeline()).Signature;
 
         Assert.Equal([128, 136], referenceConstants.Intersect(signature).Order());
     }

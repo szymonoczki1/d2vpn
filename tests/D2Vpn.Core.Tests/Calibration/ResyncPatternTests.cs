@@ -78,7 +78,7 @@ public class ResyncPatternTests
         // Keeping only the longest collapse would lose 128, 136 and 51 entirely.
         var result = Calibrate(BlockResyncBlock());
 
-        Assert.Equal([51, 128, 136, 233, 1166], result.OutboundSignature);
+        Assert.Equal([51, 128, 136, 233, 1166], result.Signature);
     }
 
     [Fact]
@@ -90,10 +90,10 @@ public class ResyncPatternTests
 
         foreach (var ordinary in new[] { 500, 508, 516, 524, 532, 540 })
         {
-            Assert.DoesNotContain(ordinary, result.OutboundSignature);
+            Assert.DoesNotContain(ordinary, result.Signature);
         }
 
-        Assert.True(result.PooledBaselineOutbound.Total > 300);
+        Assert.True(result.PooledBaselineHeld.Total > 300);
     }
 
     [Fact]

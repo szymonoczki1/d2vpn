@@ -5,7 +5,7 @@ using D2Vpn.Core.Network;
 namespace D2Vpn.Core.Modules;
 
 /// <summary>
-/// Holds uplink on a port group while leaving the session alive.
+/// Holds traffic on a port group in one direction while leaving the session alive.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,7 +28,7 @@ namespace D2Vpn.Core.Modules;
 /// </para>
 /// <para>Evidence for all of the above is in <c>docs/protocol.md</c>, findings 10 through 14b.</para>
 /// </remarks>
-public sealed class UplinkHoldModule : ITrafficModule
+public sealed class HoldModule : ITrafficModule
 {
     private readonly Dictionary<string, PeerHold> _peers = [];
     private bool _isActive;
@@ -47,10 +47,10 @@ public sealed class UplinkHoldModule : ITrafficModule
     /// Raised when the module disables itself because <see cref="HoldModuleOptions.SafetyTimeout"/>
     /// elapsed.
     /// </summary>
-    public event Action<UplinkHoldModule>? SafetyTimeoutElapsed;
+    public event Action<HoldModule>? SafetyTimeoutElapsed;
 
     /// <summary>Creates a module for <paramref name="group"/>.</summary>
-    public UplinkHoldModule(string name, PortGroup group, HoldModuleOptions options)
+    public HoldModule(string name, PortGroup group, HoldModuleOptions options)
     {
         Name = string.IsNullOrWhiteSpace(name)
             ? throw new ArgumentException("Module name must not be blank.", nameof(name))
@@ -100,7 +100,7 @@ public sealed class UplinkHoldModule : ITrafficModule
             return PacketVerdict.Pass;
         }
 
-        if (packet.IsInbound && Options.InboundAlwaysPasses)
+        if (!HoldsDirection(packet.Direction))
         {
             return PacketVerdict.Pass;
         }
@@ -115,6 +115,23 @@ public sealed class UplinkHoldModule : ITrafficModule
         _peers.Clear();
         _activatedAt = null;
     }
+
+    /// <summary>
+    /// Whether this module acts on a packet travelling the given way.
+    /// </summary>
+    /// <remarks>
+    /// Traffic the module does not hold passes untouched rather than falling through to the
+    /// filter. An earlier boolean got this wrong: turning off "inbound always passes" did not
+    /// produce a downlink hold, it dropped inbound packets against an uplink pass list, which
+    /// blocks both directions using the wrong signature for one of them.
+    /// </remarks>
+    private bool HoldsDirection(PacketDirection direction) => Options.Direction switch
+    {
+        HoldDirection.Uplink => direction == PacketDirection.Outbound,
+        HoldDirection.Downlink => direction == PacketDirection.Inbound,
+        HoldDirection.Both => true,
+        _ => false
+    };
 
     private bool HasOutlivedSafetyTimeout(DateTimeOffset now)
     {
