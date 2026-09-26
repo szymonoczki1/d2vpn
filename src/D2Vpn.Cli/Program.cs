@@ -39,11 +39,11 @@ static void PrintUsage()
     Console.WriteLine("  d2vpn list");
     Console.WriteLine("      Show the known port groups.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn watch <group> [--seconds N]");
+    Console.WriteLine("  d2vpn watch <group> [--seconds N] [--priority N]");
     Console.WriteLine("      Live packet counts and payload sizes for a group.");
     Console.WriteLine("      Observes only: packets are copied, never diverted.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn calibrate <group> [--seconds N] [--downlink]");
+    Console.WriteLine("  d2vpn calibrate <group> [--seconds N] [--downlink] [--priority N]");
     Console.WriteLine("      Derive this machine's packet-length signature for a group.");
     Console.WriteLine("      Hold the module partway through the run; the hold is found");
     Console.WriteLine("      from the traffic itself, so the timing is up to you. Reports the");
@@ -52,13 +52,19 @@ static void PrintUsage()
     Console.WriteLine("      --downlink calibrates a DL hold instead. The two need separate");
     Console.WriteLine("      signatures: neither can be derived from the other.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]");
+    Console.WriteLine("  d2vpn hold <group> [--seconds N] [--dry-run] [--downlink] [--priority N]");
     Console.WriteLine("      Hold one direction on a group: drop it except the signature");
     Console.WriteLine("      sizes, and stop blocking when the peer asks to reconnect, so");
     Console.WriteLine("      the session survives. --dry-run reports what it WOULD drop");
     Console.WriteLine("      without touching traffic - the safe way to try it first.");
     Console.WriteLine();
     Console.WriteLine("groups:  3074  27k  7500  30k");
+    Console.WriteLine();
+    Console.WriteLine("--priority sets the WinDivert handle priority (-30000..30000, default 0).");
+    Console.WriteLine("Handles are ordered by it, and a diverting handle that drops a packet");
+    Console.WriteLine("removes it before lower-ranked handles see it. If another limiter sits");
+    Console.WriteLine("behind this one, its blocking is invisible here - the packet was already");
+    Console.WriteLine("counted. Change this if a hold you know happened does not show up.");
     Console.WriteLine();
     Console.WriteLine("watch, calibrate and hold all need administrator rights.");
 }
@@ -93,6 +99,40 @@ static PortGroup ResolveGroup(string[] args)
         ?? throw new ArgumentException($"unknown group '{args[1]}'. Try: d2vpn list");
 }
 
+/// <summary>
+/// Reads a WinDivert handle priority.
+/// </summary>
+/// <remarks>
+/// Worth exposing because it changes what can be observed at all. Handles are ordered by priority,
+/// and a diverting handle that drops a packet removes it before lower-ranked handles see it. A
+/// limiter sitting ahead of us makes its blocking visible; one sitting behind us makes its
+/// blocking invisible, because we counted the packet before it was dropped. That is the leading
+/// explanation for why a downlink hold barely registered while an uplink hold was obvious.
+/// </remarks>
+static short PriorityOption(string[] args)
+{
+    var i = Array.FindIndex(args, a => string.Equals(a, "--priority", StringComparison.OrdinalIgnoreCase));
+    if (i < 0 || i + 1 >= args.Length)
+    {
+        return 0;
+    }
+
+    // Parsed as int so an out-of-range value reports the range rather than failing to parse.
+    if (!int.TryParse(args[i + 1], out var value))
+    {
+        throw new ArgumentException("--priority needs a whole number.");
+    }
+
+    // WinDivert's documented range.
+    if (value is < -30000 or > 30000)
+    {
+        throw new ArgumentException(
+            $"--priority must be between -30000 and 30000, got {value}.");
+    }
+
+    return (short)value;
+}
+
 static bool HasFlag(string[] args, string name) =>
     args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
@@ -113,14 +153,16 @@ static async Task<int> WatchAsync(string[] args)
 {
     var group = ResolveGroup(args);
     var seconds = IntOption(args, "--seconds", 30);
+    var priority = PriorityOption(args);
 
     if (!Elevation.RequireElevated())
     {
         return 1;
     }
 
-    using var source = new WinDivertPacketSource(group);
+    using var source = new WinDivertPacketSource(group, priority);
     Console.WriteLine($"watching {group} for {seconds}s  (sniff mode, traffic is not modified)");
+    Console.WriteLine($"handle priority: {priority}");
     Console.WriteLine($"filter: {source.FilterExpression}");
     Console.WriteLine();
 
@@ -215,17 +257,19 @@ static async Task<int> CalibrateAsync(string[] args)
     var downlink = HasFlag(args, "--downlink");
     var direction = downlink ? PacketDirection.Inbound : PacketDirection.Outbound;
     var label = downlink ? "downlink" : "uplink";
+    var priority = PriorityOption(args);
 
     if (!Elevation.RequireElevated())
     {
         return 1;
     }
 
-    using var source = new WinDivertPacketSource(group);
+    using var source = new WinDivertPacketSource(group, priority);
     var calibrator = new SignatureCalibrator(group, new CalibrationOptions { Direction = direction });
 
-    Console.WriteLine($"calibrating {group}  ({seconds}s, sniff mode - traffic is not modified)");
+    Console.WriteLine($"calibrating {group} {label}  ({seconds}s, sniff mode - traffic is not modified)");
     Console.WriteLine($"filter: {source.FilterExpression}");
+    Console.WriteLine($"handle priority: {priority}");
     Console.WriteLine();
     Console.WriteLine("What to do, in the game window:");
     Console.WriteLine("  1. leave it alone for the first ~10s");
@@ -277,6 +321,7 @@ static async Task<int> HoldAsync(string[] args)
     var seconds = IntOption(args, "--seconds", 45);
     var dryRun = HasFlag(args, "--dry-run");
     var downlink = HasFlag(args, "--downlink");
+    var priority = PriorityOption(args);
 
     var options = MeasuredDefaults.For(group);
     if (options is not null && downlink)
@@ -342,11 +387,11 @@ static async Task<int> HoldAsync(string[] args)
 
     if (dryRun)
     {
-        await RunDryAsync(group, module, started, seconds, cts.Token);
+        await RunDryAsync(group, module, started, seconds, priority, cts.Token);
         return 0;
     }
 
-    using var controller = new WinDivertTrafficController(module);
+    using var controller = new WinDivertTrafficController(module, priority);
     var run = controller.RunAsync(cts.Token);
 
     while (!run.IsCompleted)
@@ -382,10 +427,10 @@ static async Task<int> HoldAsync(string[] args)
 /// Runs the module against sniffed traffic, reporting decisions without acting on them.
 /// </summary>
 static async Task RunDryAsync(
-    PortGroup group, HoldModule module, DateTimeOffset started, int seconds,
+    PortGroup group, HoldModule module, DateTimeOffset started, int seconds, short priority,
     CancellationToken token)
 {
-    using var source = new WinDivertPacketSource(group);
+    using var source = new WinDivertPacketSource(group, priority);
     long seen = 0;
     long wouldDrop = 0;
     var lastPrint = started;
