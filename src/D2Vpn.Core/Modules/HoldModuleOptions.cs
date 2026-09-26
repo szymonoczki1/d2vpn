@@ -116,14 +116,50 @@ public static class MeasuredDefaults
         Direction = HoldDirection.Uplink
     };
 
-    /// <summary>The default options for a group, or <see langword="null"/> if none are known.</summary>
-    public static HoldModuleOptions? For(PortGroup group)
+    /// <summary>
+    /// UDP 3074 downlink, reproduced across two runs at a handle priority that can observe it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A different signature from the uplink one, as expected: an uplink pass list is what this
+    /// machine must still be able to send, a downlink one is what the peer must still be able to
+    /// send to us. 51 and 233 appear in both; 36, 128, 136 and 1166 are uplink-only, and 36 was
+    /// explicitly rejected here as ordinary traffic.
+    /// </para>
+    /// <para>
+    /// <b>The resync trigger is unmeasured.</b> For uplink, 128 and 136 were identified as the
+    /// reconnect request by holding with a reference limiter's own resync disabled and watching
+    /// which packet the game repeated. The equivalent run has not been done for downlink, so
+    /// nothing here starts a resync and a hold will eventually stall the way an uplink hold does
+    /// without one - hence the safety timeout. Remove it once the trigger is known.
+    /// </para>
+    /// </remarks>
+    public static HoldModuleOptions Peer3074Downlink { get; } = new()
+    {
+        PassLengths = new HashSet<int> { 51, 233 },
+        ResyncTriggerLengths = new HashSet<int>(),
+        ResyncDuration = TimeSpan.FromSeconds(3.5),
+        SafetyTimeout = TimeSpan.FromSeconds(25),
+        Direction = HoldDirection.Downlink
+    };
+
+    /// <summary>
+    /// The default options for a group and direction, or <see langword="null"/> if none are known.
+    /// </summary>
+    public static HoldModuleOptions? For(PortGroup group, HoldDirection direction = HoldDirection.Uplink)
     {
         if (group == DestinyPorts.Peer)
         {
-            return Peer3074;
+            return direction switch
+            {
+                HoldDirection.Uplink => Peer3074,
+                HoldDirection.Downlink => Peer3074Downlink,
+                _ => null
+            };
         }
 
-        return group == DestinyPorts.Instance ? Instance30k : null;
+        return group == DestinyPorts.Instance && direction == HoldDirection.Uplink
+            ? Instance30k
+            : null;
     }
 }

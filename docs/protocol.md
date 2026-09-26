@@ -567,8 +567,15 @@ exited, not merely idle.
 With a usable priority, downlink shows the same block / resync / block shape as uplink: five
 separate collapses across one continuous hold, full-rate traffic between them.
 
-Downlink signature from the clearest run (41 s held, downlink at 3% of normal): **51, 98, 233**,
-with 36 rejected as ordinary at 2.4x enrichment.
+Downlink signature, **confirmed** by a second run at the correct priority: **51, 233**.
+
+The earlier run also showed 98, on the strength of a single packet. It did not reappear, so it was
+an artefact and is not part of the signature. 36 was rejected in both runs, at 2.4x enrichment.
+
+In the confirming run, 233 crossed 4 times and **never appeared in normal traffic at all**, while
+51 crossed twice at 13.2x. Both peers produced identical timelines - the same three collapses at
+11-16 s, 17-26 s and 27-30 s - which is worth noting: the hold looked global rather than per-peer
+on that occasion.
 
 Against the uplink signature of 36, 51, 128, 136, 233, 1166:
 
@@ -579,9 +586,22 @@ Against the uplink signature of 36, 51, 128, 136, 233, 1166:
 So the two directions share part of a handshake and differ in the rest, which is what the design
 already assumed: neither signature can be derived from the other.
 
-**Confidence: low.** Only 16 downlink packets crossed in total, and 98 rests on a single packet.
-A second run at -1000 is needed before treating this as settled, and it is not yet shipped as a
-default.
+**Confidence: good for the pass list, none for the trigger.** `51, 233` is reproduced and shipped
+as the downlink default. What is *not* known is which of them - if either - is the reconnect
+request that should start a resync. Uplink's 128 and 136 were identified by holding with a
+reference limiter's own resync disabled and watching which packet the game repeated at 3-4/s; the
+equivalent downlink run has not been done. Until it is, the downlink defaults carry no resync
+trigger and a 25 s safety timeout instead.
+
+### Finding 17b - downlink is buffered on release too
+
+The confirming run released at s30 and produced **44 packets in one second against a 10/s
+baseline** - the same instantaneous dump measured on uplink in Finding 4, so buffering is not an
+uplink-only behaviour.
+
+Only about 4 seconds' worth came back against roughly 19 seconds held, so most held traffic was
+discarded rather than replayed. Whether that is a buffer cap, an age limit, or the game itself
+refusing stale packets is unknown.
 
 ### Finding 18 - a peer sending one packet a second cannot be judged
 

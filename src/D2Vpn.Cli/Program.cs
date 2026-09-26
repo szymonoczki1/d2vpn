@@ -329,14 +329,21 @@ static async Task<int> HoldAsync(string[] args)
     var downlink = HasFlag(args, "--downlink");
     var priority = PriorityOption(args);
 
-    var options = MeasuredDefaults.For(group);
-    if (options is not null && downlink)
+    var heldDirection = downlink ? HoldDirection.Downlink : HoldDirection.Uplink;
+    var options = MeasuredDefaults.For(group, heldDirection);
+    if (options is null)
     {
-        // The defaults carry an uplink signature. Reusing it for downlink would filter the peer's
-        // traffic against a list describing ours, which is not a downlink hold in any useful sense.
         throw new ArgumentException(
-            $"No downlink signature has been measured for {group}. "
-            + $"Run 'd2vpn calibrate {group.Name} --downlink' first.");
+            $"No {(downlink ? "downlink" : "uplink")} signature has been measured for {group}. "
+            + $"Run 'd2vpn calibrate {group.Name}{(downlink ? " --downlink" : string.Empty)}' first.");
+    }
+
+    if (options.ResyncTriggerLengths.Count == 0 && options.PassLengths.Count > 0)
+    {
+        Console.WriteLine("NOTE: no resync trigger is known for this direction, so the module will");
+        Console.WriteLine("block without ever letting the peer re-establish. A safety timeout ends");
+        Console.WriteLine("the hold before that becomes a problem. See docs/protocol.md.");
+        Console.WriteLine();
     }
     if (options is null)
     {
