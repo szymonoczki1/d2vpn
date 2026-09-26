@@ -1217,7 +1217,7 @@ remains inconsistent, and every setting that could plausibly matter has now been
 Uplink was measured at essentially 100% blocked during these holds - 147 of ~156 outbound packets
 dropped, nothing on any pass list - so the packets crossing were never the variable.
 
-### The release-delay hypothesis is dead
+### The release-delay hypothesis is dead, and so is the timing pattern behind it
 
 Labelled trials had suggested it. Hold durations lined up with outcomes: 2.776 s and 3.001 s
 worked, 2.572 s failed, with an unmarked 2.645 s between. Since the shots bunch at the end of a
@@ -1225,6 +1225,24 @@ hold, a shorter hold puts the last shot nearer the release, so the reading was t
 the next tick after the block lifts.
 
 Holding past the keypress should then have helped. It made every attempt fail.
+
+A later session of **eight** labelled trials removed the pattern entirely:
+
+| Duration | Result |
+|---|---|
+| 3.023 s | failed |
+| 2.924 s | failed |
+| 2.820 s | failed |
+| 3.119 s | failed |
+| 2.796 s | failed |
+| 2.753 s | failed |
+| **2.883 s** | **worked** |
+| 3.712 s | failed |
+
+The single success sits between two failures 60 ms either side of it. The gap since the previous
+release does not separate them either - 3.65 s for the success against 3.37-5.11 s across the
+failures. The n=3 pattern was coincidence, and was treated as a lead when the sample could not
+support one.
 
 That is worth more than a null result. If extending the block makes it strictly worse, the
 mechanic is not "prevent the action reaching the server" - something about *when* the block ends

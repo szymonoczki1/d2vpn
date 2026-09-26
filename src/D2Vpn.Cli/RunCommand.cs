@@ -38,6 +38,17 @@ internal static class RunCommand
             Console.WriteLine($"\n{m.Name}: safety timeout reached, released.");
 
         using var session = logPath is null ? null : new SessionLog(logPath);
+
+        // Without this a log cannot be compared against another one. Three sessions of labelled
+        // trials were recorded before it became clear that none of them stated which settings
+        // produced them, which makes them individually readable and collectively useless.
+        session?.Write("config", $"group={group.Name} direction={options.Direction} "
+            + $"pass=[{Format(options.PassLengths)}] "
+            + $"resyncPass=[{Format(options.ResyncPassLengths)}] "
+            + $"triggers=[{Format(options.ResyncTriggerLengths)}] "
+            + $"resyncMs={options.ResyncDuration.TotalMilliseconds:N0} "
+            + $"cooldownMs={options.ResyncCooldown.TotalMilliseconds:N0} "
+            + $"untickMs={untickDelayMs} pollMs={pollMs} priority={priority}");
         using var controller = new WinDivertTrafficController(module, priority);
         using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
