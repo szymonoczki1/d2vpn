@@ -426,9 +426,11 @@ static async Task<int> HoldAsync(string[] args)
             warmupInbound = controller.InboundSeen;
             module.IsActive = true;
         }
-        Console.Write($"\r{elapsed,5:N0}s / {seconds}s   seen {controller.PacketsSeen,6}"
-            + $"   dropped {controller.PacketsDropped,6}"
-            + $"   peers {module.PeerStates.Count}   {(module.IsActive ? "HOLDING" : "released")}   ");
+        Console.Write($"\r{elapsed,5:N0}s/{seconds}s  "
+            + $"UL {controller.OutboundDropped}/{controller.OutboundSeen} dropped  "
+            + $"DL {controller.InboundDropped}/{controller.InboundSeen} dropped  "
+            + $"resyncs {module.ResyncsStarted}  "
+            + $"{(module.IsActive ? "HOLDING" : engaged ? "released" : "baseline")}   ");
     }
 
     await run;
