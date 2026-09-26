@@ -1166,6 +1166,42 @@ a game.
 
 ---
 
+## Finding 33 - a total block is not enough for a short sequence
+
+`run 3074 --no-pass --no-resync`, holding for about three seconds at a time while performing a
+bullet detach: **uplink was blocked essentially completely** - 147 of ~156 outbound packets
+dropped across the holds, with nothing on any pass list - and the trick still only detached 2 of
+3 shots.
+
+So for this sequence the packets crossing are not the variable. Something else decides whether it
+works.
+
+### The likely cause: what leaves after the key comes up
+
+The game batches what the player did and sends it on its next tick, at roughly 10-20 per second.
+An action taken shortly before releasing therefore leaves on a packet that goes out shortly
+*after* releasing - by which point the block is gone and it attributes normally. Three shots fired
+inside three seconds puts the last one squarely in that window.
+
+A reference limiter carries exactly this idea in its configuration: `UntickDelay`, set to 500 ms
+for weapon swaps and 2000 ms for damage. It keeps blocking past the keypress. That is a strong
+hint the effect is real and known, and it is a plausible reason the same trick is more consistent
+there.
+
+`--untick-ms` does the same here.
+
+### A diagnostic that diagnosed nothing
+
+The first attempt logged every packet that crossed during a hold, which for an uplink hold meant
+hundreds of inbound packets that pass by design and never could have carried the shot. Eighty-odd
+entries, all marked "UNEXPECTED" because they were being checked against a pass list describing
+the other direction.
+
+Logging is now restricted to the held direction. A diagnostic that reports things which cannot be
+the cause is worse than none, because it looks like evidence.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

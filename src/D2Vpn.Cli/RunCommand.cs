@@ -26,6 +26,7 @@ internal static class RunCommand
         short priority,
         bool logPassed,
         int pollMs,
+        int untickDelayMs,
         CancellationToken cancellationToken)
     {
         var module = new HoldModule(group.Name, group, options);
@@ -42,6 +43,20 @@ internal static class RunCommand
 
         controller.PacketPassedWhileHolding += packet =>
         {
+            // Traffic in the unheld direction passes by design and is not a leak. Logging it
+            // buries the handful of packets that matter under hundreds that never could.
+            var isHeld = options.Direction switch
+            {
+                HoldDirection.Uplink => packet.IsOutbound,
+                HoldDirection.Downlink => packet.IsInbound,
+                _ => true
+            };
+
+            if (!isHeld)
+            {
+                return;
+            }
+
             lock (passedWhileHolding)
             {
                 passedWhileHolding[packet.PayloadLength] =
@@ -71,6 +86,8 @@ internal static class RunCommand
 
         Console.WriteLine($"running {group} {Describe(options.Direction)}");
         Console.WriteLine($"  toggle       : {keyLabel}  (polled every {pollMs} ms)");
+        Console.WriteLine($"  untick delay : "
+            + $"{(untickDelayMs > 0 ? $"{untickDelayMs} ms" : "none")}");
         Console.WriteLine($"  pass sizes   : {Format(options.PassLengths)}");
         Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}");
         Console.WriteLine($"  safety limit : "
