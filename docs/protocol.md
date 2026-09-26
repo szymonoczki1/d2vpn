@@ -752,6 +752,52 @@ survived 45 seconds, and proved nothing, because surviving is what both outcomes
 
 ---
 
+## Validated: d2vpn's own uplink module
+
+First end-to-end run of `d2vpn hold 3074` against a live game, with an independent packet capture
+running alongside.
+
+```
+UL 754/1073 dropped   DL 0/794 dropped   resyncs 5
+reconnect requests seen : 10
+resync windows started  : 5
+```
+
+Thirty-five seconds held, no error code - past the ~30 s ceiling a pass-list alone dies at
+(Finding 14b). The capture shows the same thing from outside:
+
+```
+ 23s UL 20 DL 20     baseline
+ 25s UL  0 DL 20     block engaged, downlink untouched
+ 32s                 game sends 128 then 136 - asking to reconnect
+ 35s UL 21           resync window: 1254, 1258, 720, 795 cross
+ 37s UL  0           blocking resumes
+ 59s UL 20           released
+```
+
+Those larger sizes are not in the pass list. They crossed because the resync had opened, which is
+the cycle working rather than a leak.
+
+**Everything the design rests on is now confirmed on our own code**: the filter, directional
+blocking, the pass list, trigger detection, resync cycling, and survival past the ceiling.
+
+### A methodological note
+
+This run was first reported as a failure. The module said `reconnect requests seen: 0` while the
+capture showed the requests plainly - a diagnostic counter was being cleared during teardown
+before it could be read, and the unit test covering it asserted that clearing as correct.
+
+Twice now a measurement has contradicted a mechanism that was already established, and twice the
+measurement was wrong: once here, once when Finding 20 concluded a signal was unobservable while
+it sat unexamined in our own output.
+
+**When a measurement contradicts a mechanism that has already been verified, suspect the
+measurement first.** Findings 14 and 14b said the game floods reconnect requests during an uplink
+block. It did. The counter was believed over the mechanism, and a working module was reported
+broken.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

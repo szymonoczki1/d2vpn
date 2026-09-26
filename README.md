@@ -6,8 +6,10 @@ Packet interception through the WinDivert kernel driver, with per-module control
 port groups. Built on measurements taken from live traffic rather than on inherited constants -
 see [docs/protocol.md](docs/protocol.md).
 
-> **Status: early.** Measurement, calibration and the first traffic-control module are built.
-> Control has not yet been exercised against a live game. What follows describes what exists
+> **Status: early, but the core works.** The uplink module on UDP 3074 is validated end to end
+> against a live game - 35 seconds held, past the ~30 s ceiling a pass-list alone dies at, with an
+> independent packet capture confirming the block/resync cycle. Downlink blocks but does not yet
+> buffer, and the other three port groups are unmeasured. What follows describes what exists
 > today, not what is planned.
 
 ## Why calibration is the centrepiece
