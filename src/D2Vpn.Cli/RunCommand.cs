@@ -79,13 +79,55 @@ internal static class RunCommand
         var keyLabel = KeyName.Describe(toggleKey);
         var toggleCount = 0;
 
+        var marked = (Worked: 0, Failed: 0);
+
         hotkeys.Bind(toggleKey, () =>
         {
-            var active = module.Toggle();
             toggleCount++;
+
+            if (module.IsActive && untickDelayMs > 0)
+            {
+                // Keep blocking past the keypress, on the theory that the game batches what the
+                // player did and sends it on its next tick - so an action taken just before
+                // releasing could leave on a packet that goes out just after, when the block is
+                // already gone. Untested; it has not been shown to help.
+                session?.Write("release-requested", $"{untickDelayMs}ms");
+                Console.WriteLine($"\n[{DateTime.Now:HH:mm:ss}] releasing in {untickDelayMs} ms");
+
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(untickDelayMs).ConfigureAwait(false);
+                    module.IsActive = false;
+                    session?.Write("release");
+                    Console.WriteLine($"\n[{DateTime.Now:HH:mm:ss}] released");
+                });
+
+                return;
+            }
+
+            var active = module.Toggle();
+            session?.Write(active ? "hold" : "release");
             Console.WriteLine($"\n[{DateTime.Now:HH:mm:ss}] {(active ? "HOLDING" : "released")}"
                 + $"  ({toggleCount} toggle{(toggleCount == 1 ? string.Empty : "s")})");
         });
+
+        if (session is not null)
+        {
+            // Marking the outcome as it happens is what turns a recording into labelled trials.
+            hotkeys.Bind(goodKey, () =>
+            {
+                marked.Worked++;
+                session.Write("worked");
+                Console.WriteLine($"\n  marked WORKED   ({marked.Worked} worked, {marked.Failed} failed)");
+            });
+
+            hotkeys.Bind(badKey, () =>
+            {
+                marked.Failed++;
+                session.Write("failed");
+                Console.WriteLine($"\n  marked FAILED   ({marked.Worked} worked, {marked.Failed} failed)");
+            });
+        }
 
         hotkeys.Start();
 
@@ -176,6 +218,15 @@ internal static class RunCommand
         if (session is not null)
         {
             Console.WriteLine($"{session.Count} events written to {session.Path}");
+            Console.WriteLine("Line that up against a capture taken alongside, and the attempts");
+            Console.WriteLine("that worked can be compared against the ones that did not.");
+            Console.WriteLine();
+        }
+
+        if (session is not null)
+        {
+            Console.WriteLine($"{session.Count} events written to {session.Path}"
+                + $"  ({marked.Worked} worked, {marked.Failed} failed)");
             Console.WriteLine("Line that up against a capture taken alongside, and the attempts");
             Console.WriteLine("that worked can be compared against the ones that did not.");
             Console.WriteLine();
