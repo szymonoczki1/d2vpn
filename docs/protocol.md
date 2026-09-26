@@ -958,6 +958,47 @@ own; a fired resync is.
 
 ---
 
+## Finding 28 - the uplink ceiling, confirmed on our own code
+
+`d2vpn hold 3074 --no-resync --no-pass` - a total uplink block, nothing crossing at all - behaved
+as intended and produced an error code at about 30 seconds.
+
+That was predicted by Finding 14b, but from watching a reference limiter. It is now reproduced by
+this project's own module, which makes the ~30 second ceiling a property of the game rather than
+of any particular tool.
+
+It also separates two flags that are easy to conflate. `--no-resync` stops resync windows opening;
+the standing pass list is untouched, and uplink keeps passing its six handshake sizes regardless.
+Only `--no-pass` as well gives a genuinely total block.
+
+### What this does not settle: uplink's resync
+
+Downlink's shape does not transfer. The blocked half of an exchange is whichever half travels the
+held direction:
+
+| | Standing pass list | Blocked half of the exchange |
+|---|---|---|
+| Downlink | nothing | the peer's replies - 51, 233 |
+| Uplink | 36, 51, 128, 136, 233, 1166 | whatever follows the request |
+
+For downlink, opening a window for 51 and 233 completes the exchange, which is why it works. For
+uplink the request is *already* in the standing pass list and crosses with or without a resync -
+so giving uplink a resync pass list of its handshake sizes would pass exactly what already passes,
+making the window a no-op.
+
+And that configuration is known to fail: with a reference limiter's resync disabled, 128 and 136
+flooded at 3-4/s the whole time - passing freely - and the session still died at 30 seconds.
+**Passing the handshake alone is not sufficient for uplink.**
+
+So uplink's resync must pass something beyond the handshake, and what that is remains unknown. The
+usual measurement cannot answer it: uplink's resync opens the gate fully, so every size seen
+crossing a window crossed for that reason rather than out of necessity.
+
+`--resync-pass` exists to find it by trial - widen until the session survives, then narrow to the
+minimum, watching the blocked percentage.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
