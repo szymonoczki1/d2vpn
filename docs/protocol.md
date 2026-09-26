@@ -722,9 +722,30 @@ began, so:
 - A "clone" is left at the held position while the player has actually moved.
 - A shot can be separated from its shooter - the game does not attribute the bullet to the player.
 
-**There is no obvious in-game symptom.** Nothing freezes, nothing stalls, and a hold that worked
-looks much like one that did nothing. That makes visual confirmation unreliable and pushed the
-acceptance test onto packet evidence instead - see below.
+**Nothing freezes or stalls**, so a hold that worked can look much like one that did nothing, and
+the acceptance test was pushed onto packet evidence for a long time - see below. But there *is* an
+observable symptom with the right test.
+
+### Testing an uplink hold in play: kill an enemy
+
+Kill something during the hold. Uplink carries what the player does, so the server never learns
+the enemy died; downlink is untouched, so the server's state keeps arriving and says it is alive.
+**The enemy reappears.**
+
+That makes it a clean binary signal, and the polarity is worth being explicit about:
+
+| Observed | Means |
+|---|---|
+| Enemy reappears | uplink is genuinely blocked - the kill never reached the server |
+| Enemy stays dead | uplink leaked; the kill got through |
+
+It works *because* of the asymmetry that makes uplink hard to see otherwise: downlink stays open,
+so the server continuously corrects the client, and any local state the server did not authorise
+is visibly undone.
+
+This is more sensitive than the blocked percentage. A single packet carrying the kill is enough to
+register it, in exactly the way a single packet carried a buff through a 53%-blocked downlink
+hold - so a hold can be 90% blocked and still fail this test.
 
 ### Downlink hold
 
