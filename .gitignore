@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+.vs/
+
+# Packet captures.
+# These hold real traffic: peer IP addresses, server addresses, and the local addresses
+# assigned by the VPN. None of it belongs in a public repository. Findings derived from
+# captures live in docs/ instead, which is the part worth publishing.
+captures/
+*.pcapng
+*.pcap
+*.sockets
