@@ -882,8 +882,10 @@ So the ~99-packet dump measured at release (Finding 17b) is not evidence that re
 the mechanic work. It may be a buffer draining, or simply the client catching up on state - the
 in-game outcome is the same either way.
 
-**Buffering is therefore not a prerequisite**, and the work queued behind that assumption is not
-needed. It may still be worth having for other modules, but nothing measured so far requires it.
+**Superseded by Finding 36.** This held only for downlink, where the server keeps sending current
+state and a dropped packet merely delays what the client learns. Uplink is the opposite: nothing
+re-sends the player's actions, so a dropped action is destroyed rather than deferred. Buffering is
+load-bearing there, and the reference limiter does it.
 
 ## Finding 26 - a resync leaks the very state a hold is meant to defer
 
@@ -1312,6 +1314,51 @@ So the comparison the whole investigation rested on was against a configuration 
 shown to be right, and was in fact chosen against the only direct evidence available. Passing
 nothing is not a stricter version of passing the handshake; it is a different thing, and the
 measurement says it is worse.
+
+---
+
+## Finding 36 - the reference limiter buffers uplink; this project destroys it
+
+Captured a reference limiter performing the bullet-detach sequence - the three-second hold that
+actually works - rather than the thirty-second hold measured earlier.
+
+| | Uplink during hold (2.4 s) | Uplink in 1.2 s after release |
+|---|---|---|
+| Attempt 1 | 1 packet | **46 packets**, 31 of 45 gaps under 5 ms |
+| Attempt 2 | 1 packet | **57 packets**, 44 of 56 gaps under 5 ms |
+| Attempt 3 | 0 packets | **65 packets**, 53 of 64 gaps under 5 ms |
+
+At a 20/s baseline, roughly 48 packets should have left during each hold. Essentially none did -
+and then about that many arrive at once, spaced in milliseconds. The burst also carries much
+larger packets than ordinary uplink: 692, 827, 1254 against a normal range of 206-478.
+
+**It blocks exactly as completely as d2vpn does, and then replays what it held. d2vpn drops.**
+
+That is the entire difference, and it explains the gap: roughly 6 detached shots in 9 with the
+reference, against roughly 1 in 6 here. For detach the shots must *arrive late*, after the desync,
+so the server registers them against stale context. Dropping them means the shots never happened
+at all.
+
+### This corrects Finding 25
+
+Finding 25 concluded buffering was unnecessary, on the strength of a downlink test: an object
+picked up during a hold still registered on release, from a module that drops. That observation
+was correct and the generalisation was not.
+
+The two directions are not symmetric:
+
+- **Downlink.** The server keeps sending current state, so dropping only delays what the client
+  learns. The state arrives anyway.
+- **Uplink.** Nothing re-sends the player's actions. A dropped action is destroyed, not deferred.
+
+Buffering is therefore optional for downlink and **load-bearing for uplink**. The work was
+dropped on the basis of a result from the one direction where it genuinely does not matter.
+
+### What this asks for
+
+Hold outbound packets while blocking and reinject them on release, rather than dropping them: a
+third verdict beside pass and drop, per-peer queues of cloned packets, a drain on release, and a
+cap so a stalled game cannot grow one without bound.
 
 ---
 
