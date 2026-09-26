@@ -632,18 +632,38 @@ way, so **51 and 233 are resync-window traffic, not a pass list**.
 An earlier revision shipped them as the downlink signature. That was wrong, and this run is what
 caught it. The downlink defaults now carry an empty pass list.
 
-### Finding 20 - downlink's resync trigger is not discoverable from this machine
+### Finding 20 - WITHDRAWN: the downlink trigger is 128, travelling outbound
 
-The uplink trigger was found because blocking uplink stops packets *the game is sending*: its
-retries originate locally, and 128/136 repeating at 3-4/s were impossible to miss.
+**This finding was wrong.** It claimed a downlink trigger could not be observed from this machine,
+reasoning that the peer's retries are dropped upstream of any local observer.
 
-Blocking downlink stops packets *the peer is sending*. The peer's retries are dropped upstream of
-any observer on this machine, so there is nothing to see. **We cannot observe what we are
-blocking.**
+The premise was wrong about who retries. Whichever direction is held, **it is this machine that
+notices a peer has gone quiet and asks to reconnect** - so the request is outbound either way.
+A packet capture during a downlink hold with resync disabled showed exactly that:
 
-This is a property of where a sniffer can stand, not a gap in the method, and no priority fixes
-it - the packets are destroyed before reaching us either way. Identifying a downlink trigger would
-need a capture from outside the block, which is a different experiment entirely.
+```
+10.2.0.2 -> 205.209.22.74   12118 -> 3074  Len=128
+10.2.0.2 -> 205.209.19.172  12118 -> 3074  Len=128
+```
+
+Outbound, 128-byte payload, repeating roughly every 400 ms, to several peers at once. The same
+reconnect request as uplink.
+
+The data was already in our own runs and went unexamined. The no-resync downlink run reported
+*"Uplink kept flowing throughout (209 packets)"* - a single number, with the reconnect requests
+inside it. The report showed every size in the held direction and nothing about the other one.
+
+**Two consequences.**
+
+*For the module:* a resync trigger does not necessarily travel the direction being held, so a
+module must watch traffic it is not blocking. Passing untouched traffic without inspecting it
+means never seeing the trigger, and a downlink hold would sit blocking until its safety timeout
+while the game asks the whole time. `HoldModuleOptions.ResyncTriggerDirection` exists for this and
+defaults to the held direction, which is correct only for uplink.
+
+*For the tooling:* calibration now reports the most common sizes travelling the opposite direction
+during a hold. That is where a trigger is most likely to be, and it was the one place the report
+did not look.
 
 **Consequence.** The downlink module blocks outright, with a safety timeout instead of a resync.
 

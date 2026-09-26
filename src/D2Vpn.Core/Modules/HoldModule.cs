@@ -100,12 +100,24 @@ public sealed class HoldModule : ITrafficModule
             return PacketVerdict.Pass;
         }
 
+        var peer = PeerFor(packet.RemoteAddress);
+
+        // The trigger is watched before the direction gate, because it does not necessarily travel
+        // the way the hold does. Whichever direction is held, it is this machine that notices a
+        // peer has gone quiet and sends the reconnect request - so during a downlink hold the
+        // request is outbound, in traffic the module is not blocking. Gating first would mean
+        // passing it unexamined and never resyncing at all.
+        if (packet.Direction == Options.EffectiveTriggerDirection
+            && Options.ResyncTriggerLengths.Contains(packet.PayloadLength))
+        {
+            peer.BeginResync(packet.Timestamp, Options.ResyncDuration);
+        }
+
         if (!HoldsDirection(packet.Direction))
         {
             return PacketVerdict.Pass;
         }
 
-        var peer = PeerFor(packet.RemoteAddress);
         return peer.Decide(packet, Options);
     }
 
@@ -164,6 +176,13 @@ public sealed class HoldModule : ITrafficModule
 
         public HoldState State { get; private set; } = HoldState.Blocking;
 
+        /// <summary>Starts a resync, or extends one already running.</summary>
+        public void BeginResync(DateTimeOffset at, TimeSpan duration)
+        {
+            State = HoldState.Resyncing;
+            _resyncEndsAt = at + duration;
+        }
+
         public PacketVerdict Decide(PacketInfo packet, HoldModuleOptions options)
         {
             if (State == HoldState.Resyncing)
@@ -174,16 +193,6 @@ public sealed class HoldModule : ITrafficModule
                 }
 
                 State = HoldState.Blocking;
-            }
-
-            // A reconnect request both passes and starts a resync. It has to pass for the peer to
-            // receive it at all, and the resync is what lets the reply and the exchange that
-            // follows get through - without which the peer simply asks again, and keeps asking.
-            if (options.ResyncTriggerLengths.Contains(packet.PayloadLength))
-            {
-                State = HoldState.Resyncing;
-                _resyncEndsAt = packet.Timestamp + options.ResyncDuration;
-                return PacketVerdict.Pass;
             }
 
             return options.PassLengths.Contains(packet.PayloadLength)

@@ -32,29 +32,63 @@ public class MeasuredDefaultsTests
     }
 
     [Fact]
-    public void A_direction_without_a_known_resync_trigger_carries_a_safety_timeout()
+    public void Uplink_needs_no_ceiling_because_its_resync_is_proven()
     {
-        // Uplink knows its trigger (128/136) and needs no ceiling - holds have run past 20 minutes.
-        // Downlink's is unmeasured, so a hold there would block without ever letting the peer
-        // re-establish, and must not be allowed to run indefinitely.
-        var up = MeasuredDefaults.Peer3074;
-        var down = MeasuredDefaults.Peer3074Downlink;
-
-        Assert.NotEmpty(up.ResyncTriggerLengths);
-        Assert.Null(up.SafetyTimeout);
-
-        Assert.Empty(down.ResyncTriggerLengths);
-        Assert.NotNull(down.SafetyTimeout);
+        // Holds have run past 20 minutes with the exchange being completed.
+        Assert.NotEmpty(MeasuredDefaults.Peer3074.ResyncTriggerLengths);
+        Assert.Null(MeasuredDefaults.Peer3074.SafetyTimeout);
     }
 
     [Fact]
-    public void Resync_triggers_are_always_a_subset_of_the_pass_list()
+    public void Downlink_keeps_a_ceiling_until_its_resync_is_proven_in_play()
     {
-        // A trigger that is not itself passed could never be seen, because it would be dropped.
+        // The trigger is observed but the module has never run against a live game, and a
+        // downlink hold error-codes at about 30 seconds without a working resync.
+        var down = MeasuredDefaults.Peer3074Downlink;
+
+        Assert.NotEmpty(down.ResyncTriggerLengths);
+        Assert.NotNull(down.SafetyTimeout);
+        Assert.True(down.SafetyTimeout < TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public void A_trigger_travelling_the_held_direction_must_also_be_passed()
+    {
+        // Otherwise it would be dropped before it could be acted on. This does not apply to a
+        // trigger on the other direction, which is passed untouched anyway.
         foreach (var options in new[] { MeasuredDefaults.Peer3074, MeasuredDefaults.Peer3074Downlink })
         {
-            Assert.All(options.ResyncTriggerLengths, t => Assert.Contains(t, options.PassLengths));
+            var triggerIsHeld = options.Direction switch
+            {
+                HoldDirection.Uplink => options.EffectiveTriggerDirection == PacketDirection.Outbound,
+                HoldDirection.Downlink => options.EffectiveTriggerDirection == PacketDirection.Inbound,
+                _ => true
+            };
+
+            if (triggerIsHeld)
+            {
+                Assert.All(options.ResyncTriggerLengths, t => Assert.Contains(t, options.PassLengths));
+            }
         }
+    }
+
+    [Fact]
+    public void Downlink_watches_outbound_for_its_trigger()
+    {
+        // Whichever direction is held, this machine is the one that notices a silent peer and
+        // asks to reconnect, so the request is outbound either way.
+        var down = MeasuredDefaults.Peer3074Downlink;
+
+        Assert.Equal(HoldDirection.Downlink, down.Direction);
+        Assert.Equal(PacketDirection.Outbound, down.EffectiveTriggerDirection);
+        Assert.Contains(128, down.ResyncTriggerLengths);
+    }
+
+    [Fact]
+    public void Uplink_watches_its_own_direction_by_default()
+    {
+        Assert.Null(MeasuredDefaults.Peer3074.ResyncTriggerDirection);
+        Assert.Equal(PacketDirection.Outbound, MeasuredDefaults.Peer3074.EffectiveTriggerDirection);
     }
 
     [Theory]

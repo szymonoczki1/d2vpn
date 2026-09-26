@@ -138,6 +138,19 @@ public sealed record CalibrationResult(
         }
     }
 
+    /// <summary>
+    /// The most common sizes travelling the <em>other</em> way during a hold.
+    /// </summary>
+    /// <remarks>
+    /// Easy to dismiss as background and it is not. Whichever direction is held, this machine is
+    /// the one that notices a peer has gone quiet and asks to reconnect, so the reconnect request
+    /// travels the direction that is <b>not</b> being blocked. A downlink run reported "uplink kept
+    /// flowing throughout (209 packets)" and the reconnect requests were inside that number,
+    /// repeating to several peers at once - visible in a packet capture but nowhere in this
+    /// report. A resync trigger is far more likely to be found here than in the held direction.
+    /// </remarks>
+    public IReadOnlyList<LengthCount> OppositeDuringHold => PooledBlockOpposite.MostCommon(8);
+
     /// <summary>Uplink sizes seen before a hold, pooled across held peers.</summary>
     public LengthHistogram PooledBaselineHeld => Pool(p => p.BaselineHeld);
 

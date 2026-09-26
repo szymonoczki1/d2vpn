@@ -23,14 +23,40 @@ public sealed record HoldModuleOptions
     public required IReadOnlySet<int> PassLengths { get; init; }
 
     /// <summary>
-    /// Uplink payload sizes that mean "the peer is asking to reconnect".
+    /// Payload sizes that mean "this peer needs re-establishing".
     /// </summary>
     /// <remarks>
     /// Seeing one starts a resync. Measured with a limiter's own resync disabled, these made up
-    /// 90% of everything crossing a hold, repeating at 3-4/s for its entire length - the game
-    /// asking over and over because nothing answered.
+    /// 90% of everything crossing an uplink hold, repeating at 3-4/s for its entire length - the
+    /// game asking over and over because nothing answered.
     /// </remarks>
     public required IReadOnlySet<int> ResyncTriggerLengths { get; init; }
+
+    /// <summary>
+    /// Which direction the trigger travels in. Defaults to the direction being held.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Not necessarily the held direction.</b> Whichever way a hold runs, it is this machine
+    /// that notices a peer has gone quiet and sends the reconnect request, so the request is
+    /// outbound either way. During a downlink hold the request was seen repeating outbound to
+    /// several peers at a time while inbound carried nothing at all.
+    /// </para>
+    /// <para>
+    /// A module therefore has to watch a direction it is not blocking. Passing untouched traffic
+    /// without inspecting it would mean never seeing the trigger, and a downlink hold would sit
+    /// blocking until its safety timeout with the peer asking the whole time.
+    /// </para>
+    /// </remarks>
+    public PacketDirection? ResyncTriggerDirection { get; init; }
+
+    /// <summary>The direction triggers are watched in, resolving the default.</summary>
+    public PacketDirection EffectiveTriggerDirection =>
+        ResyncTriggerDirection ?? Direction switch
+        {
+            HoldDirection.Downlink => PacketDirection.Inbound,
+            _ => PacketDirection.Outbound
+        };
 
     /// <summary>
     /// How long to stop blocking once a reconnect request is seen.
@@ -129,11 +155,12 @@ public static class MeasuredDefaults
     /// are resync-window traffic rather than a pass list.
     /// </para>
     /// <para>
-    /// The asymmetry with uplink has a cause. Blocking uplink stops packets the game is sending,
-    /// so its retries originate locally and are visible; blocking downlink stops packets the peer
-    /// is sending, and the peer's retries are dropped upstream of any observer on this machine. We
-    /// cannot see what we are blocking, which is also why the resync trigger is unknown here while
-    /// uplink's was identifiable.
+    /// The resync trigger, however, <em>is</em> known, and is the same 128 as uplink. Whichever
+    /// direction is held, it is this machine that notices a peer has gone quiet and asks to
+    /// reconnect - so the request is outbound either way. During a downlink hold with resync
+    /// disabled, 128-byte packets were seen repeating outbound to several peers at a time while
+    /// inbound carried nothing at all. Hence <see cref="HoldModuleOptions.ResyncTriggerDirection"/>: the module has
+    /// to watch a direction it is not blocking.
     /// </para>
     /// <para>
     /// So: no pass list, no resync, and a safety timeout doing the work instead. **Measured
@@ -150,8 +177,12 @@ public static class MeasuredDefaults
     public static HoldModuleOptions Peer3074Downlink { get; } = new()
     {
         PassLengths = new HashSet<int>(),
-        ResyncTriggerLengths = new HashSet<int>(),
+        ResyncTriggerLengths = new HashSet<int> { 128, 136 },
+        ResyncTriggerDirection = PacketDirection.Outbound,
         ResyncDuration = TimeSpan.FromSeconds(3.5),
+
+        // Kept until a resync here is confirmed to lift the ceiling the way it does on uplink.
+        // The trigger is observed but the module has never been run against a live game.
         SafetyTimeout = TimeSpan.FromSeconds(25),
         Direction = HoldDirection.Downlink
     };

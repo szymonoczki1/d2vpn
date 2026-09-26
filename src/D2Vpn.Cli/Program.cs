@@ -617,6 +617,15 @@ static void PrintCalibration(CalibrationResult result)
     if (result.PooledBlockOpposite.Total > 0)
     {
         Console.WriteLine();
+        Console.WriteLine($"most common {result.OppositeLabel} sizes during the hold "
+            + "(where a resync trigger lives):");
+        foreach (var entry in result.OppositeDuringHold)
+        {
+            var share = (double)entry.Count / result.PooledBlockOpposite.Total;
+            Console.WriteLine($"  {entry.PayloadLength,6} bytes  x{entry.Count,-5} {share,6:P0}");
+        }
+
+        Console.WriteLine();
         Console.WriteLine($"{char.ToUpperInvariant(result.OppositeLabel[0])}{result.OppositeLabel[1..]} kept flowing throughout "
             + $"({result.PooledBlockOpposite.Total} packets), as expected for a {result.HeldLabel}-only hold.");
     }
