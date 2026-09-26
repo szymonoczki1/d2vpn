@@ -52,7 +52,8 @@ static void PrintUsage()
     Console.WriteLine("      --downlink calibrates a DL hold instead. The two need separate");
     Console.WriteLine("      signatures: neither can be derived from the other.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn hold <group> [--seconds N] [--dry-run] [--downlink] [--priority N]");
+    Console.WriteLine("  d2vpn hold <group> [--seconds N] [--warmup N] [--dry-run]");
+    Console.WriteLine("                     [--downlink] [--priority N]");
     Console.WriteLine("      Hold one direction on a group: drop it except the signature");
     Console.WriteLine("      sizes, and stop blocking when the peer asks to reconnect, so");
     Console.WriteLine("      the session survives. --dry-run reports what it WOULD drop");
@@ -325,6 +326,7 @@ static async Task<int> HoldAsync(string[] args)
 {
     var group = ResolveGroup(args);
     var seconds = IntOption(args, "--seconds", 45);
+    var warmup = IntOption(args, "--warmup", 10);
     var dryRun = HasFlag(args, "--dry-run");
     var downlink = HasFlag(args, "--downlink");
     var priority = PriorityOption(args);
@@ -389,28 +391,41 @@ static async Task<int> HoldAsync(string[] args)
     }
 
     Console.WriteLine();
+    Console.WriteLine($"Running {warmup}s idle, then holding for {seconds - warmup}s.");
+    Console.WriteLine("The idle stretch is a baseline: it is what makes the run prove itself,");
+    Console.WriteLine("without needing to see anything in-game.");
+    Console.WriteLine();
     Console.WriteLine("Starting in 5s - click into the game now.");
     await Task.Delay(TimeSpan.FromSeconds(5));
 
     using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(seconds));
     using var sigint = SetupInterrupt(cts);
 
-    module.IsActive = true;
     var started = DateTimeOffset.UtcNow;
 
     if (dryRun)
     {
-        await RunDryAsync(group, module, started, seconds, priority, cts.Token);
+        await RunDryAsync(group, module, started, seconds, warmup, priority, cts.Token);
         return 0;
     }
 
     using var controller = new WinDivertTrafficController(module, priority);
     var run = controller.RunAsync(cts.Token);
 
+    long warmupInbound = 0;
+    var engaged = false;
+
     while (!run.IsCompleted)
     {
         await Task.WhenAny(run, Task.Delay(1000, CancellationToken.None));
         var elapsed = (DateTimeOffset.UtcNow - started).TotalSeconds;
+
+        if (!engaged && elapsed >= warmup)
+        {
+            engaged = true;
+            warmupInbound = controller.InboundSeen;
+            module.IsActive = true;
+        }
         Console.Write($"\r{elapsed,5:N0}s / {seconds}s   seen {controller.PacketsSeen,6}"
             + $"   dropped {controller.PacketsDropped,6}"
             + $"   peers {module.PeerStates.Count}   {(module.IsActive ? "HOLDING" : "released")}   ");
@@ -430,6 +445,41 @@ static async Task<int> HoldAsync(string[] args)
     Console.WriteLine();
     Console.WriteLine($"reconnect requests seen : {triggersSeen}");
     Console.WriteLine($"resync windows started  : {resyncsStarted}");
+
+    // Two independent checks that the block reached the game, neither needing anything observed
+    // in play. The game asking to reconnect means it noticed a peer went quiet; the peer sending
+    // harder than usual means it noticed us. Either one alone is weak; together they settle it.
+    var holdSeconds = Math.Max(1, seconds - warmup);
+    var baselineRate = warmup > 0 ? warmupInbound / (double)warmup : 0;
+    var holdRate = (controller.InboundSeen - warmupInbound) / (double)holdSeconds;
+
+    Console.WriteLine();
+    Console.WriteLine($"downlink while idle     : {baselineRate,5:N1}/s");
+    Console.WriteLine($"downlink while holding  : {holdRate,5:N1}/s");
+
+    var landed = triggersSeen > 0 || (baselineRate > 0 && holdRate > baselineRate * 1.25);
+    Console.WriteLine();
+
+    if (landed)
+    {
+        Console.WriteLine("The block reached the game:");
+        if (triggersSeen > 0)
+        {
+            Console.WriteLine($"  - it asked to reconnect {triggersSeen} times");
+        }
+
+        if (baselineRate > 0 && holdRate > baselineRate * 1.25)
+        {
+            Console.WriteLine("  - the peer sent harder than usual, probing for us");
+        }
+    }
+    else
+    {
+        Console.WriteLine("No sign the block reached the game. It never asked to reconnect and the");
+        Console.WriteLine("peer did not react, so surviving this run proves nothing. Most likely the");
+        Console.WriteLine("packets are being dropped somewhere that does not matter - try a");
+        Console.WriteLine("different --priority, the way downlink measurement needed one.");
+    }
 
     if (triggersSeen == 0)
     {
@@ -458,39 +508,53 @@ static async Task<int> HoldAsync(string[] args)
 /// Runs the module against sniffed traffic, reporting decisions without acting on them.
 /// </summary>
 static async Task RunDryAsync(
-    PortGroup group, HoldModule module, DateTimeOffset started, int seconds, short priority,
-    CancellationToken token)
+    PortGroup group, HoldModule module, DateTimeOffset started, int seconds, int warmup,
+    short priority, CancellationToken token)
 {
     using var source = new WinDivertPacketSource(group, priority);
     long seen = 0;
     long wouldDrop = 0;
+    var engaged = false;
     var lastPrint = started;
 
     await foreach (var packet in source.ReadAllAsync(token))
     {
+        var now = DateTimeOffset.UtcNow;
+        var elapsed = (now - started).TotalSeconds;
+
+        // Engage on the same schedule as a real hold, or the two runs are not comparable.
+        if (!engaged && elapsed >= warmup)
+        {
+            engaged = true;
+            module.IsActive = true;
+        }
+
         seen++;
         if (module.Decide(packet) == PacketVerdict.Drop)
         {
             wouldDrop++;
         }
 
-        var now = DateTimeOffset.UtcNow;
         if (now - lastPrint >= TimeSpan.FromSeconds(1))
         {
             lastPrint = now;
-            var elapsed = (now - started).TotalSeconds;
             Console.Write($"\r{elapsed,5:N0}s / {seconds}s   seen {seen,6}"
-                + $"   would drop {wouldDrop,6}   peers {module.PeerStates.Count}   ");
+                + $"   would drop {wouldDrop,6}   resyncs {module.ResyncsStarted}"
+                + $"   {(engaged ? "HOLDING" : "baseline")}   ");
         }
     }
 
+    var triggers = module.TriggersSeen;
     module.IsActive = false;
+
     Console.WriteLine();
     Console.WriteLine();
     Console.WriteLine($"seen {seen}, would have dropped {wouldDrop}, would have passed {seen - wouldDrop}");
     Console.WriteLine();
-    Console.WriteLine("Nothing was actually dropped. If the drop count looks sane against the");
-    Console.WriteLine("rates in 'd2vpn watch', the module logic is behaving - run it for real next.");
+    Console.WriteLine("Nothing was actually dropped, so the game never noticed and never asked to");
+    Console.WriteLine($"reconnect - {triggers} requests seen, and a dry run cannot produce them.");
+    Console.WriteLine("This checks the filter and the drop ratio only. Whether the resync works can");
+    Console.WriteLine("only be answered by a real hold.");
 }
 
 /// <summary>Wires Ctrl+C to release the hold rather than kill the process mid-flight.</summary>

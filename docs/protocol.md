@@ -709,6 +709,49 @@ of a release rather than a new hold.
 
 ---
 
+## What the modules are for
+
+Packet captures show what a hold does to traffic. They do not show why anyone would want one, and
+that turns out to matter for testing.
+
+### Uplink hold
+
+Used for **desync**. The game continues to believe the player is where they were when the hold
+began, so:
+
+- A "clone" is left at the held position while the player has actually moved.
+- A shot can be separated from its shooter - the game does not attribute the bullet to the player.
+
+**There is no obvious in-game symptom.** Nothing freezes, nothing stalls, and a hold that worked
+looks much like one that did nothing. That makes visual confirmation unreliable and pushed the
+acceptance test onto packet evidence instead - see below.
+
+### Downlink hold
+
+Used to **defer incoming world state**. The client keeps acting but never learns the result:
+
+- Interacting with an object does not complete until release, then lands.
+- Buffs neither expire nor apply while held.
+
+Unlike uplink, this is trivially visible in play, which is why the downlink findings were easier
+to confirm.
+
+### Consequence: a hold has to prove itself
+
+Since an uplink hold cannot be seen, `d2vpn hold` idles for a warmup period before engaging and
+then checks two signals that need nothing observed in play:
+
+1. **The game asks to reconnect.** A trigger-sized packet means it noticed a peer went quiet, so
+   the block reached it.
+2. **The peer sends harder than usual.** Downlink measured at 17/s against a 10/s baseline during
+   an uplink hold - the peer probing for a client that went silent.
+
+Either alone is weak. Together they distinguish "the block worked and the resync carried it" from
+"the block never landed", which the first real hold could not: it dropped 780 of 1251 packets,
+survived 45 seconds, and proved nothing, because surviving is what both outcomes look like.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
