@@ -1,0 +1,23 @@
+wall_clock	offset_s	event	detail
+20:52:08.913	0.002	start	2026-09-26T20:52:08.9121857+00:00
+20:52:16.354	7.442	hold	
+20:52:19.298	10.387	release-requested	500ms
+20:52:19.814	10.902	release	
+20:52:22.169	13.258	failed	
+20:52:23.437	14.525	hold	
+20:52:26.399	17.488	release-requested	500ms
+20:52:26.903	17.991	release	
+20:52:28.192	19.280	failed	
+20:52:29.805	20.894	hold	
+20:52:32.739	23.827	release-requested	500ms
+20:52:33.239	24.328	release	
+20:52:33.931	25.020	failed	
+20:52:35.530	26.618	hold	
+20:52:38.450	29.538	release-requested	500ms
+20:52:38.964	30.052	release	
+20:52:40.137	31.225	failed	
+20:52:43.618	34.707	hold	
+20:52:46.452	37.541	release-requested	500ms
+20:52:46.952	38.041	release	
+20:52:48.781	39.869	failed	
+20:52:51.343	42.431	end	

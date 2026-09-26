@@ -1203,6 +1203,51 @@ the cause is worse than none, because it looks like evidence.
 
 ---
 
+## Finding 34 - the tool-side levers do not explain bullet detach
+
+Bullet detach - hold uplink, swap weapon, fire three times, release, inside about three seconds -
+remains inconsistent, and every setting that could plausibly matter has now been tried.
+
+| Configuration | Result |
+|---|---|
+| Default pass list + resync | 2 of 3 shots, once |
+| `--no-pass --no-resync` (total block) | 2 of 3, then 1 of 3, 1 of 3, 0 of 3 |
+| `--untick-ms 500` (block past release) | **all failed** |
+
+Uplink was measured at essentially 100% blocked during these holds - 147 of ~156 outbound packets
+dropped, nothing on any pass list - so the packets crossing were never the variable.
+
+### The release-delay hypothesis is dead
+
+Labelled trials had suggested it. Hold durations lined up with outcomes: 2.776 s and 3.001 s
+worked, 2.572 s failed, with an unmarked 2.645 s between. Since the shots bunch at the end of a
+hold, a shorter hold puts the last shot nearer the release, so the reading was that it leaves on
+the next tick after the block lifts.
+
+Holding past the keypress should then have helped. It made every attempt fail.
+
+That is worth more than a null result. If extending the block makes it strictly worse, the
+mechanic is not "prevent the action reaching the server" - something about *when* the block ends
+matters, and blocking longer is not a safer version of blocking.
+
+`--untick-ms` remains as an option and should not be recommended.
+
+### What is ruled out
+
+- Which packets pass - a total block behaves no better than the default pass list.
+- The resync - it never fires in a three-second sequence.
+- Hotkey latency - 1 ms polling made no difference.
+- Blocking past the release - actively harmful.
+
+### What is not
+
+Whether this is tool-controllable at all. The same trick is reported as inconsistent with a mature
+limiter, and nothing measured so far distinguishes an attempt that works from one that does not.
+Settling it would need a packet capture aligned to labelled trials across many attempts, and the
+honest possibility is that the variance lives in the game rather than in anything on the wire.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
