@@ -45,14 +45,14 @@ public class InstrumentationTests
     }
 
     [Fact]
-    public void A_request_after_a_window_expires_starts_a_new_resync()
+    public void A_request_after_the_cooldown_starts_a_new_resync()
     {
         var module = Module();
         module.IsActive = true;
 
         module.Decide(TestPackets.Outbound(3074, 128, 1.0));
-        module.Decide(TestPackets.Outbound(3074, 500, 5.0));   // expires the window
-        module.Decide(TestPackets.Outbound(3074, 128, 6.0));
+        module.Decide(TestPackets.Outbound(3074, 500, 5.0));    // window expires, blocking resumes
+        module.Decide(TestPackets.Outbound(3074, 128, 11.0));   // past the 5 s cooldown
 
         Assert.Equal(2, module.ResyncsStarted);
     }

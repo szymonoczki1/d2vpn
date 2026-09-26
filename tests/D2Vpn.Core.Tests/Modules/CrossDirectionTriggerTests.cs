@@ -73,17 +73,18 @@ public class CrossDirectionTriggerTests
     }
 
     [Fact]
-    public void A_repeated_request_extends_the_resync_rather_than_restarting_from_scratch()
+    public void A_repeated_request_does_not_extend_an_open_window()
     {
-        // The game asks repeatedly while unanswered, so each request pushes the window out.
+        // Requests arrive faster than a window lasts, so extending on each would mean the window
+        // never closes and the hold never blocks again.
         var module = Downlink();
         module.IsActive = true;
 
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0));
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 3.0));
 
-        // Would have expired at 4.5 from the first request alone.
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, Ordinary, 5.0)));
+        // Still expires 3.5 s after the request that opened it.
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 5.0)));
     }
 
     [Fact]

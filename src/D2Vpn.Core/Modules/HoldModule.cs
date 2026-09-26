@@ -124,12 +124,10 @@ public sealed class HoldModule : ITrafficModule
             && Options.ResyncTriggerLengths.Contains(packet.PayloadLength))
         {
             TriggersSeen++;
-            if (peer.State != HoldState.Resyncing)
+            if (peer.TryBeginResync(packet.Timestamp, Options))
             {
                 ResyncsStarted++;
             }
-
-            peer.BeginResync(packet.Timestamp, Options.ResyncDuration);
         }
 
         if (!HoldsDirection(packet.Direction))
@@ -211,14 +209,43 @@ public sealed class HoldModule : ITrafficModule
     private sealed class PeerHold
     {
         private DateTimeOffset _resyncEndsAt;
+        private DateTimeOffset _blockingSince = DateTimeOffset.MinValue;
 
         public HoldState State { get; private set; } = HoldState.Blocking;
 
-        /// <summary>Starts a resync, or extends one already running.</summary>
-        public void BeginResync(DateTimeOffset at, TimeSpan duration)
+        /// <summary>
+        /// Opens a resync window, unless this peer has not been blocked long enough yet.
+        /// </summary>
+        /// <returns><see langword="true"/> when a new window actually opened.</returns>
+        /// <remarks>
+        /// <para>
+        /// A window is a fixed length from the request that opened it, and requests arriving
+        /// inside it are counted but change nothing. Extending on each request looks reasonable -
+        /// the game is still asking, so the exchange has not finished - and is a trap: requests
+        /// arrive every couple of seconds while a hold is on, which is faster than the window
+        /// lasts, so an extendable window never closes and the module never blocks again.
+        /// </para>
+        /// <para>
+        /// A request during the cooldown is also ignored. Together these give a bounded cycle:
+        /// open for the window, then blocked for at least the cooldown.
+        /// </para>
+        /// </remarks>
+        public bool TryBeginResync(DateTimeOffset at, HoldModuleOptions options)
         {
+            if (State == HoldState.Resyncing)
+            {
+                return false;
+            }
+
+            if (_blockingSince != DateTimeOffset.MinValue
+                && at - _blockingSince < options.ResyncCooldown)
+            {
+                return false;
+            }
+
             State = HoldState.Resyncing;
-            _resyncEndsAt = at + duration;
+            _resyncEndsAt = at + options.ResyncDuration;
+            return true;
         }
 
         public PacketVerdict Decide(PacketInfo packet, HoldModuleOptions options)
@@ -231,6 +258,7 @@ public sealed class HoldModule : ITrafficModule
                 }
 
                 State = HoldState.Blocking;
+                _blockingSince = packet.Timestamp;
             }
 
             return options.PassLengths.Contains(packet.PayloadLength)

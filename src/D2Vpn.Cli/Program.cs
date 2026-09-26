@@ -412,7 +412,11 @@ static async Task<int> HoldAsync(string[] args)
     using var controller = new WinDivertTrafficController(module, priority);
     var run = controller.RunAsync(cts.Token);
 
-    long warmupInbound = 0;
+    // The corroborating signal lives in the direction that is NOT held. Blocking uplink makes the
+    // peer probe harder on downlink; blocking downlink makes the game retry harder on uplink.
+    // Watching the held direction measures the one stream guaranteed not to move - this tool sees
+    // every packet before dropping it, so its own counters never fall.
+    long warmupOpposite = 0;
     var engaged = false;
 
     while (!run.IsCompleted)
@@ -423,7 +427,7 @@ static async Task<int> HoldAsync(string[] args)
         if (!engaged && elapsed >= warmup)
         {
             engaged = true;
-            warmupInbound = controller.InboundSeen;
+            warmupOpposite = downlink ? controller.OutboundSeen : controller.InboundSeen;
             module.IsActive = true;
         }
         Console.Write($"\r{elapsed,5:N0}s/{seconds}s  "
@@ -451,12 +455,14 @@ static async Task<int> HoldAsync(string[] args)
     // in play. The game asking to reconnect means it noticed a peer went quiet; the peer sending
     // harder than usual means it noticed us. Either one alone is weak; together they settle it.
     var holdSeconds = Math.Max(1, seconds - warmup);
-    var baselineRate = warmup > 0 ? warmupInbound / (double)warmup : 0;
-    var holdRate = (controller.InboundSeen - warmupInbound) / (double)holdSeconds;
+    var oppositeSeen = downlink ? controller.OutboundSeen : controller.InboundSeen;
+    var oppositeLabel = downlink ? "uplink" : "downlink";
+    var baselineRate = warmup > 0 ? warmupOpposite / (double)warmup : 0;
+    var holdRate = (oppositeSeen - warmupOpposite) / (double)holdSeconds;
 
     Console.WriteLine();
-    Console.WriteLine($"downlink while idle     : {baselineRate,5:N1}/s");
-    Console.WriteLine($"downlink while holding  : {holdRate,5:N1}/s");
+    Console.WriteLine($"{oppositeLabel} while idle     : {baselineRate,5:N1}/s");
+    Console.WriteLine($"{oppositeLabel} while holding  : {holdRate,5:N1}/s");
 
     // A fired resync is decisive: the game only asks to reconnect when it has noticed a peer go
     // quiet. The downlink-rate check is a weaker corroborator - it did not move in a run where the
@@ -475,7 +481,9 @@ static async Task<int> HoldAsync(string[] args)
 
         if (baselineRate > 0 && holdRate > baselineRate * 1.25)
         {
-            Console.WriteLine("  - the peer sent harder than usual, probing for us");
+            Console.WriteLine(downlink
+                ? "  - the game sent harder than usual, retrying to reach its peers"
+                : "  - the peer sent harder than usual, probing for us");
         }
     }
     else

@@ -798,6 +798,51 @@ broken.
 
 ---
 
+## Validated: the downlink module, and why a timed resync was not enough
+
+First `d2vpn hold 3074 --downlink` against a live game.
+
+```
+UL 0/1145 dropped   DL 312/807 dropped   resyncs 6
+reconnect requests seen : 12
+safety timeout reached at 25s, module disabled
+```
+
+**What worked.** Uplink was untouched (0 of 1145), so the hold is correctly directional. The
+safety timeout fired on schedule. And the cross-direction trigger works: 12 requests seen and 6
+resyncs opened, with the module watching *outbound* 128/136 while blocking *inbound* - the design
+that Finding 20's withdrawal forced, never previously exercised.
+
+**What did not.** Only **39%** of downlink was dropped, and an object picked up during the hold
+registered instantly instead of deferring. Six windows of 3.5 s inside a 25 second hold is
+21 seconds open: the module was passing traffic for most of the time it claimed to be holding.
+
+### Finding 24 - a resync needs a cooldown, and must not be extendable
+
+The game asks to reconnect roughly every two seconds while it is held. Opening a window on every
+request leaves the module open almost permanently. The reference implementation does not behave
+this way: roughly one ~4 s resync per 16 s of holding (Finding 10).
+
+Two changes, the second found by a test written for the first:
+
+1. **A cooldown.** After a window closes, a peer must stay blocked for a minimum period before
+   another may open. Requests during it are counted and ignored.
+
+2. **A fixed window length.** Extending a window on each new request looks obviously right - the
+   game is still asking, so the exchange cannot have finished - and is a trap. Requests arrive
+   every ~2 s and the window lasts 3.5 s, so an extendable window is refreshed before it can
+   expire and **never closes at all**. A test simulating a persistent asker caught this
+   immediately; the live run had not, because the safety timeout ended the hold first.
+
+With a 3.5 s window and a 5 s cooldown the cycle is ~8.5 s, most of it blocking, which is close
+to the measured reference behaviour.
+
+**Still a timer.** This is a better-shaped approximation of what the reference does by detecting
+when an exchange actually completes. The remaining error is in how long a window should last, and
+the way to find out is to measure a real resync's duration rather than guess at 3.5 s.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

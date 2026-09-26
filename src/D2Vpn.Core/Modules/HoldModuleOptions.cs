@@ -76,6 +76,26 @@ public sealed record HoldModuleOptions
     public TimeSpan ResyncDuration { get; init; } = TimeSpan.FromSeconds(3.5);
 
     /// <summary>
+    /// How long a peer must stay blocked before another resync may open.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Without this a hold barely blocks anything. The game asks to reconnect every couple of
+    /// seconds while it is being held, and opening a window on every request leaves the module
+    /// open almost permanently: a measured downlink hold ran six resyncs of 3.5 s inside a
+    /// 25 second hold and dropped only 39% of traffic. An object picked up during it registered
+    /// instantly, because downlink was flowing for most of the hold.
+    /// </para>
+    /// <para>
+    /// The reference implementation does not behave that way - roughly one resync of ~4 s per
+    /// 16 s of holding. Requests arriving during the cooldown are counted but ignored, which
+    /// restores blocking stretches long enough to be worth something while still letting the
+    /// session re-establish often enough to survive.
+    /// </para>
+    /// </remarks>
+    public TimeSpan ResyncCooldown { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
     /// Force the module off after this long, or <see langword="null"/> for no limit.
     /// </summary>
     /// <remarks>
