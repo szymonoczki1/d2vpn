@@ -101,6 +101,12 @@ block / resync / block, and that is the shape this reproduces.
 The acceptance test needs no instrumentation: **hold for more than 30 seconds.** An error code
 means the resync is not working. No error code means it is.
 
+**So do not disarm it.** `--no-pass` is the right setting for a short sequence - it removes the
+standing pass list, the only thing that can leak in a hold of a second or two. `--no-resync` is a
+trap: a trigger size appears in about 0.4% of ordinary traffic, so an armed resync almost never
+fires inside a hold that short, while disarming it guarantees an error code in any hold that runs
+long. Running with neither a trigger nor a safety timeout now prints a warning saying so.
+
 State is per remote address because the game talks to several peers at once, each on its own tick,
 joining and leaving mid-session. Time comes from packet timestamps rather than a clock, so a whole
 hold can be driven through in a unit test with no driver and no game running.

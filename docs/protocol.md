@@ -1451,6 +1451,62 @@ place for them and the signal that this line of work is finished.
 
 ---
 
+## Finding 37 - the detach preset disarms the only thing that survives a long hold
+
+Reported symptom: a 3074 uplink hold error codes when held "a tiny bit longer". First hypothesis
+was the packet buffer, on the grounds that it was the most recent change. **Wrong, and refutable
+without a test** - the buffer only injects on the hold-to-release transition, so during a hold
+buffering and dropping are network-identical, and an error code that arrives *while still held*
+cannot have come from it.
+
+The answer was already in a session log from the previous evening:
+
+```
+config  group=3074 direction=Uplink pass=[(nothing)] resyncPass=[51, 174, ...]
+        triggers=[(nothing)] resyncMs=3500 cooldownMs=5000
+```
+
+`triggers=[(nothing)]` - `ResyncTriggerLengths` is empty, so `TryBeginResync` is never called.
+That run had no resync at all: a total, permanent uplink block with nothing renewing peer liveness.
+Every hold in the log is 2.5-3.6 s, so it never reached the ceiling. Held longer, it always will.
+
+That configuration is `--no-pass --no-resync`, which this project recommended on screen for short
+sequences. The recommendation was wrong in its second half.
+
+### `--no-resync` is unnecessary even for detach
+
+A resync only starts on an outbound packet of a trigger length. Measuring how often those occur in
+ordinary traffic:
+
+| Capture | Packets | `len=128` | `len=136` | Share |
+|---|---|---|---|---|
+| `detach-packets` | 4442 | 4 | 12 | **0.36%** |
+| `bm-packets` | 4062 | 2 | 0 | 0.05% |
+
+And they are not spread evenly. In `detach-packets` twelve of the sixteen fall between t=28.95 and
+t=35.03 - the reconnect-request storm at the 30 second mark, i.e. the ceiling being hit inside that
+very capture.
+
+So an armed resync almost never fires inside a three-second hold, and costs nothing when it does
+not. Disarming it buys a marginally more total block on short holds and guarantees an error code on
+long ones. **`--no-pass` alone is the right setting**: it removes the only thing that can leak
+during a short sequence while leaving the only thing that saves a long one.
+
+### Consequence
+
+The on-screen advice now recommends `--no-pass` alone, and a configuration with neither a resync
+trigger nor a safety timeout prints a warning naming the ~30 s ceiling up front. A tool that lets
+the operator select a configuration known to fail should say so at the point of selection, not
+leave it to be rediscovered in a session.
+
+### Procedural note
+
+This is the third time on this project that reasoning forward from the most recent change lost to a
+measurement that already existed. The log was on disk, unexamined, while a test plan was being
+written to rediscover what it said. Check the recorded evidence before designing an experiment.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

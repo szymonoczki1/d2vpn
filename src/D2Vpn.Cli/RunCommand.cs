@@ -203,12 +203,28 @@ internal static class RunCommand
         Console.WriteLine($"  safety limit : "
             + $"{(options.SafetyTimeout is { } t ? $"{t.TotalSeconds:N0}s" : "none")}");
         Console.WriteLine();
-        if (options.PassLengths.Count > 0 || options.ResyncTriggerLengths.Count > 0)
+        if (options.PassLengths.Count > 0)
         {
             Console.WriteLine("For sequences of a second or two - weapon swaps, bullet detach - the");
-            Console.WriteLine("game never has time to ask for a reconnect, so the resync never runs");
-            Console.WriteLine("and the standing pass list is the only thing that can leak. Try");
-            Console.WriteLine("--no-pass --no-resync there: a hold that short cannot hit the ceiling.");
+            Console.WriteLine("standing pass list is the only thing that can leak, so try --no-pass.");
+            Console.WriteLine("Leave the resync armed: a trigger size occurs in about 0.4% of");
+            Console.WriteLine("ordinary traffic, so it almost never fires inside a hold that short,");
+            Console.WriteLine("and it is the only thing that saves a hold that runs long.");
+            Console.WriteLine();
+        }
+
+        // The configuration that cannot survive. With no trigger there is no resync, so nothing
+        // renews peer liveness, and with no safety timeout nothing releases the hold before the
+        // game gives up on it. That combination reliably error codes at around 30 seconds - which
+        // is fine for a three-second sequence and a trap for anything longer, so say so up front
+        // rather than leaving it to be rediscovered mid-session.
+        if (options.ResyncTriggerLengths.Count == 0 && options.SafetyTimeout is null)
+        {
+            Console.WriteLine("WARNING: no resync trigger and no safety timeout.");
+            Console.WriteLine("  Nothing here keeps the peer alive during a hold, so expect an");
+            Console.WriteLine("  error code after roughly 30 seconds. That is fine for short");
+            Console.WriteLine("  sequences and fatal for long ones. Drop --no-resync to arm it,");
+            Console.WriteLine("  or set --timeout-s to release before the ceiling.");
             Console.WriteLine();
         }
 
