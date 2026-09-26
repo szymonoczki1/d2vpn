@@ -96,6 +96,23 @@ internal static class RunCommand
 
         var keyLabel = KeyName.Describe(toggleKey);
         var toggleCount = 0;
+        var holdStarted = DateTimeOffset.UtcNow;
+
+        controller.BufferDrained += (sent, took) =>
+        {
+            var ms = took.TotalMilliseconds;
+            session?.Write("drain", $"packets={sent} ms={ms:F1}");
+
+            // A drain is a window in which the receive loop is not reading, and the driver
+            // discards what it cannot queue meanwhile. If this number is large, a long hold is
+            // dangerous for that reason rather than because of what the backlog contained - and
+            // those two explanations need different fixes.
+            if (ms >= 50)
+            {
+                Console.WriteLine($"\n  drained {sent} packets in {ms:F0} ms"
+                    + "  <-- receive loop blocked this whole time");
+            }
+        };
 
         var marked = (Worked: 0, Failed: 0);
 
@@ -124,9 +141,26 @@ internal static class RunCommand
             }
 
             var active = module.Toggle();
-            session?.Write(active ? "hold" : "release");
-            Console.WriteLine($"\n[{DateTime.Now:HH:mm:ss}] {(active ? "HOLDING" : "released")}"
-                + $"  ({toggleCount} toggle{(toggleCount == 1 ? string.Empty : "s")})");
+
+            if (active)
+            {
+                holdStarted = DateTimeOffset.UtcNow;
+                session?.Write("hold");
+                Console.WriteLine($"\n[{DateTime.Now:HH:mm:ss}] HOLDING"
+                    + $"  ({toggleCount} toggle{(toggleCount == 1 ? string.Empty : "s")})");
+            }
+            else
+            {
+                // An error code arrives after a release, so the question is always which
+                // hold caused it. Without the duration on each one there is no telling a
+                // 3-second hold that was fine from the 20-second one that was not.
+                var lasted = DateTimeOffset.UtcNow - holdStarted;
+                session?.Write("release",
+                    $"heldFor={lasted.TotalSeconds:F2}s queued={buffer?.Count ?? 0}");
+                Console.WriteLine($"\n[{DateTime.Now:HH:mm:ss}] released after "
+                    + $"{lasted.TotalSeconds:F1}s, {buffer?.Count ?? 0} queued"
+                    + $"  ({toggleCount} toggle{(toggleCount == 1 ? string.Empty : "s")})");
+            }
         });
 
         if (session is not null)
@@ -231,6 +265,13 @@ internal static class RunCommand
             Console.WriteLine($"buffered : {controller.PacketsBuffered}, "
                 + $"replayed {controller.PacketsReplayed}, "
                 + $"evicted {buffer.Evicted}, expired {buffer.Expired}");
+        }
+
+        if (buffer is not null)
+        {
+            Console.WriteLine($"largest drain      : {controller.LargestDrain} packets");
+            Console.WriteLine($"slowest drain      : "
+                + $"{controller.SlowestDrain.TotalMilliseconds:F1} ms");
         }
 
         Console.WriteLine($"reconnect requests : {module.TriggersSeen}");

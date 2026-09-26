@@ -105,6 +105,25 @@ public sealed class WinDivertTrafficController : IDisposable
     /// </remarks>
     public event Action<PacketInfo>? PacketPassedWhileHolding;
 
+    /// <summary>
+    /// Raised after a drain, with how many packets went out and how long the drain took.
+    /// </summary>
+    /// <remarks>
+    /// The duration is the diagnostic, not the count. Every replayed packet is an await on the
+    /// same thread that receives, so a drain is a window in which nothing is being read - and the
+    /// driver queues what arrives meanwhile, then discards it if the queue fills. A long drain can
+    /// therefore cost live traffic on a connection that was otherwise healthy, which would make a
+    /// large backlog harmful for reasons that have nothing to do with the staleness of what is in
+    /// it. Surfacing both numbers is what separates those two explanations.
+    /// </remarks>
+    public event Action<int, TimeSpan>? BufferDrained;
+
+    /// <summary>Packets sent by the longest single drain so far.</summary>
+    public int LargestDrain { get; private set; }
+
+    /// <summary>How long the slowest single drain took.</summary>
+    public TimeSpan SlowestDrain { get; private set; }
+
     /// <summary>Opens a diverting handle for the module's port group.</summary>
     /// <param name="module">Decides each packet.</param>
     /// <param name="priority">
@@ -255,12 +274,16 @@ public sealed class WinDivertTrafficController : IDisposable
             return;
         }
 
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var sent = 0;
+
         foreach (var entry in _buffer.TakeForReplay(DateTimeOffset.UtcNow))
         {
             try
             {
                 await _divert.SendAsync(entry.Packet, entry.Address).ConfigureAwait(false);
                 PacketsReplayed++;
+                sent++;
             }
             catch
             {
@@ -272,6 +295,29 @@ public sealed class WinDivertTrafficController : IDisposable
                 entry.Dispose();
             }
         }
+
+        Report(sent, started.Elapsed);
+    }
+
+    /// <summary>Records and announces what a drain cost.</summary>
+    private void Report(int sent, TimeSpan took)
+    {
+        if (sent == 0)
+        {
+            return;
+        }
+
+        if (sent > LargestDrain)
+        {
+            LargestDrain = sent;
+        }
+
+        if (took > SlowestDrain)
+        {
+            SlowestDrain = took;
+        }
+
+        BufferDrained?.Invoke(sent, took);
     }
 
     /// <summary>
@@ -298,12 +344,16 @@ public sealed class WinDivertTrafficController : IDisposable
             return;
         }
 
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var sent = 0;
+
         foreach (var entry in _buffer.TakeDue(DateTimeOffset.UtcNow, delay))
         {
             try
             {
                 await _divert.SendAsync(entry.Packet, entry.Address).ConfigureAwait(false);
                 PacketsReplayed++;
+                sent++;
             }
             catch
             {
@@ -315,6 +365,8 @@ public sealed class WinDivertTrafficController : IDisposable
                 entry.Dispose();
             }
         }
+
+        Report(sent, started.Elapsed);
     }
 
     /// <summary>
