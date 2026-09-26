@@ -46,13 +46,13 @@ public class ResyncPassListTests
         module.IsActive = true;
 
         // Blocked before any window.
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 1258, 0.5)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 190, 0.5)));
 
         module.Decide(TestPackets.Outbound(3074, 128, 1.0));
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 1258, 1.5)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 190, 1.5)));
 
         // And blocked again once it closes.
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 1258, 5.0)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 190, 5.0)));
     }
 
     [Fact]

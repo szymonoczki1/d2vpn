@@ -104,11 +104,11 @@ public class HoldModuleTests
 
         Out(module, ReconnectRequest, 1.0);
 
-        // 1258 is on the resync list, so it crosses only while the window is open.
-        Assert.Equal(PacketVerdict.Pass, Out(module, 1258, 4.0));
+        // 190 is on the resync list only, so it crosses solely while the window is open.
+        Assert.Equal(PacketVerdict.Pass, Out(module, 190, 4.0));
 
         // Default resync is 3.5 s, so by 4.6 s it is over.
-        Assert.Equal(PacketVerdict.Drop, Out(module, 1258, 4.6));
+        Assert.Equal(PacketVerdict.Drop, Out(module, 190, 4.6));
         Assert.Equal(HoldState.Blocking, module.PeerStates.Values.Single());
     }
 
@@ -151,14 +151,14 @@ public class HoldModuleTests
 
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0));
 
-        // 1258 is on the resync list: it crosses for the resyncing peer and not for the other.
+        // 190 is on the resync list: it crosses for the resyncing peer and not for the other.
         Assert.Equal(
             PacketVerdict.Drop,
-            module.Decide(TestPackets.Outbound(3074, 1258, 1.5, other)));
+            module.Decide(TestPackets.Outbound(3074, 190, 1.5, other)));
 
         Assert.Equal(
             PacketVerdict.Pass,
-            module.Decide(TestPackets.Outbound(3074, 1258, 1.6)));
+            module.Decide(TestPackets.Outbound(3074, 190, 1.6)));
     }
 
     [Fact]

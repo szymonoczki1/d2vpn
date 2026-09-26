@@ -164,15 +164,22 @@ public static class MeasuredDefaults
     {
         PassLengths = new HashSet<int> { 36, 51, 128, 136, 233, 1166 },
 
-        // Validated at 96% blocked over a 60 second hold, with enemies killed during it
-        // reappearing every time - the server never learned of the kills. Replaces a resync that
-        // opened the gate entirely and blocked only 70%.
+        // Taken from what a reference limiter actually permits, rather than from what happened to
+        // be flowing. Capturing one of its uplink holds showed exactly 20 packets crossing in 30
+        // seconds, in three cycles of the same exchange:
         //
-        // The four large sizes are the uncertain part. They are big enough to carry game state,
-        // so if a kill ever travels at one of them it would pass. They have not been shown to be
-        // necessary, only sufficient: narrowing the list is the open work, and --resync-pass
-        // exists to do it.
-        ResyncPassLengths = new HashSet<int> { 51, 233, 720, 795, 1254, 1258 },
+        //   136, 128, 51, 1166, 238, 238
+        //   233, 51, 1166, 238
+        //   136, 128, 51, 1166, 198, 198, 190, 190, 206, 174
+        //
+        // An earlier list carried 720, 795, 1254 and 1258 - none of which the reference let out
+        // even once. Those were sizes observed crossing our own resync window, which opened
+        // fully, so they recorded what was flowing rather than what the exchange needs. They were
+        // also the largest, and therefore the likeliest to carry a kill through a hold.
+        //
+        // 206 and 238 do occur in ordinary traffic, so they are not risk-free; the reference
+        // passes them regardless, and the mechanic works with them passed.
+        ResyncPassLengths = new HashSet<int> { 51, 174, 190, 198, 206, 233, 238, 1166 },
         ResyncTriggerLengths = new HashSet<int> { 128, 136 },
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = null,

@@ -1061,6 +1061,61 @@ unit test asserting that every signature size still passes.
 
 ---
 
+## Measured: what a reference limiter actually lets out of an uplink hold
+
+A capture of BitcoinMiner holding uplink for 30 seconds with its own resync enabled. **Twenty
+packets crossed**, in three cycles of the same exchange:
+
+```
+t=31.4   136, 128, 51, 1166, 238, 238
+t=41.5   233, 51, 1166, 238
+t=51.2   136, 128, 51, 1166, 198, 198, 190, 190, 206, 174
+```
+
+The full permitted set: **51, 128, 136, 174, 190, 198, 206, 233, 238, 1166**.
+
+### Finding 31 - the resync list was recording the wrong thing
+
+d2vpn's uplink resync list was `51, 233, 720, 795, 1254, 1258`. Against the reference:
+
+| Size | Reference lets out? |
+|---|---|
+| 51, 233 | yes |
+| **720, 795, 1254, 1258** | **never, not once** |
+| 174, 190, 198, 206, 238 | yes - and d2vpn had none of them |
+
+The four large sizes came from watching *our own* resync window, which opens fully - so they
+recorded what happened to be flowing rather than what the exchange requires. Being the largest,
+they were also the likeliest to carry a kill through a hold, which is exactly the risk that
+prompted the question.
+
+This is the same error as Finding 26b, in the other direction. There, sizes were dismissed as
+resync artefacts when they were the handshake. Here, sizes were adopted as the handshake when
+they were artefacts. **A packet crossing an open gate says nothing about whether it needed to.**
+
+### The exchange, read from the capture
+
+```
+in  128      the peer asks
+OUT 136      answered 52 ms later
+OUT 128
+in   51
+OUT  51
+OUT 1166     the large data packet that completes it
+OUT 238
+```
+
+The peer initiates during an uplink hold, which is the mirror of a downlink hold and was not
+obvious: blocking uplink makes *us* go quiet, so the peer is the one that notices.
+
+### Caveat
+
+206 and 238 also occur in ordinary traffic - 45 and 22 times across 26 seconds of normal play -
+so passing them during a window is not risk-free. The reference passes them anyway and the
+mechanic works, so they are included, but they are the weakest part of the list.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

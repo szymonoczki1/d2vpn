@@ -85,12 +85,14 @@ public class SelectiveResyncTests
         module.Decide(TestPackets.Outbound(3074, Request, 1.0));
 
         Assert.NotNull(MeasuredDefaults.Peer3074.ResyncPassLengths);
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 1258, 1.5)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 190, 1.5)));
 
         // Ordinary game state stays blocked even with a window open - this is what stops a kill
-        // reaching the server.
+        // reaching the server. 1258 is among the sizes a previous list carried and the reference
+        // limiter never once let out.
         Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 478, 1.6)));
         Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 726, 1.7)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 1258, 1.8)));
     }
 
     [Fact]
