@@ -136,8 +136,15 @@ public static class MeasuredDefaults
     /// uplink's was identifiable.
     /// </para>
     /// <para>
-    /// So: no pass list, no resync, and a safety timeout doing the work instead. A nineteen-second
-    /// total block was survived in testing, but the ceiling is unmeasured.
+    /// So: no pass list, no resync, and a safety timeout doing the work instead. **Measured
+    /// ceiling: about 30 seconds before an error code**, the same limit an uplink hold hits when
+    /// its reconnect exchange is not being completed. The 25 second default leaves a small margin.
+    ///
+    /// What a downlink hold does in play: incoming world state stops arriving, so the client keeps
+    /// acting but never learns the result. Interacting with an object does not complete until the
+    /// hold is released, and buffs neither expire nor apply while it is on. The held state is not
+    /// lost - releasing replays it, which is the release dump showing up as a hundred packets in a
+    /// single second.
     /// </para>
     /// </remarks>
     public static HoldModuleOptions Peer3074Downlink { get; } = new()

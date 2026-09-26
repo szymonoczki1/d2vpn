@@ -646,7 +646,36 @@ it - the packets are destroyed before reaching us either way. Identifying a down
 need a capture from outside the block, which is a different experiment entirely.
 
 **Consequence.** The downlink module blocks outright, with a safety timeout instead of a resync.
-A 19-second total block was survived in testing; the ceiling is unmeasured.
+
+### Finding 22 - ~30 seconds is the game's timeout in either direction
+
+| Hold | Ceiling |
+|---|---|
+| Uplink, reconnect exchange completed | **none known** - over 20 minutes |
+| Uplink, exchange not completed | ~30 s |
+| Downlink | ~30 s |
+
+Downlink dies at the same point as an uplink hold whose exchange is never finished, which suggests
+~30 s is the game's own limit on an unacknowledged peer rather than anything specific to a
+direction. Note that during a downlink hold the client is still sending normally - so it is not
+that the peer stops hearing from us, it is that we stop confirming what it sends. Either way the
+clock runs out.
+
+That makes resync the only thing that lifts the ceiling: it resets that clock. Without it, every
+hold on this port is a ~30 second hold. The downlink default's 25 s timeout leaves a small margin
+under the measured limit.
+
+### Finding 23 - what a downlink hold does in play
+
+Incoming world state stops arriving, so the client keeps acting but never learns the result:
+
+- Interacting with an object does not complete until the hold is released.
+- Buffs neither expire nor apply while it is on.
+
+The held state is not discarded - releasing replays it, which is the release dump appearing as
+~99 packets in a single second. This is the mechanism a downlink hold is *for*, and it explains
+why the buffering seen in Finding 17b matters rather than being an implementation detail: the
+queued state is the point.
 
 ### Finding 21 - the settling after a release is not a hold
 
