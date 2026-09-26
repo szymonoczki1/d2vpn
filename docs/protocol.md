@@ -525,6 +525,75 @@ Analysis is now restricted to the span between a peer's first and last packet.
 
 ---
 
+## Measured: what a sniffing handle can and cannot see
+
+Three runs of the same downlink hold, changing only the WinDivert handle priority.
+
+| Priority | Downlink during a full-duration hold | Reading |
+|---|---|---|
+| **+1000** | flat 10/s for 57 s - **nothing at all** | this process sits *ahead* of the other limiter |
+| **0** | brief 2 s dips | in between |
+| **-1000** | **0/s for 41 s, 3% of normal** | this process sits *behind* it |
+
+### Finding 16 - the priority that observes a block depends on direction
+
+WinDivert handles occupy a fixed position in the network stack, and packets traverse that stack in
+opposite directions depending on whether they are inbound or outbound. A handle that is downstream
+for outbound is therefore upstream for inbound.
+
+A diverting handle that drops a packet removes it before anything downstream sees it. So to
+*observe* another tool's blocking, this process must sit downstream of it - and which priority
+achieves that flips with direction:
+
+| Direction | Priority that observes correctly |
+|---|---|
+| Uplink | **0** (already downstream) |
+| Downlink | **-1000** |
+
+This was not a subtle effect. At +1000 a twenty-second downlink hold produced a perfectly flat
+timeline, indistinguishable from a keypress that never registered. Anyone measuring downlink at
+the uplink's priority would conclude the module does not work.
+
+**Consequence for measurement.** `calibrate --downlink` now defaults to -1000, and `--priority`
+exists so the assumption can be re-tested when anything about the environment changes.
+
+**Consequence for d2vpn itself.** When d2vpn does the blocking rather than watching someone else
+do it, this stops being about observation and becomes about precedence: two limiters diverting the
+same ports will fight, and which one wins depends on this number. Another limiter must be fully
+exited, not merely idle.
+
+### Finding 17 - a downlink hold also cycles, and its signature differs from uplink's
+
+With a usable priority, downlink shows the same block / resync / block shape as uplink: five
+separate collapses across one continuous hold, full-rate traffic between them.
+
+Downlink signature from the clearest run (41 s held, downlink at 3% of normal): **51, 98, 233**,
+with 36 rejected as ordinary at 2.4x enrichment.
+
+Against the uplink signature of 36, 51, 128, 136, 233, 1166:
+
+- **51 and 233 appear in both.**
+- 98 is downlink-only.
+- 36, 128, 136 and 1166 are uplink-only - and 36 was explicitly *rejected* for downlink.
+
+So the two directions share part of a handshake and differ in the rest, which is what the design
+already assumed: neither signature can be derived from the other.
+
+**Confidence: low.** Only 16 downlink packets crossed in total, and 98 rests on a single packet.
+A second run at -1000 is needed before treating this as settled, and it is not yet shipped as a
+default.
+
+### Finding 18 - a peer sending one packet a second cannot be judged
+
+One run carried a peer at 1 packet/second that reported three separate holds. At that rate a quiet
+second and a held second are the same thing, so the "collapses" are noise and its packet sizes are
+not signature.
+
+Peers without a usable baseline are now excluded from the signature while still being listed, so
+the difference between a peer that was ignored and one that was never there stays visible.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

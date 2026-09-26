@@ -26,6 +26,19 @@ public sealed record CalibrationResult(
     /// <summary>Peers where a hold was found.</summary>
     public IReadOnlyList<PeerCalibration> HeldPeers => [.. Peers.Where(p => p.HoldDetected)];
 
+    /// <summary>
+    /// Held peers that also carried enough normal traffic for the hold to mean anything.
+    /// </summary>
+    /// <remarks>
+    /// A peer ticking over at a packet a second will show "collapses" constantly, because a
+    /// one-packet second and a zero-packet second are indistinguishable from a hold at that rate.
+    /// One measured run had a peer at 1/s report three separate holds while the peers that
+    /// mattered were running at ten times that. Sizes from such a peer are noise, so the signature
+    /// is drawn only from peers with a usable baseline.
+    /// </remarks>
+    public IReadOnlyList<PeerCalibration> ReliablePeers =>
+        [.. HeldPeers.Where(p => p.HasUsableBaseline)];
+
     /// <summary>True when at least one peer showed a collapse.</summary>
     public bool BlockDetected => HeldPeers.Count > 0;
 
@@ -43,7 +56,7 @@ public sealed record CalibrationResult(
     /// Every uplink payload size that crossed during a hold, before any filtering.
     /// </summary>
     public IReadOnlyList<int> AllLengthsDuringHold =>
-        [.. HeldPeers.SelectMany(p => p.Signature).Distinct().Order()];
+        [.. ReliablePeers.SelectMany(p => p.Signature).Distinct().Order()];
 
     /// <summary>
     /// The sizes a module should actually pass: those concentrated in the hold.
@@ -137,7 +150,7 @@ public sealed record CalibrationResult(
     private LengthHistogram Pool(Func<PeerCalibration, LengthHistogram> select)
     {
         var pooled = new LengthHistogram();
-        foreach (var peer in HeldPeers)
+        foreach (var peer in ReliablePeers)
         {
             var source = select(peer);
             foreach (var length in source.DistinctLengths)

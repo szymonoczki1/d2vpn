@@ -109,12 +109,12 @@ static PortGroup ResolveGroup(string[] args)
 /// blocking invisible, because we counted the packet before it was dropped. That is the leading
 /// explanation for why a downlink hold barely registered while an uplink hold was obvious.
 /// </remarks>
-static short PriorityOption(string[] args)
+static short PriorityOption(string[] args, short fallback = 0)
 {
     var i = Array.FindIndex(args, a => string.Equals(a, "--priority", StringComparison.OrdinalIgnoreCase));
     if (i < 0 || i + 1 >= args.Length)
     {
-        return 0;
+        return fallback;
     }
 
     // Parsed as int so an out-of-range value reports the range rather than failing to parse.
@@ -257,7 +257,13 @@ static async Task<int> CalibrateAsync(string[] args)
     var downlink = HasFlag(args, "--downlink");
     var direction = downlink ? PacketDirection.Inbound : PacketDirection.Outbound;
     var label = downlink ? "downlink" : "uplink";
-    var priority = PriorityOption(args);
+
+    // Measured: at +1000 a full-duration downlink hold was completely invisible - flat traffic
+    // throughout - while at -1000 the same hold showed downlink at 3% of normal for 41 seconds.
+    // Handles sit at a fixed position in the stack and packets traverse it in opposite directions,
+    // so the priority that puts this process downstream of another limiter differs by direction.
+    // Uplink already observes correctly at 0.
+    var priority = PriorityOption(args, downlink ? (short)-1000 : (short)0);
 
     if (!Elevation.RequireElevated())
     {
