@@ -241,6 +241,37 @@ public static class MeasuredDefaults
     };
 
     /// <summary>
+    /// UDP 3074 in both directions at once - the "full" variant of the module.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Blocks everything each way. The pass list is empty because a module carries one list for
+    /// whichever direction it holds, and the two directions need different ones - uplink's six
+    /// sizes describe what this machine must still be able to send, downlink's describe what the
+    /// peer must still be able to send to us. Applying either to both would pass the wrong traffic
+    /// in one direction, so a full hold passes nothing outside a resync.
+    /// </para>
+    /// <para>
+    /// Carries a safety timeout: a full block is unproven, and it cuts the reconnect exchange in
+    /// both directions at once. Use <c>--timeout-s 0</c> to test past the ~30 second ceiling
+    /// deliberately.
+    /// </para>
+    /// </remarks>
+    public static HoldModuleOptions Peer3074Full { get; } = new()
+    {
+        PassLengths = new HashSet<int>(),
+
+        // Downlink's handshake, as a starting point. Uplink's is not established, so a full hold
+        // may need more - override with --resync-pass.
+        ResyncPassLengths = new HashSet<int> { 51, 233 },
+        ResyncTriggerLengths = new HashSet<int> { 128, 136 },
+        ResyncTriggerDirection = PacketDirection.Outbound,
+        ResyncDuration = TimeSpan.FromSeconds(3.5),
+        SafetyTimeout = TimeSpan.FromSeconds(25),
+        Direction = HoldDirection.Both
+    };
+
+    /// <summary>
     /// The default options for a group and direction, or <see langword="null"/> if none are known.
     /// </summary>
     public static HoldModuleOptions? For(PortGroup group, HoldDirection direction = HoldDirection.Uplink)
@@ -251,6 +282,7 @@ public static class MeasuredDefaults
             {
                 HoldDirection.Uplink => Peer3074,
                 HoldDirection.Downlink => Peer3074Downlink,
+                HoldDirection.Both => Peer3074Full,
                 _ => null
             };
         }

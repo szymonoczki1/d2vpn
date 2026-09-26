@@ -102,9 +102,24 @@ public class MeasuredDefaultsTests
         Assert.Equal(PacketDirection.Outbound, MeasuredDefaults.Peer3074.EffectiveTriggerDirection);
     }
 
+    [Fact]
+    public void A_full_hold_passes_nothing_outside_a_resync()
+    {
+        // A module carries one pass list, and the two directions need different ones - uplink's
+        // describes what this machine must send, downlink's what the peer must send to us.
+        // Applying either to both would pass the wrong traffic one way, so a full hold passes
+        // nothing and carries a timeout while it is unproven.
+        var full = MeasuredDefaults.Peer3074Full;
+
+        Assert.Equal(HoldDirection.Both, full.Direction);
+        Assert.Empty(full.PassLengths);
+        Assert.NotNull(full.SafetyTimeout);
+    }
+
     [Theory]
     [InlineData(HoldDirection.Uplink)]
     [InlineData(HoldDirection.Downlink)]
+    [InlineData(HoldDirection.Both)]
     public void Defaults_declare_the_direction_they_describe(HoldDirection direction)
     {
         var options = MeasuredDefaults.For(DestinyPorts.Peer, direction);
@@ -119,6 +134,6 @@ public class MeasuredDefaultsTests
         Assert.Null(MeasuredDefaults.For(DestinyPorts.Players));
         Assert.Null(MeasuredDefaults.For(DestinyPorts.Api));
         Assert.Null(MeasuredDefaults.For(DestinyPorts.Instance, HoldDirection.Downlink));
-        Assert.Null(MeasuredDefaults.For(DestinyPorts.Peer, HoldDirection.Both));
+        Assert.Null(MeasuredDefaults.For(DestinyPorts.Instance, HoldDirection.Both));
     }
 }

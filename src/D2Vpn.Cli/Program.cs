@@ -53,8 +53,12 @@ static void PrintUsage()
     Console.WriteLine("      signatures: neither can be derived from the other.");
     Console.WriteLine();
     Console.WriteLine("  d2vpn hold <group> [--seconds N] [--warmup N] [--dry-run]");
-    Console.WriteLine("                     [--downlink] [--priority N] [--no-resync]");
+    Console.WriteLine("                     [--downlink | --full] [--priority N] [--no-resync]");
     Console.WriteLine("                     [--resync-ms N] [--cooldown-ms N] [--timeout-s N]");
+    Console.WriteLine("                     [--resync-pass A,B,C] [--no-pass]");
+    Console.WriteLine("      --no-resync stops resync windows opening; --no-pass clears the");
+    Console.WriteLine("      standing pass list. They are separate: uplink passes its handshake");
+    Console.WriteLine("      sizes even with resync off, so both are needed for a total block.");
     Console.WriteLine("      --timeout-s overrides the safety timeout; 0 removes it. Needed to");
     Console.WriteLine("      hold past the game's ~30s ceiling, which is the only way to tell a");
     Console.WriteLine("      working resync from a hold that was simply too short to fail.");
@@ -136,6 +140,41 @@ static short PriorityOption(string[] args, short fallback = 0)
     }
 
     return (short)value;
+}
+
+/// <summary>
+/// Reads a comma-separated set of payload sizes, for experimenting with a resync pass list.
+/// </summary>
+/// <remarks>
+/// Exposed because the handshake for a direction is found by trying candidates against a live
+/// game and seeing whether the session survives. Uplink's is not established: the sizes seen
+/// crossing its resync windows crossed because the window opens fully, which says what flowed
+/// through an open gate rather than what the exchange requires.
+/// </remarks>
+static IReadOnlySet<int>? LengthSetOption(string[] args, string name)
+{
+    var i = Array.FindIndex(args, a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
+    if (i < 0 || i + 1 >= args.Length)
+    {
+        return null;
+    }
+
+    var parts = args[i + 1].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    var set = new HashSet<int>();
+
+    foreach (var part in parts)
+    {
+        if (!int.TryParse(part, out var length) || length < 0)
+        {
+            throw new ArgumentException($"{name} takes payload sizes, e.g. --resync-pass 51,233");
+        }
+
+        set.Add(length);
+    }
+
+    return set.Count > 0
+        ? set
+        : throw new ArgumentException($"{name} needs at least one size.");
 }
 
 static bool HasFlag(string[] args, string name) =>
@@ -337,18 +376,29 @@ static async Task<int> HoldAsync(string[] args)
     var warmup = IntOption(args, "--warmup", 10);
     var dryRun = HasFlag(args, "--dry-run");
     var downlink = HasFlag(args, "--downlink");
+    var full = HasFlag(args, "--full");
     var noResync = HasFlag(args, "--no-resync");
+    var noPass = HasFlag(args, "--no-pass");
+
+    if (full && downlink)
+    {
+        throw new ArgumentException("--full already covers both directions; drop --downlink.");
+    }
     var timeoutSeconds = IntOption(args, "--timeout-s", -1, allowZero: true);
+    var resyncPass = LengthSetOption(args, "--resync-pass");
     var resyncMs = IntOption(args, "--resync-ms", 0);
     var cooldownMs = IntOption(args, "--cooldown-ms", 0);
     var priority = PriorityOption(args);
 
-    var heldDirection = downlink ? HoldDirection.Downlink : HoldDirection.Uplink;
+    var heldDirection = full
+        ? HoldDirection.Both
+        : downlink ? HoldDirection.Downlink : HoldDirection.Uplink;
     var options = MeasuredDefaults.For(group, heldDirection);
     if (options is null)
     {
+        var what = full ? "full" : downlink ? "downlink" : "uplink";
         throw new ArgumentException(
-            $"No {(downlink ? "downlink" : "uplink")} signature has been measured for {group}. "
+            $"No {what} signature has been measured for {group}. "
             + $"Run 'd2vpn calibrate {group.Name}{(downlink ? " --downlink" : string.Empty)}' first.");
     }
 
@@ -374,6 +424,15 @@ static async Task<int> HoldAsync(string[] args)
         Console.WriteLine();
     }
 
+    if (resyncPass is not null)
+    {
+        options = options with { ResyncPassLengths = resyncPass };
+        Console.WriteLine($"Resync will pass only: {string.Join(", ", resyncPass.Order())}");
+        Console.WriteLine("Everything else stays blocked even while a window is open. If the");
+        Console.WriteLine("session dies at ~30s, these are not the whole handshake.");
+        Console.WriteLine();
+    }
+
     if (resyncMs > 0)
     {
         options = options with { ResyncDuration = TimeSpan.FromMilliseconds(resyncMs) };
@@ -382,6 +441,15 @@ static async Task<int> HoldAsync(string[] args)
     if (cooldownMs > 0)
     {
         options = options with { ResyncCooldown = TimeSpan.FromMilliseconds(cooldownMs) };
+    }
+
+    if (noPass)
+    {
+        // The standing pass list is separate from the resync. Uplink keeps passing its six
+        // handshake sizes even with resync disabled, so --no-resync alone is not a total block.
+        options = options with { PassLengths = new HashSet<int>() };
+        Console.WriteLine("PASS LIST CLEARED - nothing crosses outside a resync window.");
+        Console.WriteLine();
     }
 
     if (noResync)
@@ -410,9 +478,13 @@ static async Task<int> HoldAsync(string[] args)
 
     if (options.PassLengths.Count == 0)
     {
-        Console.WriteLine("NOTE: this direction has no pass list, so it blocks outright.");
-        Console.WriteLine("For 3074 downlink that is deliberate - measurement showed nothing needs");
-        Console.WriteLine("to cross. Elsewhere it means the group has not been calibrated.");
+        Console.WriteLine("NOTE: nothing is passed outside a resync window, so this blocks outright.");
+        Console.WriteLine(full
+            ? "For a full hold that is deliberate: one pass list cannot serve both directions,"
+            : "For 3074 downlink that is deliberate - measurement showed nothing needs to cross,");
+        Console.WriteLine(full
+            ? "since each needs a different one. Elsewhere it means no calibration has been done."
+            : "and the handshake crosses during a resync instead.");
         Console.WriteLine();
     }
 
@@ -485,7 +557,9 @@ static async Task<int> HoldAsync(string[] args)
         {
             engaged = true;
             warmupOpposite = downlink ? controller.OutboundSeen : controller.InboundSeen;
-            warmupHeld = downlink ? controller.InboundSeen : controller.OutboundSeen;
+            warmupHeld = full
+                ? controller.InboundSeen + controller.OutboundSeen
+                : downlink ? controller.InboundSeen : controller.OutboundSeen;
             module.IsActive = true;
         }
         Console.Write($"\r{elapsed,5:N0}s/{seconds}s  "
@@ -509,9 +583,13 @@ static async Task<int> HoldAsync(string[] args)
     Console.WriteLine($"reconnect requests seen : {triggersSeen}");
     Console.WriteLine($"resync windows started  : {resyncsStarted}");
 
-    var heldDropped = downlink ? controller.InboundDropped : controller.OutboundDropped;
-    var heldSeen = downlink ? controller.InboundSeen : controller.OutboundSeen;
-    var heldDuringHold = heldSeen - (downlink ? warmupHeld : warmupHeld);
+    var heldDropped = full
+        ? controller.InboundDropped + controller.OutboundDropped
+        : downlink ? controller.InboundDropped : controller.OutboundDropped;
+    var heldSeen = full
+        ? controller.InboundSeen + controller.OutboundSeen
+        : downlink ? controller.InboundSeen : controller.OutboundSeen;
+    var heldDuringHold = heldSeen - warmupHeld;
     if (heldDuringHold > 0)
     {
         // Warmup passes everything, so a whole-run percentage understates how tight the hold was.
@@ -535,9 +613,18 @@ static async Task<int> HoldAsync(string[] args)
     var baselineRate = warmup > 0 ? warmupOpposite / (double)warmup : 0;
     var holdRate = (oppositeSeen - warmupOpposite) / (double)holdSeconds;
 
-    Console.WriteLine();
-    Console.WriteLine($"{oppositeLabel} while idle     : {baselineRate,5:N1}/s");
-    Console.WriteLine($"{oppositeLabel} while holding  : {holdRate,5:N1}/s");
+    if (!full)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"{oppositeLabel} while idle     : {baselineRate,5:N1}/s");
+        Console.WriteLine($"{oppositeLabel} while holding  : {holdRate,5:N1}/s");
+    }
+    else
+    {
+        // Both directions are held, so there is no unheld one to read a reaction from. Reconnect
+        // requests are the only signal left, and they are the reliable one anyway.
+        baselineRate = 0;
+    }
 
     // A fired resync is decisive: the game only asks to reconnect when it has noticed a peer go
     // quiet. The downlink-rate check is a weaker corroborator - it did not move in a run where the
