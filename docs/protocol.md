@@ -1020,6 +1020,47 @@ minimum, watching the blocked percentage.
 
 ---
 
+## Validated: the uplink module, selectively
+
+```
+d2vpn hold 3074 --seconds 70 --warmup 10 --timeout-s 0 --resync-pass 51,233,720,795,1254,1258
+
+UL 555/785 dropped   DL 0/465 dropped   resyncs 4
+reconnect requests seen : 59
+blocked while holding   : 96% of 580 packets
+```
+
+Sixty seconds, no error code, and enemies killed during the hold **reappeared every time** - the
+server never learned of the kills. Both directions on 3074 now block ~96% while keeping the
+session alive.
+
+### Finding 29 - uplink needs more than its handshake, and a narrower list is open work
+
+Uplink went from 70% blocked to 96% by passing a named list during a resync instead of opening the
+gate. The list is `51, 233, 720, 795, 1254, 1258`.
+
+**These are sufficient, not established as necessary.** They are the sizes seen crossing a
+fully-open resync window, so they include whatever happened to be flowing as well as whatever the
+exchange requires. The four large ones are the uncertain part: big enough to carry game state, so
+if a kill ever travels at one of them it would pass. Narrowing the list while keeping the session
+alive is the remaining work, and `--resync-pass` is how to do it.
+
+Notably, 59 reconnect requests produced only 4 resync windows - the cooldown ignoring the rest -
+and the session survived anyway. The exchange does not need every request answered.
+
+### Finding 30 - a resync list replaces nothing; it adds
+
+The standing pass list must keep applying while a window is open. Treating the resync list as a
+replacement meant a reconnect request **opened a window and was then dropped by it**, because
+128 is on the standing list and not the resync one - so the request never reached the peer it was
+meant to reach.
+
+The live run still worked, because windows are short and the request crossed freely outside them,
+which is exactly the kind of bug that survives a passing test in production. It was found by a
+unit test asserting that every signature size still passes.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

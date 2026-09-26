@@ -42,12 +42,14 @@ public class HoldModuleTests
     [Fact]
     public void While_holding_the_signature_sizes_still_pass()
     {
-        // Blocking these kills the session. They are the whole technique.
-        var module = Module();
-        module.IsActive = true;
-
+        // Blocking these kills the session. They are the whole technique. Each is checked on a
+        // fresh module because two of them are resync triggers, and a module already resyncing
+        // judges by the resync list rather than the standing one.
         foreach (var length in MeasuredDefaults.Peer3074.PassLengths)
         {
+            var module = Module();
+            module.IsActive = true;
+
             Assert.Equal(PacketVerdict.Pass, Out(module, length, 0));
         }
     }
@@ -87,10 +89,11 @@ public class HoldModuleTests
         Assert.Equal(PacketVerdict.Pass, Out(module, ReconnectRequest, 1.0));
         Assert.Equal(HoldState.Resyncing, module.PeerStates.Values.Single());
 
-        // Everything passes while the exchange completes, ordinary game state included.
-        Assert.Equal(PacketVerdict.Pass, Out(module, Ordinary, 1.5));
+        // The handshake completes while the window is open; ordinary game state does not, which
+        // is what stops a kill reaching the server during an uplink hold.
         Assert.Equal(PacketVerdict.Pass, Out(module, HandshakeReply, 2.0));
         Assert.Equal(PacketVerdict.Pass, Out(module, DataPacket, 3.0));
+        Assert.Equal(PacketVerdict.Drop, Out(module, Ordinary, 1.5));
     }
 
     [Fact]
@@ -100,10 +103,12 @@ public class HoldModuleTests
         module.IsActive = true;
 
         Out(module, ReconnectRequest, 1.0);
-        Assert.Equal(PacketVerdict.Pass, Out(module, Ordinary, 4.0));
+
+        // 1258 is on the resync list, so it crosses only while the window is open.
+        Assert.Equal(PacketVerdict.Pass, Out(module, 1258, 4.0));
 
         // Default resync is 3.5 s, so by 4.6 s it is over.
-        Assert.Equal(PacketVerdict.Drop, Out(module, Ordinary, 4.6));
+        Assert.Equal(PacketVerdict.Drop, Out(module, 1258, 4.6));
         Assert.Equal(HoldState.Blocking, module.PeerStates.Values.Single());
     }
 
@@ -145,13 +150,15 @@ public class HoldModuleTests
         var other = TestPackets.OtherPeer;
 
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0));
+
+        // 1258 is on the resync list: it crosses for the resyncing peer and not for the other.
         Assert.Equal(
             PacketVerdict.Drop,
-            module.Decide(TestPackets.Outbound(3074, Ordinary, 1.5, other)));
+            module.Decide(TestPackets.Outbound(3074, 1258, 1.5, other)));
 
         Assert.Equal(
             PacketVerdict.Pass,
-            module.Decide(TestPackets.Outbound(3074, Ordinary, 1.6)));
+            module.Decide(TestPackets.Outbound(3074, 1258, 1.6)));
     }
 
     [Fact]

@@ -163,6 +163,16 @@ public static class MeasuredDefaults
     public static HoldModuleOptions Peer3074 { get; } = new()
     {
         PassLengths = new HashSet<int> { 36, 51, 128, 136, 233, 1166 },
+
+        // Validated at 96% blocked over a 60 second hold, with enemies killed during it
+        // reappearing every time - the server never learned of the kills. Replaces a resync that
+        // opened the gate entirely and blocked only 70%.
+        //
+        // The four large sizes are the uncertain part. They are big enough to carry game state,
+        // so if a kill ever travels at one of them it would pass. They have not been shown to be
+        // necessary, only sufficient: narrowing the list is the open work, and --resync-pass
+        // exists to do it.
+        ResyncPassLengths = new HashSet<int> { 51, 233, 720, 795, 1254, 1258 },
         ResyncTriggerLengths = new HashSet<int> { 128, 136 },
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = null,

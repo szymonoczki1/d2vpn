@@ -77,15 +77,26 @@ public class SelectiveResyncTests
     }
 
     [Fact]
-    public void Uplink_still_opens_the_gate_fully_because_its_handshake_is_not_pinned_down()
+    public void Uplink_also_answers_the_handshake_rather_than_opening_the_gate()
     {
-        // Many sizes were seen crossing an uplink resync - 1254, 1258, 720, 795 - so no short list
-        // is established there, and uplink is validated as it stands.
+        // Validated at 96% blocked over 60 seconds, with kills failing to register.
         var module = new HoldModule("3074 UL", DestinyPorts.Peer, MeasuredDefaults.Peer3074);
         module.IsActive = true;
         module.Decide(TestPackets.Outbound(3074, Request, 1.0));
 
-        Assert.Null(MeasuredDefaults.Peer3074.ResyncPassLengths);
+        Assert.NotNull(MeasuredDefaults.Peer3074.ResyncPassLengths);
         Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 1258, 1.5)));
+
+        // Ordinary game state stays blocked even with a window open - this is what stops a kill
+        // reaching the server.
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 478, 1.6)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 726, 1.7)));
+    }
+
+    [Fact]
+    public void Both_directions_now_answer_the_handshake()
+    {
+        Assert.NotNull(MeasuredDefaults.Peer3074.ResyncPassLengths);
+        Assert.NotNull(MeasuredDefaults.Peer3074Downlink.ResyncPassLengths);
     }
 }

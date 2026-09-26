@@ -7,10 +7,11 @@ port groups. Built on measurements taken from live traffic rather than on inheri
 see [docs/protocol.md](docs/protocol.md).
 
 > **Status: both 3074 modules work.** Uplink and downlink are each validated end to end against a
-> live game, past the ~30 s ceiling a hold without a working resync dies at. Downlink blocks 96%
-> of traffic over a 60 second hold while keeping the session alive, and defers an interaction
-> until release. The other three port groups are unmeasured. What follows describes what exists
-> today, not what is planned.
+> live game - 96% of traffic blocked over a 60 second hold, twice the ~30 s ceiling a hold without
+> a working resync dies at, with the in-game effect confirmed both ways: a downlink hold defers an
+> interaction until release, and an uplink hold stops the server learning about a kill. The other
+> three port groups are unmeasured. What follows describes what exists today, not what is
+> planned.
 
 ## Why calibration is the centrepiece
 

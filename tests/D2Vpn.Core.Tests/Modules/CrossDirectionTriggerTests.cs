@@ -101,11 +101,12 @@ public class CrossDirectionTriggerTests
         var module = new HoldModule("3074 UL", DestinyPorts.Peer, MeasuredDefaults.Peer3074);
         module.IsActive = true;
 
-        // An inbound packet of trigger size must not start a resync on an uplink hold.
+        // An inbound packet of trigger size must not start a resync on an uplink hold. 1258 is on
+        // uplink's resync list, so it crosses only once a window is genuinely open.
         module.Decide(TestPackets.Inbound(3074, ReconnectRequest, 1.0));
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 500, 1.5)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, 1258, 1.5)));
 
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 2.0));
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 500, 2.5)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 1258, 2.5)));
     }
 }

@@ -68,8 +68,12 @@ public class HoldDirectionTests
 
         Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
         Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 128, 1.0)));
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, Ordinary, 2.0)));
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 5.0)));
+
+        // 1258 is on the resync list only, so it tracks the window exactly. 233 would not work
+        // here: it is also on the standing pass list and so crosses either way.
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 1258, 2.0)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 2.1)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 1258, 5.0)));
     }
 
     [Fact]

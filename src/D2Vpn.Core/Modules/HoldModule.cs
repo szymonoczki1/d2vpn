@@ -257,8 +257,15 @@ public sealed class HoldModule : ITrafficModule
                     // A resync that stops blocking entirely defeats the hold: one packet is enough
                     // to carry a pickup or a buff. Where the handshake sizes are known, only they
                     // cross and the block stays total for everything else.
+                    //
+                    // The standing pass list still applies. It was briefly overridden here, which
+                    // meant a reconnect request opened a window and was then dropped by it - the
+                    // request never reaching the peer it was meant to reach.
                     return options.ResyncPassLengths is { } allowed
-                        ? allowed.Contains(packet.PayloadLength) ? PacketVerdict.Pass : PacketVerdict.Drop
+                        ? allowed.Contains(packet.PayloadLength)
+                          || options.PassLengths.Contains(packet.PayloadLength)
+                            ? PacketVerdict.Pass
+                            : PacketVerdict.Drop
                         : PacketVerdict.Pass;
                 }
 
