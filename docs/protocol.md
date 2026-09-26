@@ -1176,19 +1176,20 @@ dropped across the holds, with nothing on any pass list - and the trick still on
 So for this sequence the packets crossing are not the variable. Something else decides whether it
 works.
 
-### The likely cause: what leaves after the key comes up
+### One hypothesis, untested
 
-The game batches what the player did and sends it on its next tick, at roughly 10-20 per second.
-An action taken shortly before releasing therefore leaves on a packet that goes out shortly
-*after* releasing - by which point the block is gone and it attributes normally. Three shots fired
-inside three seconds puts the last one squarely in that window.
+The game may batch what the player did and send it on its next tick, at roughly 10-20 per second.
+If so, an action taken shortly before releasing leaves on a packet that goes out shortly *after*,
+when the block is already gone. Three shots inside three seconds would put the last one in that
+window.
 
-A reference limiter carries exactly this idea in its configuration: `UntickDelay`, set to 500 ms
-for weapon swaps and 2000 ms for damage. It keeps blocking past the keypress. That is a strong
-hint the effect is real and known, and it is a plausible reason the same trick is more consistent
-there.
+`--untick-ms` keeps blocking past the keypress so this can be tested. **It has not been shown to
+help**, and the hypothesis is a guess about timing, not something measured.
 
-`--untick-ms` does the same here.
+A previous version of this section claimed a reference limiter does the same thing via an
+`UntickDelay` setting. That was wrong: `UntickDelay` belongs to its Swap and Damage macro modules
+and governs how long the macro leaves a module ticked, not whether blocking continues past a
+release. Reading intent off a configuration key is not evidence.
 
 ### A diagnostic that diagnosed nothing
 
