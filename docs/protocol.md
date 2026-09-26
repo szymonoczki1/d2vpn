@@ -586,8 +586,9 @@ Against the uplink signature of 36, 51, 128, 136, 233, 1166:
 So the two directions share part of a handshake and differ in the rest, which is what the design
 already assumed: neither signature can be derived from the other.
 
-**Confidence: good for the pass list, none for the trigger.** `51, 233` is reproduced and shipped
-as the downlink default. What is *not* known is which of them - if either - is the reconnect
+**Superseded by Finding 19.** `51, 233` reproduced across two runs and was briefly shipped as the
+downlink pass list, but both runs had resync enabled. With resync disabled, downlink passes
+nothing at all - so these are resync-window traffic rather than packets the session requires. What is *not* known is which of them - if either - is the reconnect
 request that should start a resync. Uplink's 128 and 136 were identified by holding with a
 reference limiter's own resync disabled and watching which packet the game repeated at 3-4/s; the
 equivalent downlink run has not been done. Until it is, the downlink defaults carry no resync
@@ -611,6 +612,51 @@ not signature.
 
 Peers without a usable baseline are now excluded from the signature while still being listed, so
 the difference between a peer that was ignored and one that was never there stays visible.
+
+---
+
+## Measured: downlink has no pass list, and cannot be probed the way uplink was
+
+Same experiment that identified uplink's reconnect request - hold with a reference limiter's
+`AutoResync` disabled - run against downlink.
+
+### Finding 19 - with resync off, a downlink hold passes nothing at all
+
+Nineteen seconds, both peers, **zero packets**. Not a reduced rate: an empty timeline. Then a
+release dump of 99 and 97 packets in a single second.
+
+With resync on, the same hold cycled through three collapses and 51 and 233 crossed. With it off,
+nothing crosses. Packets genuinely required to keep the session alive would have crossed either
+way, so **51 and 233 are resync-window traffic, not a pass list**.
+
+An earlier revision shipped them as the downlink signature. That was wrong, and this run is what
+caught it. The downlink defaults now carry an empty pass list.
+
+### Finding 20 - downlink's resync trigger is not discoverable from this machine
+
+The uplink trigger was found because blocking uplink stops packets *the game is sending*: its
+retries originate locally, and 128/136 repeating at 3-4/s were impossible to miss.
+
+Blocking downlink stops packets *the peer is sending*. The peer's retries are dropped upstream of
+any observer on this machine, so there is nothing to see. **We cannot observe what we are
+blocking.**
+
+This is a property of where a sniffer can stand, not a gap in the method, and no priority fixes
+it - the packets are destroyed before reaching us either way. Identifying a downlink trigger would
+need a capture from outside the block, which is a different experiment entirely.
+
+**Consequence.** The downlink module blocks outright, with a safety timeout instead of a resync.
+A 19-second total block was survived in testing; the ceiling is unmeasured.
+
+### Finding 21 - the settling after a release is not a hold
+
+The same run produced two phantom windows, at s31-33 and s58-59, immediately after the release
+dumps. Draining a buffer leaves traffic briefly below normal while it recovers, which looks exactly
+like a shallow collapse - and those windows contributed 36, 42 and 51 to a signature, none of which
+belonged there.
+
+A collapse beginning immediately after a burst more than twice baseline is now treated as the tail
+of a release rather than a new hold.
 
 ---
 

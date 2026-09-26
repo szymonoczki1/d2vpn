@@ -159,10 +159,20 @@ public readonly record struct StreamAnalysis(double BaselineRate, IReadOnlyList<
         var perBucketLimit = baselineRate * options.BucketTolerance * bucketSeconds;
         var meanLimit = baselineRate * options.CollapseThreshold;
 
+        var burstLimit = baselineRate * options.ReleaseBurstFactor * bucketSeconds;
+
         void Accept(int start, int end)
         {
             var length = end - start + 1;
             if (length < options.MinimumCollapsedBuckets)
+            {
+                return;
+            }
+
+            // A collapse opening right after a release burst is the tail of that release settling,
+            // not a new hold. Without this, draining a buffer manufactures a phantom hold whose
+            // sizes then enter the signature.
+            if (start > 0 && counts[start - 1] > burstLimit)
             {
                 return;
             }

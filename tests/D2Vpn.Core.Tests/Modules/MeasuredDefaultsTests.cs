@@ -10,34 +10,25 @@ namespace D2Vpn.Core.Tests.Modules;
 public class MeasuredDefaultsTests
 {
     [Fact]
-    public void Uplink_and_downlink_signatures_are_different_sets()
+    public void Uplink_ships_a_measured_pass_list()
     {
-        // Neither can be derived from the other: uplink is what this machine must still be able to
-        // send, downlink is what the peer must still be able to send to us.
-        var up = MeasuredDefaults.Peer3074.PassLengths;
-        var down = MeasuredDefaults.Peer3074Downlink.PassLengths;
-
-        Assert.NotEqual(up.Order(), down.Order());
-        Assert.Equal([36, 51, 128, 136, 233, 1166], up.Order());
-        Assert.Equal([51, 233], down.Order());
+        Assert.Equal([36, 51, 128, 136, 233, 1166], MeasuredDefaults.Peer3074.PassLengths.Order());
     }
 
     [Fact]
-    public void The_two_directions_share_part_of_a_handshake()
+    public void Downlink_ships_no_pass_list_because_nothing_is_known_to_need_passing()
     {
-        var shared = MeasuredDefaults.Peer3074.PassLengths
-            .Intersect(MeasuredDefaults.Peer3074Downlink.PassLengths)
-            .Order();
-
-        Assert.Equal([51, 233], shared);
+        // Two runs with a reference limiter's resync enabled showed 51 and 233 crossing, and an
+        // earlier version shipped them. A third run with that resync disabled passed nothing at
+        // all for nineteen seconds, so those sizes were resync-window traffic, not a pass list.
+        // Inventing a pass list from them would tell a module to leak packets for no reason.
+        Assert.Empty(MeasuredDefaults.Peer3074Downlink.PassLengths);
     }
 
     [Fact]
-    public void Thirty_six_is_uplink_only_and_was_rejected_for_downlink()
+    public void A_direction_with_no_pass_list_still_declares_its_direction()
     {
-        // Measured at 2.4x enrichment on downlink, which is ordinary traffic rather than signature.
-        Assert.Contains(36, MeasuredDefaults.Peer3074.PassLengths);
-        Assert.DoesNotContain(36, MeasuredDefaults.Peer3074Downlink.PassLengths);
+        Assert.Equal(HoldDirection.Downlink, MeasuredDefaults.Peer3074Downlink.Direction);
     }
 
     [Fact]

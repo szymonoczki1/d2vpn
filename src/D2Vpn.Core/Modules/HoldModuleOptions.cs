@@ -117,26 +117,32 @@ public static class MeasuredDefaults
     };
 
     /// <summary>
-    /// UDP 3074 downlink, reproduced across two runs at a handle priority that can observe it.
+    /// UDP 3074 downlink. Blocks outright, because nothing is known to need passing.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A different signature from the uplink one, as expected: an uplink pass list is what this
-    /// machine must still be able to send, a downlink one is what the peer must still be able to
-    /// send to us. 51 and 233 appear in both; 36, 128, 136 and 1166 are uplink-only, and 36 was
-    /// explicitly rejected here as ordinary traffic.
+    /// The pass list is deliberately empty. Two runs with a reference limiter's resync enabled
+    /// showed 51 and 233 crossing during held windows, and an earlier version of this shipped them
+    /// as a signature. A third run with that resync <em>disabled</em> contradicted it: downlink
+    /// passed <b>nothing at all</b> for nineteen straight seconds on both peers. Packets that were
+    /// genuinely required to keep the session alive would have crossed regardless, so 51 and 233
+    /// are resync-window traffic rather than a pass list.
     /// </para>
     /// <para>
-    /// <b>The resync trigger is unmeasured.</b> For uplink, 128 and 136 were identified as the
-    /// reconnect request by holding with a reference limiter's own resync disabled and watching
-    /// which packet the game repeated. The equivalent run has not been done for downlink, so
-    /// nothing here starts a resync and a hold will eventually stall the way an uplink hold does
-    /// without one - hence the safety timeout. Remove it once the trigger is known.
+    /// The asymmetry with uplink has a cause. Blocking uplink stops packets the game is sending,
+    /// so its retries originate locally and are visible; blocking downlink stops packets the peer
+    /// is sending, and the peer's retries are dropped upstream of any observer on this machine. We
+    /// cannot see what we are blocking, which is also why the resync trigger is unknown here while
+    /// uplink's was identifiable.
+    /// </para>
+    /// <para>
+    /// So: no pass list, no resync, and a safety timeout doing the work instead. A nineteen-second
+    /// total block was survived in testing, but the ceiling is unmeasured.
     /// </para>
     /// </remarks>
     public static HoldModuleOptions Peer3074Downlink { get; } = new()
     {
-        PassLengths = new HashSet<int> { 51, 233 },
+        PassLengths = new HashSet<int>(),
         ResyncTriggerLengths = new HashSet<int>(),
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = TimeSpan.FromSeconds(25),

@@ -103,6 +103,18 @@ public sealed record CalibrationOptions
     /// </remarks>
     public PacketDirection Direction { get; init; } = PacketDirection.Outbound;
 
+    /// <summary>
+    /// How far above normal a bucket must be to count as a release burst.
+    /// </summary>
+    /// <remarks>
+    /// Releasing a hold drains the buffer as one instantaneous dump - measured at 99 packets in a
+    /// second against a 10/s baseline - and traffic takes a moment to settle afterwards. That
+    /// settling looks exactly like a shallow collapse, and in one run it produced two phantom
+    /// holds whose packet sizes then polluted the signature. A collapse that begins immediately
+    /// after a burst this large is the tail of a release, not a new hold.
+    /// </remarks>
+    public double ReleaseBurstFactor { get; init; } = 2.0;
+
     /// <summary>The defaults.</summary>
     public static CalibrationOptions Default { get; } = new();
 }
