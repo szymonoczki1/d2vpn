@@ -37,8 +37,14 @@ internal sealed class HotkeyWatcher : IDisposable
     public event Action<string>? KeyPressed;
 
     /// <summary>Creates a watcher polling at <paramref name="interval"/>.</summary>
+    /// <remarks>
+    /// Default 1 ms. Some uses are frame-precise - a bullet is detached from its shooter by
+    /// holding uplink, swapping weapon and firing inside about two seconds - and at 60 fps an 8 ms
+    /// poll is half a frame of slop at each end of a sequence that short. One P/Invoke per key per
+    /// millisecond is not measurable next to a game.
+    /// </remarks>
     public HotkeyWatcher(TimeSpan? interval = null) =>
-        _interval = interval ?? TimeSpan.FromMilliseconds(8);
+        _interval = interval ?? TimeSpan.FromMilliseconds(1);
 
     /// <summary>Binds an action to a virtual-key code.</summary>
     public void Bind(int virtualKey, Action onPressed)

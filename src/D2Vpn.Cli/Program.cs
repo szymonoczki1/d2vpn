@@ -846,7 +846,8 @@ static async Task<int> RunAsync(string[] args)
     using var sigint = SetupInterrupt(cts);
 
     return await RunCommand.ExecuteAsync(
-        group, options, toggleKey, priority, HasFlag(args, "--log-passed"), cts.Token);
+        group, options, toggleKey, priority, HasFlag(args, "--log-passed"),
+        IntOption(args, "--poll-ms", 1), cts.Token);
 }
 
 static string? StringOption(string[] args, string name)

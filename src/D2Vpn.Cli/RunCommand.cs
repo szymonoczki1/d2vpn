@@ -25,6 +25,7 @@ internal static class RunCommand
         int toggleKey,
         short priority,
         bool logPassed,
+        int pollMs,
         CancellationToken cancellationToken)
     {
         var module = new HoldModule(group.Name, group, options);
@@ -32,7 +33,7 @@ internal static class RunCommand
             Console.WriteLine($"\n{m.Name}: safety timeout reached, released.");
 
         using var controller = new WinDivertTrafficController(module, priority);
-        using var hotkeys = new HotkeyWatcher();
+        using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
         // Every size that crossed while holding, and how often. A hold that works most of the time
         // fails on specific packets, and the totals cannot say which.
@@ -69,12 +70,21 @@ internal static class RunCommand
         hotkeys.Start();
 
         Console.WriteLine($"running {group} {Describe(options.Direction)}");
-        Console.WriteLine($"  toggle       : {keyLabel}");
+        Console.WriteLine($"  toggle       : {keyLabel}  (polled every {pollMs} ms)");
         Console.WriteLine($"  pass sizes   : {Format(options.PassLengths)}");
         Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}");
         Console.WriteLine($"  safety limit : "
             + $"{(options.SafetyTimeout is { } t ? $"{t.TotalSeconds:N0}s" : "none")}");
         Console.WriteLine();
+        if (options.PassLengths.Count > 0 || options.ResyncTriggerLengths.Count > 0)
+        {
+            Console.WriteLine("For sequences of a second or two - weapon swaps, bullet detach - the");
+            Console.WriteLine("game never has time to ask for a reconnect, so the resync never runs");
+            Console.WriteLine("and the standing pass list is the only thing that can leak. Try");
+            Console.WriteLine("--no-pass --no-resync there: a hold that short cannot hit the ceiling.");
+            Console.WriteLine();
+        }
+
         Console.WriteLine($"Press {keyLabel} in-game to hold, again to release. Ctrl+C to exit.");
         Console.WriteLine("The key is not swallowed - the game still receives it.");
         Console.WriteLine();

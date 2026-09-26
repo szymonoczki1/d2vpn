@@ -1135,6 +1135,37 @@ does register during a hold, they are the first suspects.
 
 ---
 
+## Finding 32 - short sequences and long holds are different problems
+
+Bullet detach - holding uplink, swapping weapon, firing three times, releasing - is done in **under
+three seconds**. Almost nothing established for long holds applies to it.
+
+**The resync never runs.** The game takes roughly 3.5 seconds of being blocked before it sends a
+reconnect request (Finding 2, where the first escape appeared at s12.6 of a hold that began at
+s8.7). A sequence shorter than that never triggers one, so resync windows, their duration, the
+cooldown and the resync pass list are all irrelevant here.
+
+**The standing pass list is the only thing that can leak.** It passes unconditionally, resync or
+not. If a shot packet happens to be 233 or 1166, it crosses and the bullet attributes normally -
+which presents as a trick that mostly works and occasionally does not, with no discernible
+pattern.
+
+**Nothing needs to pass.** The ~30 second ceiling cannot be reached in three seconds, so a hold
+this short has no reason to let anything through at all. `--no-pass --no-resync` is not a
+diagnostic here, it is the correct configuration.
+
+### Consequence
+
+The module's defaults are tuned for a sustained hold, where the session has to survive. A short
+sequence wants the opposite: total block, nothing passed, no exchange. Both are legitimate and
+they do not share settings - the difference is whether the hold outlives the game's patience.
+
+Hotkey polling was also reduced from 8 ms to 1 ms. At 60 fps, 8 ms is half a frame of slop at each
+end of a three-second sequence, and one P/Invoke per key per millisecond is not measurable next to
+a game.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
