@@ -84,8 +84,10 @@ static void PrintUsage()
     Console.WriteLine("      --resync-pass, --resync-ms, --cooldown-ms, --timeout-s, --no-pass");
     Console.WriteLine("      and --no-resync as hold. --log-passed prints every packet that");
     Console.WriteLine("      crosses while holding, for working out what a leak is carrying.");
-    Console.WriteLine("      --untick-ms keeps blocking after the key is released, so an action");
-    Console.WriteLine("      taken just before releasing does not leave on the next tick.");
+    Console.WriteLine("      --untick-ms keeps blocking after the key is released. Off by");
+    Console.WriteLine("      default, and measured to make bullet detach strictly worse - every");
+    Console.WriteLine("      attempt failed with it on. Kept because the result is informative,");
+    Console.WriteLine("      not because it is worth using.");
     Console.WriteLine();
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
