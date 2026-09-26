@@ -1108,11 +1108,30 @@ OUT 238
 The peer initiates during an uplink hold, which is the mirror of a downlink hold and was not
 obvious: blocking uplink makes *us* go quiet, so the peer is the one that notices.
 
+### Confirmed, by a number nobody was aiming at
+
+Re-running the uplink hold with the corrected list: 95% blocked, no error code, enemies still
+failing to register. The same as before on those measures - but the reconnect count collapsed.
+
+| | Previous list | Observed list |
+|---|---|---|
+| Reconnect requests | **59** | **10** |
+| Resync windows | 4 | 5 |
+
+The game stopped asking. Slightly *more* windows opened and six times fewer requests were made,
+which means the exchange is now completing rather than being retried. The previous configuration
+survived on the volume of attempts rather than on any of them succeeding.
+
+This is a better health signal than the blocked percentage, which barely moved (96% to 95%) across
+a change that was clearly substantial. **A falling reconnect count means the resync is working; a
+rising one means it is being retried.**
+
 ### Caveat
 
 206 and 238 also occur in ordinary traffic - 45 and 22 times across 26 seconds of normal play -
 so passing them during a window is not risk-free. The reference passes them anyway and the
-mechanic works, so they are included, but they are the weakest part of the list.
+mechanic works, so they are included, but they are the weakest part of the list. If a kill ever
+does register during a hold, they are the first suspects.
 
 ---
 
