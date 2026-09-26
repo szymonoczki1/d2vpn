@@ -48,12 +48,15 @@ internal static class RunCommand
             + $"triggers=[{Format(options.ResyncTriggerLengths)}] "
             + $"resyncMs={options.ResyncDuration.TotalMilliseconds:N0} "
             + $"cooldownMs={options.ResyncCooldown.TotalMilliseconds:N0} "
-            + $"untickMs={untickDelayMs} pollMs={pollMs} priority={priority}");
+            + $"untickMs={untickDelayMs} pollMs={pollMs} priority={priority} "
+            + $"buffering={options.Buffering} bufferInbound={options.BufferInbound} "
+            + $"slow={options.SlowMode} slowMs={options.SlowDelay.TotalMilliseconds:N0}");
         using var buffer = options.Buffering
             ? new PacketBuffer(options.BufferCapacity, options.BufferMaxAge)
             : null;
 
-        using var controller = new WinDivertTrafficController(module, priority, buffer);
+        using var controller = new WinDivertTrafficController(
+            module, priority, buffer, options.SlowMode ? options.SlowDelay : null);
         using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
         // Every size that crossed while holding, and how often. A hold that works most of the time
@@ -152,9 +155,14 @@ internal static class RunCommand
             + $"{(untickDelayMs > 0 ? $"{untickDelayMs} ms" : "none")}");
         Console.WriteLine($"  pass sizes   : {Format(options.PassLengths)}");
         Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}");
+        Console.WriteLine($"  mode         : "
+            + (options.SlowMode
+                ? "SLOW - nothing is blocked, everything arrives "
+                  + $"{options.SlowDelay.TotalMilliseconds:N0} ms late"
+                : "hold - blocked traffic is withheld until release"));
         Console.WriteLine($"  buffering    : "
             + (options.Buffering
-                ? $"{(options.BufferInbound ? "both directions" : "uplink only")}, "
+                ? $"{(options.SlowMode || options.BufferInbound ? "both" : "uplink only")}, "
                   + $"up to {options.BufferCapacity} packets or "
                   + $"{options.BufferMaxAge.TotalSeconds:N0}s old"
                 : "off - blocked packets are destroyed"));
@@ -191,11 +199,16 @@ internal static class RunCommand
             var elapsed = (DateTimeOffset.UtcNow - started).TotalSeconds;
             var held = module.IsActive;
 
+            // Under slow these are delayed rather than lost, so the labels have to
+            // change: a column reading "dropped" while the whole point is that
+            // nothing is would misreport what the tool just did.
             Console.Write($"\r{elapsed,6:N0}s  "
                 + $"UL {controller.OutboundDropped}/{controller.OutboundSeen}  "
                 + $"DL {controller.InboundDropped}/{controller.InboundSeen}  "
-                + $"resyncs {module.ResyncsStarted}  "
-                + $"{(held ? "HOLDING " : "idle    ")}   ");
+                + (options.SlowMode
+                    ? $"queued {buffer?.Count ?? 0}  sent {controller.PacketsReplayed}  "
+                    : $"resyncs {module.ResyncsStarted}  ")
+                + $"{(held ? (options.SlowMode ? "SLOWING " : "HOLDING ") : "idle    ")}   ");
         }
 
         try
@@ -210,8 +223,9 @@ internal static class RunCommand
         Console.WriteLine();
         Console.WriteLine();
         Console.WriteLine($"toggled {toggleCount} time{(toggleCount == 1 ? string.Empty : "s")}");
-        Console.WriteLine($"uplink   : {controller.OutboundDropped} dropped of {controller.OutboundSeen}");
-        Console.WriteLine($"downlink : {controller.InboundDropped} dropped of {controller.InboundSeen}");
+        var fate = options.SlowMode ? "delayed" : "dropped";
+        Console.WriteLine($"uplink   : {controller.OutboundDropped} {fate} of {controller.OutboundSeen}");
+        Console.WriteLine($"downlink : {controller.InboundDropped} {fate} of {controller.InboundSeen}");
         if (buffer is not null)
         {
             Console.WriteLine($"buffered : {controller.PacketsBuffered}, "

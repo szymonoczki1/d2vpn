@@ -121,6 +121,112 @@ public class PacketBufferTests
     }
 
     [Fact]
+    public void Nothing_is_due_before_the_delay_has_elapsed()
+    {
+        using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));
+        Hold(buffer, T0);
+
+        Assert.Empty(buffer.TakeDue(T0.AddSeconds(1), TimeSpan.FromSeconds(2)));
+        Assert.Equal(1, buffer.Count);
+    }
+
+    [Fact]
+    public void A_packet_is_due_once_it_has_been_held_for_the_delay()
+    {
+        using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));
+        Hold(buffer, T0);
+
+        var due = buffer.TakeDue(T0.AddSeconds(2), TimeSpan.FromSeconds(2));
+
+        Assert.Single(due);
+        Assert.Equal(0, buffer.Count);
+        due[0].Dispose();
+    }
+
+    [Fact]
+    public void Only_the_due_prefix_is_taken_and_the_rest_stays_queued()
+    {
+        // The delay line has to keep the stream in order. Delivering it late is the point;
+        // delivering it shuffled is just corruption.
+        using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));
+
+        for (var i = 0; i < 5; i++)
+        {
+            Hold(buffer, T0.AddSeconds(i));
+        }
+
+        // At t=6 with a 2s delay, those held at 0..4 are due.
+        var due = buffer.TakeDue(T0.AddSeconds(6), TimeSpan.FromSeconds(2));
+
+        Assert.Equal(5, due.Count);
+        Assert.Equal(due.OrderBy(e => e.HeldAt).Select(e => e.HeldAt), due.Select(e => e.HeldAt));
+
+        foreach (var entry in due)
+        {
+            entry.Dispose();
+        }
+    }
+
+    [Fact]
+    public void A_partly_due_queue_delivers_the_old_and_keeps_the_new()
+    {
+        using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));
+        Hold(buffer, T0);                   // due at t=3 with a 2s delay
+        Hold(buffer, T0.AddSeconds(1));     // due
+        Hold(buffer, T0.AddSeconds(2.5));   // not yet
+
+        var due = buffer.TakeDue(T0.AddSeconds(3), TimeSpan.FromSeconds(2));
+
+        Assert.Equal(2, due.Count);
+        Assert.Equal(1, buffer.Count);
+
+        foreach (var entry in due)
+        {
+            entry.Dispose();
+        }
+    }
+
+    [Fact]
+    public void A_packet_that_went_stale_while_queued_is_not_delivered_late()
+    {
+        // Delivery is driven by packet arrivals, so a port that goes quiet can leave entries
+        // queued past the point of being worth sending. Age still wins over due-ness.
+        using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(10));
+        Hold(buffer, T0);
+
+        Assert.Empty(buffer.TakeDue(T0.AddSeconds(40), TimeSpan.FromSeconds(2)));
+        Assert.Equal(1, buffer.Expired);
+        Assert.Equal(0, buffer.Count);
+    }
+
+    [Fact]
+    public void Taking_due_packets_counts_them_as_replayed()
+    {
+        using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));
+        Hold(buffer, T0);
+        Hold(buffer, T0);
+
+        foreach (var entry in buffer.TakeDue(T0.AddSeconds(5), TimeSpan.FromSeconds(2)))
+        {
+            entry.Dispose();
+        }
+
+        Assert.Equal(2, buffer.Replayed);
+    }
+
+    [Fact]
+    public void A_zero_delay_makes_everything_immediately_due()
+    {
+        using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));
+        Hold(buffer, T0);
+
+        var due = buffer.TakeDue(T0, TimeSpan.Zero);
+
+        Assert.Single(due);
+        due[0].Dispose();
+    }
+
+    [Fact]
     public void Discarding_empties_the_buffer_without_replaying()
     {
         using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));

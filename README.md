@@ -71,7 +71,7 @@ untouched, so it cannot stall or break a live game.
 | `d2vpn watch <group> [--seconds N]` | Live packet counts and a payload-size histogram |
 | `d2vpn calibrate <group> [--seconds N] [--downlink]` | Derive this machine's signature for a group, in either direction |
 | `d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]` | Hold a group in one direction for a fixed time. `--dry-run` reports what it would drop without touching traffic |
-| `d2vpn run <group> [--key K] [--downlink] [--full] [--no-buffer]` | Hold a group on a hotkey, until Ctrl+C. This is the one to actually play with |
+| `d2vpn run <group> [--key K] [--downlink] [--full] [--slow] [--no-buffer]` | Hold a group on a hotkey, until Ctrl+C. This is the one to actually play with |
 
 Groups: `3074`, `27k`, `7500`, `30k`. Both `watch` and `calibrate` need an elevated terminal,
 because loading a kernel driver does.
@@ -141,6 +141,22 @@ Limits are 2048 packets (about 100 s of uplink at the measured rate, ~3 MB) and 
 settable with `--buffer-size` and `--buffer-age-s`. The age limit is not about memory - a position
 update thirty seconds stale is worse than useless on arrival - and eviction is oldest first,
 because what matters on release is the most recent actions.
+
+## Hold, buffer, slow - three different things
+
+| Mode | Blocked traffic | Peer sees |
+|---|---|---|
+| `--no-buffer` | destroyed | a gap, and the actions never happened |
+| default | held, replayed on release | a gap, then the actions arrive late |
+| `--slow` | held, released after `--slow-ms` | no gap - a stream running behind |
+
+Slow is not a stronger hold, it is a different mode. Nothing is withheld permanently and nothing is
+dropped, so there is no gap for the peer to react to: the whole conversation just runs late. It
+delays both directions, where buffering deliberately covers outbound only.
+
+The delay defaults to 2000 ms and is the one number here with no measurement behind it. What was
+measured was the reference limiter's 30k variant - inbound TCP on a different port, under a
+reconnect - which pins the order of magnitude and nothing finer. Expect to calibrate it.
 
 ## Safety
 

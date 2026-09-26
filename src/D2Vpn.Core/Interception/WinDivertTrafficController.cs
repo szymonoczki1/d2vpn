@@ -27,7 +27,8 @@ namespace D2Vpn.Core.Interception;
 /// <item>
 /// Buffering is opt-in. Without a buffer every packet is decided and either reinjected or dropped
 /// immediately, so there is no queue to lose if the process dies. With one, blocked packets are
-/// held and replayed on release - and are discarded, not flushed, if the handle closes instead.
+/// held - and replayed either on release, or, with a slow delay set, once they have been held long
+/// enough. Either way they are discarded, not flushed, if the handle closes instead.
 /// </item>
 /// </list>
 /// <para>
@@ -42,6 +43,7 @@ public sealed class WinDivertTrafficController : IDisposable
     private readonly WinDivert _divert;
     private readonly ITrafficModule _module;
     private readonly PacketBuffer? _buffer;
+    private readonly TimeSpan? _slowDelay;
     private bool _wasHolding;
     private bool _disposed;
 
@@ -112,11 +114,19 @@ public sealed class WinDivertTrafficController : IDisposable
     /// <param name="buffer">
     /// Where blocked packets are held for replay, or <see langword="null"/> to drop them.
     /// </param>
+    /// <param name="slowDelay">
+    /// Deliver held packets this long after they arrived, rather than withholding them until the
+    /// hold is released. <see langword="null"/> for an ordinary hold.
+    /// </param>
     public WinDivertTrafficController(
-        ITrafficModule module, short priority = 0, PacketBuffer? buffer = null)
+        ITrafficModule module,
+        short priority = 0,
+        PacketBuffer? buffer = null,
+        TimeSpan? slowDelay = null)
     {
         _module = module;
         _buffer = buffer;
+        _slowDelay = slowDelay;
 
         var filter = WinDivertFilterBuilder.Build(module.Group);
         FilterExpression = filter.ToString() ?? string.Empty;
@@ -170,9 +180,16 @@ public sealed class WinDivertTrafficController : IDisposable
                 // live one that follows them rather than behind it.
                 if (_buffer is not null)
                 {
+                    if (_slowDelay is { } delay)
+                    {
+                        await DrainDueAsync(delay).ConfigureAwait(false);
+                    }
+
                     var holding = _module.IsActive;
                     if (_wasHolding && !holding)
                     {
+                        // Slow releases the remainder too. Those packets were going to be
+                        // delivered; turning the module off is not a reason to destroy them.
                         await ReplayAsync().ConfigureAwait(false);
                     }
 
@@ -239,6 +256,49 @@ public sealed class WinDivertTrafficController : IDisposable
         }
 
         foreach (var entry in _buffer.TakeForReplay(DateTimeOffset.UtcNow))
+        {
+            try
+            {
+                await _divert.SendAsync(entry.Packet, entry.Address).ConfigureAwait(false);
+                PacketsReplayed++;
+            }
+            catch
+            {
+                // One packet that will not reinject is one packet lost, not a reason to abandon
+                // the rest of the queue or to leave the remainder undisposed.
+            }
+            finally
+            {
+                entry.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Sends the held packets whose delay has now elapsed, oldest first.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The delay-line drain. Unlike a release it runs continuously, so the stream keeps flowing
+    /// the whole time the module is on - just behind.
+    /// </para>
+    /// <para>
+    /// It is driven by packet arrivals rather than a timer, because a timer would mean a second
+    /// thread writing to the handle. On a port carrying traffic in both directions that is a fine
+    /// clock: slow delays packets rather than blocking them, so the stream that drives the loop
+    /// never stops. Where it is not - a port that has gone quiet in both directions - delivery
+    /// waits for the next packet, and anything that passes <see cref="PacketBuffer.MaxAge"/> while
+    /// waiting is discarded rather than sent stale.
+    /// </para>
+    /// </remarks>
+    private async Task DrainDueAsync(TimeSpan delay)
+    {
+        if (_buffer is null)
+        {
+            return;
+        }
+
+        foreach (var entry in _buffer.TakeDue(DateTimeOffset.UtcNow, delay))
         {
             try
             {

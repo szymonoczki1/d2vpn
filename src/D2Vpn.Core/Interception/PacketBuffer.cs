@@ -129,6 +129,57 @@ public sealed class PacketBuffer : IDisposable
         }
     }
 
+    /// <summary>
+    /// Hands back the packets that have now been held long enough, leaving the rest.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The delay-line drain, as against <see cref="TakeForReplay"/>'s release-everything drain.
+    /// A "slow" module does not block: every packet still arrives, <paramref name="delay"/> later
+    /// than it should have, which desynchronises without the peer ever seeing a gap in the stream.
+    /// </para>
+    /// <para>
+    /// The queue is in arrival order, so the due entries are always a prefix of it and this can
+    /// stop at the first one that is not ready. Order is preserved, which matters: delivering a
+    /// stream late is the point, delivering it shuffled is just corruption.
+    /// </para>
+    /// <para>
+    /// As with <see cref="TakeForReplay"/> the caller owns what comes back and must dispose each
+    /// entry, so that every write to the handle stays on one thread.
+    /// </para>
+    /// </remarks>
+    public IReadOnlyList<Held> TakeDue(DateTimeOffset now, TimeSpan delay)
+    {
+        lock (_gate)
+        {
+            List<Held>? due = null;
+
+            while (_held.Count > 0 && now - _held.Peek().HeldAt >= delay)
+            {
+                var entry = _held.Dequeue();
+
+                // Age still applies. If delivery stalls long enough that a packet passes MaxAge
+                // while queued, it is past being worth sending and replaying it does harm.
+                if (now - entry.HeldAt > MaxAge)
+                {
+                    entry.Dispose();
+                    Expired++;
+                    continue;
+                }
+
+                (due ??= []).Add(entry);
+            }
+
+            if (due is null)
+            {
+                return [];
+            }
+
+            Replayed += due.Count;
+            return due;
+        }
+    }
+
     /// <summary>Discards everything held without replaying it.</summary>
     public void DiscardAll()
     {

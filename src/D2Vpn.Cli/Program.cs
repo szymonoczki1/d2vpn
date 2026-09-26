@@ -1,3 +1,4 @@
+using System.Globalization;
 using D2Vpn.Cli;
 using D2Vpn.Cli.Hotkeys;
 using D2Vpn.Core.Input;
@@ -5,6 +6,14 @@ using D2Vpn.Core.Calibration;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
+
+// Every number this prints is a measurement meant to be pasted into a finding, diffed against
+// another run, or read back out of a session log. On this machine the ambient culture is pl-PL,
+// whose digit group separator is a non-breaking space - so "2048" was printing as "2 048" with a
+// byte the console renders as a replacement character, and logs were formatted per-locale. Parsing
+// has already been bitten by this once. Formatting is fixed here rather than at 18 call sites.
+CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {
@@ -73,7 +82,7 @@ static void PrintUsage()
     Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME] [--log-passed]");
     Console.WriteLine("                    [--untick-ms N] [--log FILE]");
     Console.WriteLine("                    [--no-buffer] [--buffer-size N] [--buffer-age-s N]");
-    Console.WriteLine("                    [--buffer-downlink]");
+    Console.WriteLine("                    [--buffer-downlink] [--slow] [--slow-ms N]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
@@ -97,6 +106,15 @@ static void PrintUsage()
     Console.WriteLine("      and a backlog of stale inbound state is the one direction where");
     Console.WriteLine("      replay could do harm. --buffer-downlink enables it to be measured.");
     Console.WriteLine();
+    Console.WriteLine("      --slow is a different mode, not a stronger hold. Nothing is");
+    Console.WriteLine("      blocked: every packet still arrives, --slow-ms later than it should");
+    Console.WriteLine("      have, so the peer sees a stream that is behind rather than a gap in");
+    Console.WriteLine("      one. Both directions are delayed. The pass list still passes");
+    Console.WriteLine("      immediately, so the sizes that keep a session alive are never held.");
+    Console.WriteLine("      Default 2000 ms, and that is a starting point to calibrate from, not");
+    Console.WriteLine("      a measured value - what was measured was the reference limiter's 30k");
+    Console.WriteLine("      variant, which is inbound TCP on another port. Expect to tune it.");
+    Console.WriteLine("");
     Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
     Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
     Console.WriteLine("      (worked) or f8 (failed) - labelled trials are the only way to find");
@@ -838,6 +856,9 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
     // whatever direction the hold itself covers, so a downlink-only run is unaffected by it -
     // replaying inbound is unproven, the server re-sends state regardless, and a backlog of stale
     // inbound state is the one direction where replay could do harm rather than nothing.
+    var slowMs = IntOption(args, "--slow-ms", 0);
+    var slow = HasFlag(args, "--slow") || slowMs > 0;
+
     options = options with
     {
         Buffering = !HasFlag(args, "--no-buffer"),
@@ -845,7 +866,24 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
         BufferCapacity = IntOption(args, "--buffer-size", options.BufferCapacity),
         BufferMaxAge = TimeSpan.FromSeconds(
             IntOption(args, "--buffer-age-s", (int)options.BufferMaxAge.TotalSeconds)),
+        SlowMode = slow,
+        SlowDelay = slowMs > 0 ? TimeSpan.FromMilliseconds(slowMs) : options.SlowDelay,
     };
+
+    if (slow && HasFlag(args, "--no-buffer"))
+    {
+        throw new ArgumentException(
+            "--slow needs the buffer: a packet cannot be delivered late unless it is kept. "
+            + "Drop --no-buffer.");
+    }
+
+    if (options.SlowMode && options.SlowDelay > options.BufferMaxAge)
+    {
+        throw new ArgumentException(
+            $"--slow-ms {options.SlowDelay.TotalMilliseconds:N0} is longer than the "
+            + $"{options.BufferMaxAge.TotalSeconds:N0}s buffer age limit, so every delayed packet "
+            + "would expire before it was due. Raise --buffer-age-s or lower --slow-ms.");
+    }
 
     if (HasFlag(args, "--no-pass"))
     {

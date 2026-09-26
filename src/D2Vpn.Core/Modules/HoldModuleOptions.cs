@@ -161,6 +161,42 @@ public sealed record HoldModuleOptions
     public bool BufferInbound { get; init; }
 
     /// <summary>
+    /// Delay blocked packets by <see cref="SlowDelay"/> instead of withholding them until release.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A different mode from a hold, not an addition to one. A hold withholds traffic and decides
+    /// its fate on release; slow withholds nothing permanently - every packet still arrives, just
+    /// late. The peer never sees a gap in the stream, only a stream that is behind.
+    /// </para>
+    /// <para>
+    /// Taken from the reference limiter's own description of its 30k variant, "delays all inbound
+    /// packets by a fixed number of seconds", and consistent with what was measured of it: traffic
+    /// released in batches, with gaps of 3.91 s and 5.94 s against a 1.32 s baseline
+    /// (<c>docs/protocol.md</c>, finding 7). That measurement was of TCP 30k and does not by
+    /// itself establish the same mechanism on UDP 3074 - the delay here is configuration for
+    /// exactly that reason.
+    /// </para>
+    /// <para>
+    /// Implies buffering, since there is nothing to delay a packet with except a queue. The pass
+    /// list still applies and still passes immediately, so a signature size is never delayed and
+    /// the machinery that keeps a session alive is untouched.
+    /// </para>
+    /// </remarks>
+    public bool SlowMode { get; init; }
+
+    /// <summary>
+    /// How far behind to run the stream when <see cref="SlowMode"/> is on.
+    /// </summary>
+    /// <remarks>
+    /// No default is derivable from anything measured here. The 3.91 s and 5.94 s gaps in finding
+    /// 7 are inbound TCP on a different port under a reconnect, which constrains the order of
+    /// magnitude and nothing finer, so 2 s is a starting point to calibrate from rather than a
+    /// result.
+    /// </remarks>
+    public TimeSpan SlowDelay { get; init; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// Most packets to hold per peer before the oldest are discarded.
     /// </summary>
     /// <remarks>

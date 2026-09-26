@@ -355,8 +355,13 @@ public sealed class HoldModule : ITrafficModule
         /// sends, which is the only case with a result behind it.
         /// </remarks>
         private static PacketVerdict Blocked(PacketInfo packet, HoldModuleOptions options) =>
-            options.Buffering && (packet.IsOutbound || options.BufferInbound)
-                ? PacketVerdict.Buffer
-                : PacketVerdict.Drop;
+            // Slow implies buffering in whichever direction is held: a packet cannot be delivered
+            // late unless it was kept, and unlike a hold there is no direction here that gains
+            // nothing from it - delaying inbound is the whole of what the reference limiter's 30k
+            // variant does.
+            (options.SlowMode || options.Buffering)
+                && (packet.IsOutbound || options.BufferInbound || options.SlowMode)
+                    ? PacketVerdict.Buffer
+                    : PacketVerdict.Drop;
     }
 }

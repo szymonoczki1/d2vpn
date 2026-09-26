@@ -295,6 +295,39 @@ behaviour as the 3074 buffer drain in Finding 4 - **neither tool paces a release
 
 Dominant inbound payload on 30k during a reconnect is **552 bytes**, with a 976 leading the batch.
 
+### Built - `--slow`
+
+Implemented as a delay line: while slow is on, blocked packets go to the same `PacketBuffer` the
+hold uses, and `TakeDue` releases each one once it has been held for `SlowDelay`. So nothing is
+dropped and the peer never sees a gap - only a stream running behind.
+
+The mechanism comes from the reference limiter's own description of this module, "delays all inbound
+packets from 30k by a fixed number of seconds", which is a plain user-facing README and not its
+code. The batching above is consistent with that: a delay line drained on packet arrival delivers in
+bursts, not smoothly.
+
+What this does **not** establish is the right delay on UDP 3074, which is what the built module is
+for. Finding 7 is inbound TCP on a different port under a reconnect, and TCP reacts to delay by
+retransmitting where UDP does not - so it constrains the order of magnitude and nothing finer. The
+default is 2 s and is a starting point to calibrate from, not a result.
+
+Decisions worth recording:
+
+- **Both directions, unlike buffering.** A plain hold buffers outbound only, because the server
+  re-sends inbound state anyway. That argument does not apply here: delaying inbound is the whole
+  of what the reference module does.
+- **The pass list still passes immediately.** Delaying a handshake size would put the machinery
+  that keeps a session alive behind the same delay as everything else, which is how a hold turns
+  into an error code.
+- **Age still beats due-ness.** Delivery is driven by packet arrivals rather than a timer, because
+  a timer would mean a second thread writing the handle. On a port with traffic in both directions
+  that is a fine clock, since slow never stops the stream that drives it - but if a port goes quiet
+  entirely, anything that passes `BufferMaxAge` while waiting is discarded rather than sent stale.
+- **`--slow-ms` longer than `--buffer-age-s` is refused.** Every packet would expire before coming
+  due, making slow an elaborate way of dropping everything.
+
+**Not yet confirmed in game.**
+
 ### Finding 8 - why the first 30k attempt showed nothing
 
 Capture `z0kslow-01` recorded a maximum inbound gap of 1.80 s against a 1.82 s baseline in an
