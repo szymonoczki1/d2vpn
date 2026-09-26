@@ -47,16 +47,16 @@ static void PrintUsage()
     Console.WriteLine("      Derive this machine's packet-length signature for a group.");
     Console.WriteLine("      Hold the module partway through the run; the hold is found");
     Console.WriteLine("      from the traffic itself, so the timing is up to you. Reports the");
-    Console.WriteLine("      payload sizes that crossed while uplink was collapsed - the packets");
-    Console.WriteLine("      a module must pass for the session to survive a hold.");
+    Console.WriteLine("      payload sizes that crossed while that direction was collapsed -");
+    Console.WriteLine("      the packets a module must pass for the session to survive.");
     Console.WriteLine("      --downlink calibrates a DL hold instead. The two need separate");
     Console.WriteLine("      signatures: neither can be derived from the other.");
     Console.WriteLine();
     Console.WriteLine("  d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]");
-    Console.WriteLine("      Hold uplink on a group: drop it except the signature sizes, and");
-    Console.WriteLine("      stop blocking whenever the peer asks to reconnect, so the session");
-    Console.WriteLine("      survives. --dry-run reports what it WOULD drop without touching");
-    Console.WriteLine("      any traffic, which is the safe way to try it the first time.");
+    Console.WriteLine("      Hold one direction on a group: drop it except the signature");
+    Console.WriteLine("      sizes, and stop blocking when the peer asks to reconnect, so");
+    Console.WriteLine("      the session survives. --dry-run reports what it WOULD drop");
+    Console.WriteLine("      without touching traffic - the safe way to try it first.");
     Console.WriteLine();
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
@@ -257,7 +257,7 @@ static async Task<int> CalibrateAsync(string[] args)
             // A live uplink rate makes a failed run obvious while it is still running: if this
             // never drops near zero, the module is not engaging.
             var elapsed = (now - started).TotalSeconds;
-            Console.Write($"\r{elapsed,5:N0}s / {seconds}s   uplink {recentOutbound,4}/s   ");
+            Console.Write($"\r{elapsed,5:N0}s / {seconds}s   {label} {recentOutbound,4}/s   ");
             lastPrint = now;
             recentOutbound = 0;
         }
@@ -484,9 +484,9 @@ static void PrintCalibration(CalibrationResult result)
 
     if (!result.BlockDetected)
     {
-        Console.WriteLine("No uplink collapse on any peer - the module never engaged.");
+        Console.WriteLine($"No {result.HeldLabel} collapse on any peer - the module never engaged.");
         Console.WriteLine();
-        Console.WriteLine("During a real hold a peer's uplink falls to near zero for several");
+        Console.WriteLine($"During a real hold a peer's {result.HeldLabel} falls to near zero for several");
         Console.WriteLine("seconds. Check the timelines below before blaming the module:");
         Console.WriteLine();
         Console.WriteLine("  - no sustained dip anywhere -> the keypress did not reach the limiter,");
@@ -509,14 +509,14 @@ static void PrintCalibration(CalibrationResult result)
     var window = result.CombinedWindow!;
     Console.WriteLine($"hold spans {window.Start.TotalSeconds:N0}s -> "
         + $"{(window.Start + window.Duration).TotalSeconds:N0}s, "
-        + $"{window.OutboundPackets} uplink packets crossed");
+        + $"{window.OutboundPackets} {result.HeldLabel} packets crossed");
 
     var maxHolds = result.HeldPeers.Max(p => p.Windows.Count);
     if (maxHolds > 1)
     {
         // Worth stating: one keypress does not produce one block.
         Console.WriteLine();
-        Console.WriteLine($"This was {maxHolds} separate collapses, not one. Between them uplink");
+        Console.WriteLine($"This was {maxHolds} separate collapses, not one. Between them {result.HeldLabel}");
         Console.WriteLine("returned to full rate - the limiter letting the game re-establish with");
         Console.WriteLine("its peer before blocking again. A hold is block/resync/block, not a");
         Console.WriteLine("single continuous cut.");
@@ -524,7 +524,7 @@ static void PrintCalibration(CalibrationResult result)
 
     Console.WriteLine();
 
-    Console.WriteLine("YOUR SIGNATURE - uplink payload sizes concentrated in the hold:");
+    Console.WriteLine($"YOUR SIGNATURE - {result.HeldLabel} payload sizes concentrated in the hold:");
     Console.WriteLine($"  {string.Join(", ", result.Signature)}");
     Console.WriteLine();
     Console.WriteLine("These are the packets a module must let through for the session to survive");
@@ -559,8 +559,8 @@ static void PrintCalibration(CalibrationResult result)
     if (result.PooledBlockOpposite.Total > 0)
     {
         Console.WriteLine();
-        Console.WriteLine($"Downlink kept flowing throughout ({result.PooledBlockOpposite.Total} packets), "
-            + "as expected for an uplink-only hold.");
+        Console.WriteLine($"{char.ToUpperInvariant(result.OppositeLabel[0])}{result.OppositeLabel[1..]} kept flowing throughout "
+            + $"({result.PooledBlockOpposite.Total} packets), as expected for a {result.HeldLabel}-only hold.");
     }
 
     PrintTimelines(result);
@@ -577,7 +577,7 @@ static void PrintTimelines(CalibrationResult result)
         }
 
         Console.WriteLine();
-        Console.WriteLine($"uplink per second - {peer.Address}  ( * = counted as held )");
+        Console.WriteLine($"{result.HeldLabel} per second - {peer.Address}  ( * = counted as held )");
 
         var peak = Math.Max(1, peer.Timeline.Max(b => b.Outbound));
         foreach (var bucket in peer.Timeline)

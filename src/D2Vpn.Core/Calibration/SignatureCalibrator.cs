@@ -147,7 +147,7 @@ public sealed class SignatureCalibrator
                 BuildTimeline(held, opposite, analysis)));
         }
 
-        return new CalibrationResult(Group, peerResults);
+        return new CalibrationResult(Group, peerResults, _options.Direction);
     }
 
     /// <summary>True when an offset falls after the end of the final detected hold.</summary>

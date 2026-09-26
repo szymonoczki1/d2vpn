@@ -8,8 +8,21 @@ namespace D2Vpn.Core.Calibration;
 /// </summary>
 /// <param name="Group">The group that was observed.</param>
 /// <param name="Peers">One entry per remote address seen, busiest first.</param>
-public sealed record CalibrationResult(PortGroup Group, IReadOnlyList<PeerCalibration> Peers)
+/// <param name="HeldDirection">
+/// The direction that was expected to collapse. Everything named "held" refers to this stream and
+/// "opposite" to the other, so a caller can label its output without guessing.
+/// </param>
+public sealed record CalibrationResult(
+    PortGroup Group,
+    IReadOnlyList<PeerCalibration> Peers,
+    PacketDirection HeldDirection = PacketDirection.Outbound)
 {
+    /// <summary>"uplink" or "downlink", for labelling output.</summary>
+    public string HeldLabel => HeldDirection == PacketDirection.Outbound ? "uplink" : "downlink";
+
+    /// <summary>The other direction's label.</summary>
+    public string OppositeLabel => HeldDirection == PacketDirection.Outbound ? "downlink" : "uplink";
+
     /// <summary>Peers where a hold was found.</summary>
     public IReadOnlyList<PeerCalibration> HeldPeers => [.. Peers.Where(p => p.HoldDetected)];
 
