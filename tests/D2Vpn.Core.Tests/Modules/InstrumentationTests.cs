@@ -58,16 +58,46 @@ public class InstrumentationTests
     }
 
     [Fact]
-    public void Counters_reset_with_the_module()
+    public void Counters_survive_a_release_so_a_finished_run_can_be_reported()
     {
+        // This test previously asserted the opposite, and that is what hid a working run: the
+        // controller resets the module during its own disposal, so anything reading the counters
+        // afterwards saw zeroes. A hold that had resynced correctly reported zero requests, and
+        // only a packet capture showed otherwise.
         var module = Module();
         module.IsActive = true;
         module.Decide(TestPackets.Outbound(3074, 128, 1.0));
 
         module.IsActive = false;
 
+        Assert.Equal(1, module.TriggersSeen);
+        Assert.Equal(1, module.ResyncsStarted);
+    }
+
+    [Fact]
+    public void Counters_can_still_be_cleared_deliberately()
+    {
+        var module = Module();
+        module.IsActive = true;
+        module.Decide(TestPackets.Outbound(3074, 128, 1.0));
+
+        module.ResetStatistics();
+
         Assert.Equal(0, module.TriggersSeen);
         Assert.Equal(0, module.ResyncsStarted);
+    }
+
+    [Fact]
+    public void Per_peer_state_is_still_forgotten_on_release()
+    {
+        // Releasing must leave nothing behind that could affect the next hold.
+        var module = Module();
+        module.IsActive = true;
+        module.Decide(TestPackets.Outbound(3074, 128, 1.0));
+
+        module.IsActive = false;
+
+        Assert.Empty(module.PeerStates);
     }
 
     [Fact]

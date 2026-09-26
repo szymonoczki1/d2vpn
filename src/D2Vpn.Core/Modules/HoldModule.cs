@@ -141,10 +141,27 @@ public sealed class HoldModule : ITrafficModule
     }
 
     /// <inheritdoc/>
+    /// <summary>
+    /// Forgets per-peer state. Diagnostic counters are deliberately left alone.
+    /// </summary>
+    /// <remarks>
+    /// Clearing the counters here is what made a working run look broken. Reset runs on disposal,
+    /// and disposal happens inside the controller's own shutdown - so anything reading the counters
+    /// after the run finished got zeroes. A hold that had resynced correctly reported "reconnect
+    /// requests seen: 0", and only a packet capture showed the requests had been there all along.
+    ///
+    /// The counters describe a run, not live state, so they outlive it. Use
+    /// <see cref="ResetStatistics"/> to clear them deliberately.
+    /// </remarks>
     public void Reset()
     {
         _peers.Clear();
         _activatedAt = null;
+    }
+
+    /// <summary>Clears the diagnostic counters.</summary>
+    public void ResetStatistics()
+    {
         TriggersSeen = 0;
         ResyncsStarted = 0;
     }

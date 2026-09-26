@@ -435,7 +435,6 @@ static async Task<int> HoldAsync(string[] args)
 
     await run;
 
-    // Read before releasing: disposing the controller resets the module and clears these.
     var triggersSeen = module.TriggersSeen;
     var resyncsStarted = module.ResyncsStarted;
     module.IsActive = false;
@@ -459,6 +458,9 @@ static async Task<int> HoldAsync(string[] args)
     Console.WriteLine($"downlink while idle     : {baselineRate,5:N1}/s");
     Console.WriteLine($"downlink while holding  : {holdRate,5:N1}/s");
 
+    // A fired resync is decisive: the game only asks to reconnect when it has noticed a peer go
+    // quiet. The downlink-rate check is a weaker corroborator - it did not move in a run where the
+    // resync demonstrably worked, so its absence proves nothing on its own.
     var landed = triggersSeen > 0 || (baselineRate > 0 && holdRate > baselineRate * 1.25);
     Console.WriteLine();
 
@@ -468,6 +470,7 @@ static async Task<int> HoldAsync(string[] args)
         if (triggersSeen > 0)
         {
             Console.WriteLine($"  - it asked to reconnect {triggersSeen} times");
+            Console.WriteLine($"  - the resync opened {resyncsStarted} times, letting it recover");
         }
 
         if (baselineRate > 0 && holdRate > baselineRate * 1.25)
