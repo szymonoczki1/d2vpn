@@ -843,6 +843,53 @@ the way to find out is to measure a real resync's duration rather than guess at 
 
 ---
 
+## Finding 25 - buffering is not needed for state to arrive late
+
+`d2vpn hold 3074 --downlink --no-resync`, a total block with nothing crossing: an object
+interacted with during the hold **did not register until the module released**, then did.
+
+This was predicted to fail. d2vpn drops packets rather than buffering them, and the expectation
+was that the interaction would be lost outright rather than deferred - which was the entire
+argument for building buffering next.
+
+It was wrong. The deferral does not come from replaying held packets. Blocking downlink stops the
+client learning anything; on release the server's ongoing state updates carry the result through.
+The client does not need the original packets, it needs *current* state, and the server keeps
+sending it.
+
+So the ~99-packet dump measured at release (Finding 17b) is not evidence that replay is what makes
+the mechanic work. It may be a buffer draining, or simply the client catching up on state - the
+in-game outcome is the same either way.
+
+**Buffering is therefore not a prerequisite**, and the work queued behind that assumption is not
+needed. It may still be worth having for other modules, but nothing measured so far requires it.
+
+## Finding 26 - a resync leaks the very state a hold is meant to defer
+
+The same hold *with* resync enabled did not work: the buff arrived immediately.
+
+With a 3.5 s window and a 5 s cooldown the module blocked 53% of downlink during the hold - close
+to the ~58% the cycle predicts, so the cooldown was working as designed. It does not matter. **A
+pickup confirmation is a single packet**, and any open window is enough to carry it.
+
+That is the real constraint, and it is tighter than "block most of the time":
+
+| | Session survives | State deferred |
+|---|---|---|
+| No resync | **no** - dies at ~30 s | **yes** |
+| 3.5 s window / 5 s cooldown | yes | **no** |
+
+A working hold needs both, so the window has to be long enough to complete a reconnect exchange
+and short enough to pass no game state. Whether such a window exists is an open question - if the
+handshake and the state travel together, no timing separates them, and a resync would have to
+select by packet rather than by time.
+
+`--resync-ms`, `--cooldown-ms` and `--no-resync` exist to find out empirically, and `hold` now
+reports what fraction of the held direction was actually blocked during the hold, since a
+whole-run percentage understates it by including the warmup.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

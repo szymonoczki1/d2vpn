@@ -53,7 +53,8 @@ static void PrintUsage()
     Console.WriteLine("      signatures: neither can be derived from the other.");
     Console.WriteLine();
     Console.WriteLine("  d2vpn hold <group> [--seconds N] [--warmup N] [--dry-run]");
-    Console.WriteLine("                     [--downlink] [--priority N]");
+    Console.WriteLine("                     [--downlink] [--priority N] [--no-resync]");
+    Console.WriteLine("                     [--resync-ms N] [--cooldown-ms N]");
     Console.WriteLine("      Hold one direction on a group: drop it except the signature");
     Console.WriteLine("      sizes, and stop blocking when the peer asks to reconnect, so");
     Console.WriteLine("      the session survives. --dry-run reports what it WOULD drop");
@@ -329,6 +330,9 @@ static async Task<int> HoldAsync(string[] args)
     var warmup = IntOption(args, "--warmup", 10);
     var dryRun = HasFlag(args, "--dry-run");
     var downlink = HasFlag(args, "--downlink");
+    var noResync = HasFlag(args, "--no-resync");
+    var resyncMs = IntOption(args, "--resync-ms", 0);
+    var cooldownMs = IntOption(args, "--cooldown-ms", 0);
     var priority = PriorityOption(args);
 
     var heldDirection = downlink ? HoldDirection.Downlink : HoldDirection.Uplink;
@@ -338,6 +342,31 @@ static async Task<int> HoldAsync(string[] args)
         throw new ArgumentException(
             $"No {(downlink ? "downlink" : "uplink")} signature has been measured for {group}. "
             + $"Run 'd2vpn calibrate {group.Name}{(downlink ? " --downlink" : string.Empty)}' first.");
+    }
+
+    // The window and the cooldown are the two knobs that decide whether a hold leaks. They are
+    // exposed rather than guessed at: a window long enough to complete a handshake but short
+    // enough not to pass game state is a property of this game on this connection, and the only
+    // way to find it is to try values and watch what reaches the character.
+    if (resyncMs > 0)
+    {
+        options = options with { ResyncDuration = TimeSpan.FromMilliseconds(resyncMs) };
+    }
+
+    if (cooldownMs > 0)
+    {
+        options = options with { ResyncCooldown = TimeSpan.FromMilliseconds(cooldownMs) };
+    }
+
+    if (noResync)
+    {
+        // Isolates the block from the resync. A total block should defer everything, at the cost
+        // of dying once the game's ~30 s timeout runs out.
+        options = options with { ResyncTriggerLengths = new HashSet<int>() };
+        Console.WriteLine("RESYNC DISABLED - this blocks outright with nothing let through.");
+        Console.WriteLine("Expect the session to die around 30s if the safety timeout does not");
+        Console.WriteLine("end the hold first. Use it to see what the block alone does.");
+        Console.WriteLine();
     }
 
     if (options.ResyncTriggerLengths.Count == 0 && options.PassLengths.Count > 0)
@@ -373,7 +402,8 @@ static async Task<int> HoldAsync(string[] args)
     Console.WriteLine($"{(dryRun ? "DRY RUN" : "HOLD")}  {group}   {seconds}s");
     Console.WriteLine($"  pass sizes   : {string.Join(", ", options.PassLengths.Order())}");
     Console.WriteLine($"  resync starts: {string.Join(", ", options.ResyncTriggerLengths.Order())}"
-        + $"  (for {options.ResyncDuration.TotalSeconds:N1}s)");
+        + $"  (open {options.ResyncDuration.TotalSeconds:N2}s, then blocked "
+        + $"{options.ResyncCooldown.TotalSeconds:N1}s minimum)");
     Console.WriteLine($"  safety limit : {(options.SafetyTimeout is { } t ? $"{t.TotalSeconds:N0}s" : "none")}");
     Console.WriteLine();
 
@@ -417,6 +447,7 @@ static async Task<int> HoldAsync(string[] args)
     // Watching the held direction measures the one stream guaranteed not to move - this tool sees
     // every packet before dropping it, so its own counters never fall.
     long warmupOpposite = 0;
+    long warmupHeld = 0;
     var engaged = false;
 
     while (!run.IsCompleted)
@@ -428,6 +459,7 @@ static async Task<int> HoldAsync(string[] args)
         {
             engaged = true;
             warmupOpposite = downlink ? controller.OutboundSeen : controller.InboundSeen;
+            warmupHeld = downlink ? controller.InboundSeen : controller.OutboundSeen;
             module.IsActive = true;
         }
         Console.Write($"\r{elapsed,5:N0}s/{seconds}s  "
@@ -450,6 +482,23 @@ static async Task<int> HoldAsync(string[] args)
     Console.WriteLine();
     Console.WriteLine($"reconnect requests seen : {triggersSeen}");
     Console.WriteLine($"resync windows started  : {resyncsStarted}");
+
+    var heldDropped = downlink ? controller.InboundDropped : controller.OutboundDropped;
+    var heldSeen = downlink ? controller.InboundSeen : controller.OutboundSeen;
+    var heldDuringHold = heldSeen - (downlink ? warmupHeld : warmupHeld);
+    if (heldDuringHold > 0)
+    {
+        // Warmup passes everything, so a whole-run percentage understates how tight the hold was.
+        var tightness = heldDropped / (double)heldDuringHold;
+        Console.WriteLine($"blocked while holding   : {tightness,5:P0} of {heldDuringHold} packets");
+        if (tightness < 0.9)
+        {
+            Console.WriteLine();
+            Console.WriteLine("Anything short of near-total leaks: a single packet is enough to carry");
+            Console.WriteLine("a pickup or a buff through. Try --resync-ms lower or --cooldown-ms");
+            Console.WriteLine("higher, and --no-resync to see what a perfect block looks like.");
+        }
+    }
 
     // Two independent checks that the block reached the game, neither needing anything observed
     // in play. The game asking to reconnect means it noticed a peer went quiet; the peer sending
