@@ -1290,18 +1290,28 @@ samples of different size drawn from the same traffic.
 Duration also reversed: the successes were *shorter* on average here, against longer in the n=3
 sample that originally suggested a timing effect. That sample was noise.
 
-### Conclusion
+### Conclusion, and its correction
 
 Within what a capture on this machine can see, an attempt that works and an attempt that does not
-are the same. The variance is not in which packets cross, when the block starts or ends, how long
-it lasts, or what the peer is doing - all of which were measured and none of which separate.
+are the same. Nothing measured separated them.
 
-That does not prove it is unreachable, only that it is not reachable this way. It would have to be
-something the client decides internally, or something visible only from outside this machine.
+That was read as evidence the variance is game-side and not tool-controllable. **That reading was
+wrong.** A reference limiter achieves 6 detached shots out of 9, consistently, on the same
+machine - so it is controllable, and something in this project's configuration is worse.
 
-**This is where the investigation stops being productive.** Every tool-side lever has been tried
-and measured: which packets pass, the resync, hotkey latency, blocking past the release, hold
-duration. None of them move it, and now the packets themselves have been checked directly.
+The likely cause is a decision made here on bad reasoning. These trials all ran with
+`--no-pass --no-resync`, chosen because a three-second hold cannot reach the ~30 second ceiling
+and therefore "needs nothing to pass". But the reference limiter *does* pass traffic during an
+uplink hold - 20 packets across 30 seconds, sizes 51, 128, 136, 174, 190, 198, 206, 233, 238 and
+1166 (Finding 31) - and it is the one getting 2 in 3.
+
+The best result with this tool, 2 of 3, matches that rate. Every session steered onto a total
+block did worse.
+
+So the comparison the whole investigation rested on was against a configuration that was never
+shown to be right, and was in fact chosen against the only direct evidence available. Passing
+nothing is not a stricter version of passing the handshake; it is a different thing, and the
+measurement says it is worse.
 
 ---
 
