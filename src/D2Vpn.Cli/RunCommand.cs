@@ -154,7 +154,8 @@ internal static class RunCommand
         Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}");
         Console.WriteLine($"  buffering    : "
             + (options.Buffering
-                ? $"on, up to {options.BufferCapacity} packets or "
+                ? $"{(options.BufferInbound ? "both directions" : "uplink only")}, "
+                  + $"up to {options.BufferCapacity} packets or "
                   + $"{options.BufferMaxAge.TotalSeconds:N0}s old"
                 : "off - blocked packets are destroyed"));
         Console.WriteLine($"  safety limit : "

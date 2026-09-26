@@ -69,6 +69,51 @@ public class BufferingTests
     }
 
     [Fact]
+    public void A_blocked_inbound_packet_is_dropped_even_with_buffering_on()
+    {
+        // Buffering alone means outbound. Replaying inbound gains nothing known - the server
+        // re-sends current state regardless, which is why a downlink hold works while dropping.
+        var module = new HoldModule("PVE", DestinyPorts.Peer,
+            MeasuredDefaults.Peer3074Downlink with { Buffering = true });
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
+    }
+
+    [Fact]
+    public void Inbound_is_buffered_only_when_asked_for_explicitly()
+    {
+        var module = new HoldModule("PVE", DestinyPorts.Peer,
+            MeasuredDefaults.Peer3074Downlink with { Buffering = true, BufferInbound = true });
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
+    }
+
+    [Fact]
+    public void A_hold_on_both_directions_still_buffers_only_what_it_sends()
+    {
+        // The asymmetry is between directions, not between modules, so a full hold must not start
+        // queueing inbound state just because it covers that direction too.
+        var module = new HoldModule("PVE", DestinyPorts.Peer,
+            MeasuredDefaults.Peer3074Full with { Buffering = true });
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Outbound(3074, Ordinary, 0)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
+    }
+
+    [Fact]
+    public void Inbound_buffering_alone_does_nothing_without_buffering()
+    {
+        var module = new HoldModule("PVE", DestinyPorts.Peer,
+            MeasuredDefaults.Peer3074Downlink with { Buffering = false, BufferInbound = true });
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
+    }
+
+    [Fact]
     public void Traffic_outside_the_group_is_never_buffered()
     {
         var module = Module(buffering: true);

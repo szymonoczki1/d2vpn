@@ -73,6 +73,7 @@ static void PrintUsage()
     Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME] [--log-passed]");
     Console.WriteLine("                    [--untick-ms N] [--log FILE]");
     Console.WriteLine("                    [--no-buffer] [--buffer-size N] [--buffer-age-s N]");
+    Console.WriteLine("                    [--buffer-downlink]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
@@ -90,9 +91,11 @@ static void PrintUsage()
     Console.WriteLine("      older than 30s are discarded rather than replayed, since stale");
     Console.WriteLine("      actions are worse than none. --buffer-size and --buffer-age-s change");
     Console.WriteLine("      those two limits.");
-    Console.WriteLine("      A downlink-only hold does NOT buffer unless asked with --buffer.");
-    Console.WriteLine("      The server re-sends state regardless, so there is nothing to");
-    Console.WriteLine("      recover, and replaying stale inbound state could do harm.");
+    Console.WriteLine("      Only outbound is held, whatever direction the hold covers, so a");
+    Console.WriteLine("      downlink run is unaffected. Replaying inbound is unproven: the");
+    Console.WriteLine("      server re-sends state regardless, so there is nothing to recover,");
+    Console.WriteLine("      and a backlog of stale inbound state is the one direction where");
+    Console.WriteLine("      replay could do harm. --buffer-downlink enables it to be measured.");
     Console.WriteLine();
     Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
     Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
@@ -830,20 +833,15 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
         };
     }
 
-    // On by default wherever uplink is held, because that is where it was measured: 12 detached
-    // shots in 15 against roughly 1 in 6 when blocked packets were destroyed (Finding 36). Left
-    // off for a downlink-only hold, where replay is unproven - the server re-sends state anyway,
-    // so there is nothing to recover and a queue of stale inbound state is the one case where
-    // this could plausibly do harm. --buffer turns it on there for anyone wanting to measure it.
-    var buffering = heldDirection != HoldDirection.Downlink || HasFlag(args, "--buffer");
-    if (HasFlag(args, "--no-buffer"))
-    {
-        buffering = false;
-    }
-
+    // On by default, because that is where it was measured: 12 detached shots in 15 against
+    // roughly 1 in 6 when blocked packets were destroyed (Finding 36). This covers outbound only,
+    // whatever direction the hold itself covers, so a downlink-only run is unaffected by it -
+    // replaying inbound is unproven, the server re-sends state regardless, and a backlog of stale
+    // inbound state is the one direction where replay could do harm rather than nothing.
     options = options with
     {
-        Buffering = buffering,
+        Buffering = !HasFlag(args, "--no-buffer"),
+        BufferInbound = HasFlag(args, "--buffer-downlink"),
         BufferCapacity = IntOption(args, "--buffer-size", options.BufferCapacity),
         BufferMaxAge = TimeSpan.FromSeconds(
             IntOption(args, "--buffer-age-s", (int)options.BufferMaxAge.TotalSeconds)),

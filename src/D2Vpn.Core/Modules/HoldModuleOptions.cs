@@ -134,13 +134,31 @@ public sealed record HoldModuleOptions
     /// Hold blocked packets and replay them on release, instead of dropping them.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Load-bearing for uplink and optional for downlink, because the two are not symmetric.
     /// The server keeps sending current state, so a dropped inbound packet only delays what the
     /// client learns. Nothing re-sends the player's actions, so a dropped outbound packet is
     /// destroyed - and a shot that is destroyed never happened, where a shot that arrives late
     /// registers against stale context. See <c>docs/protocol.md</c>, finding 36.
+    /// </para>
+    /// <para>
+    /// This alone buffers outbound packets only, even on a hold covering both directions, because
+    /// outbound is the only case measured. <see cref="BufferInbound"/> extends it.
+    /// </para>
     /// </remarks>
     public bool Buffering { get; init; }
+
+    /// <summary>
+    /// Also hold and replay blocked <em>inbound</em> packets, rather than outbound alone.
+    /// </summary>
+    /// <remarks>
+    /// Off even when <see cref="Buffering"/> is on, and deliberately so. Replaying inbound gains
+    /// nothing that is known - the server re-sends current state regardless, which is why a
+    /// downlink hold works at all while dropping - and delivering a backlog of stale state on
+    /// release is the one direction where replay could do harm rather than nothing. Exposed so it
+    /// can be measured, not because there is a result behind it.
+    /// </remarks>
+    public bool BufferInbound { get; init; }
 
     /// <summary>
     /// Most packets to hold per peer before the oldest are discarded.

@@ -113,9 +113,8 @@ wrong stream reports that nothing happened. Only uplink on 3074 has been measure
 
 ## Dropping a packet and deferring it are different tricks
 
-`run` holds blocked uplink and replays it the moment the hold is released; `hold`, and a
-downlink-only `run`, destroy it. Which behaviour is wanted depends entirely on the direction, and
-the asymmetry is not obvious:
+`run` holds blocked uplink and replays it the moment the hold is released; `hold` destroys it.
+Which behaviour is wanted depends entirely on the direction, and the asymmetry is not obvious:
 
 - **Downlink.** The server keeps sending current state, so dropping only delays what the client
   learns; the state arrives anyway. Buffering changes little.
@@ -129,10 +128,14 @@ just as completely as this project does and then replays 46-65 packets in millis
 on release; that replay was the entire difference in outcome.
 
 Rebuilding it from that observation alone took the measured success rate from roughly 1 in 6 to 12
-in 15 - past the reference limiter's own 6 in 9. So it is on by default for uplink, and
-`--no-buffer` turns it off. A downlink-only hold does not buffer unless asked, because the server
-re-sends state regardless and a queue of stale inbound state is the one case where replay could
-plausibly do harm. See Finding 36 in [docs/protocol.md](docs/protocol.md).
+in 15 - past the reference limiter's own 6 in 9. So `run` does it by default, and `--no-buffer`
+turns it off. See Finding 36 in [docs/protocol.md](docs/protocol.md).
+
+Only *outbound* packets are held, whatever direction the hold itself covers - a `--full` hold
+still destroys the inbound it blocks. The asymmetry is between directions, not between modules,
+and replaying inbound is unproven: the server re-sends state regardless, so there is nothing to
+recover, and delivering a backlog of stale state on release is the one direction where replay
+could do harm rather than nothing. `--buffer-downlink` exists so that can be measured.
 
 Limits are 2048 packets (about 100 s of uplink at the measured rate, ~3 MB) and a 30 s age, both
 settable with `--buffer-size` and `--buffer-age-s`. The age limit is not about memory - a position

@@ -334,7 +334,7 @@ public sealed class HoldModule : ITrafficModule
                     return allowed.Contains(packet.PayloadLength)
                         || options.PassLengths.Contains(packet.PayloadLength)
                             ? PacketVerdict.Pass
-                            : options.Buffering ? PacketVerdict.Buffer : PacketVerdict.Drop;
+                            : Blocked(packet, options);
                 }
 
                 State = HoldState.Blocking;
@@ -343,7 +343,20 @@ public sealed class HoldModule : ITrafficModule
 
             return options.PassLengths.Contains(packet.PayloadLength)
                 ? PacketVerdict.Pass
-                : options.Buffering ? PacketVerdict.Buffer : PacketVerdict.Drop;
+                : Blocked(packet, options);
         }
+
+        /// <summary>
+        /// What to do with a packet the hold is blocking: hold it for replay, or destroy it.
+        /// </summary>
+        /// <remarks>
+        /// Decided per packet rather than per hold, because the asymmetry is between directions
+        /// and not between modules. A hold covering both directions still buffers only what it
+        /// sends, which is the only case with a result behind it.
+        /// </remarks>
+        private static PacketVerdict Blocked(PacketInfo packet, HoldModuleOptions options) =>
+            options.Buffering && (packet.IsOutbound || options.BufferInbound)
+                ? PacketVerdict.Buffer
+                : PacketVerdict.Drop;
     }
 }
