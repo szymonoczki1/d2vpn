@@ -1,5 +1,6 @@
 using System.Runtime.Versioning;
 using D2Vpn.Cli.Hotkeys;
+using D2Vpn.Core.Diagnostics;
 using D2Vpn.Core.Input;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
@@ -27,12 +28,16 @@ internal static class RunCommand
         bool logPassed,
         int pollMs,
         int untickDelayMs,
+        string? logPath,
+        int goodKey,
+        int badKey,
         CancellationToken cancellationToken)
     {
         var module = new HoldModule(group.Name, group, options);
         module.SafetyTimeoutElapsed += m =>
             Console.WriteLine($"\n{m.Name}: safety timeout reached, released.");
 
+        using var session = logPath is null ? null : new SessionLog(logPath);
         using var controller = new WinDivertTrafficController(module, priority);
         using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
@@ -102,6 +107,14 @@ internal static class RunCommand
             Console.WriteLine();
         }
 
+        if (session is not null)
+        {
+            Console.WriteLine($"  log          : {session.Path}");
+            Console.WriteLine($"  mark worked  : {KeyName.Describe(goodKey)}");
+            Console.WriteLine($"  mark failed  : {KeyName.Describe(badKey)}");
+        }
+
+        Console.WriteLine();
         Console.WriteLine($"Press {keyLabel} in-game to hold, again to release. Ctrl+C to exit.");
         Console.WriteLine("The key is not swallowed - the game still receives it.");
         Console.WriteLine();
@@ -160,6 +173,14 @@ internal static class RunCommand
         }
 
         Console.WriteLine();
+        if (session is not null)
+        {
+            Console.WriteLine($"{session.Count} events written to {session.Path}");
+            Console.WriteLine("Line that up against a capture taken alongside, and the attempts");
+            Console.WriteLine("that worked can be compared against the ones that did not.");
+            Console.WriteLine();
+        }
+
         Console.WriteLine("Released - the handle is closed and traffic is back to normal.");
         return 0;
     }

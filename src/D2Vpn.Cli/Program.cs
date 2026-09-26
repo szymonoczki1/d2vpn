@@ -71,7 +71,11 @@ static void PrintUsage()
     Console.WriteLine("      without touching traffic - the safe way to try it first.");
     Console.WriteLine();
     Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME] [--log-passed]");
-    Console.WriteLine("                    [--untick-ms N]");
+    Console.WriteLine("                    [--untick-ms N] [--log FILE]");
+    Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
+    Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
+    Console.WriteLine("      (worked) or f8 (failed) - labelled trials are the only way to find");
+    Console.WriteLine("      a pattern that is not visible in play.");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
@@ -851,7 +855,11 @@ static async Task<int> RunAsync(string[] args)
     return await RunCommand.ExecuteAsync(
         group, options, toggleKey, priority, HasFlag(args, "--log-passed"),
         IntOption(args, "--poll-ms", 1),
-        IntOption(args, "--untick-ms", 0, allowZero: true), cts.Token);
+        IntOption(args, "--untick-ms", 0, allowZero: true),
+        StringOption(args, "--log"),
+        KeyName.Parse(StringOption(args, "--good-key") ?? "f7"),
+        KeyName.Parse(StringOption(args, "--bad-key") ?? "f8"),
+        cts.Token);
 }
 
 static string? StringOption(string[] args, string name)
