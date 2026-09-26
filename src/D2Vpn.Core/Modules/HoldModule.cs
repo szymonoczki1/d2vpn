@@ -30,6 +30,10 @@ namespace D2Vpn.Core.Modules;
 /// </remarks>
 public sealed class HoldModule : ITrafficModule
 {
+    // Toggling comes from a hotkey thread while the packet loop reads per-peer state, so every
+    // path that touches that state takes this. Decide runs per packet - a few tens per second -
+    // so an uncontended lock costs nothing worth measuring.
+    private readonly Lock _gate = new();
     private readonly Dictionary<string, PeerHold> _peers = [];
     private bool _isActive;
     private DateTimeOffset? _activatedAt;
@@ -63,7 +67,44 @@ public sealed class HoldModule : ITrafficModule
     /// <inheritdoc/>
     public bool IsActive
     {
-        get => _isActive;
+        get
+        {
+            lock (_gate)
+            {
+                return _isActive;
+            }
+        }
+
+        set
+        {
+            lock (_gate)
+            {
+                if (_isActive == value)
+                {
+                    return;
+                }
+
+                _isActive = value;
+
+                // Releasing must restore normal traffic immediately and leave nothing behind, so
+                // that toggling off is always safe even from a half-finished resync.
+                ResetCore();
+            }
+        }
+    }
+
+    /// <summary>Flips the hold and reports the new state, for a hotkey to act on.</summary>
+    public bool Toggle()
+    {
+        lock (_gate)
+        {
+            IsActiveCore = !_isActive;
+            return _isActive;
+        }
+    }
+
+    private bool IsActiveCore
+    {
         set
         {
             if (_isActive == value)
@@ -72,10 +113,7 @@ public sealed class HoldModule : ITrafficModule
             }
 
             _isActive = value;
-
-            // Releasing must restore normal traffic immediately and leave nothing behind, so that
-            // toggling off is always safe even from a half-finished resync.
-            Reset();
+            ResetCore();
         }
     }
 
@@ -93,11 +131,27 @@ public sealed class HoldModule : ITrafficModule
     public long ResyncsStarted { get; private set; }
 
     /// <summary>Peers this module is currently tracking, for diagnostics and the UI.</summary>
-    public IReadOnlyDictionary<string, HoldState> PeerStates =>
-        _peers.ToDictionary(p => p.Key, p => p.Value.State);
+    public IReadOnlyDictionary<string, HoldState> PeerStates
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _peers.ToDictionary(p => p.Key, p => p.Value.State);
+            }
+        }
+    }
 
     /// <inheritdoc/>
     public PacketVerdict Decide(PacketInfo packet)
+    {
+        lock (_gate)
+        {
+            return DecideCore(packet);
+        }
+    }
+
+    private PacketVerdict DecideCore(PacketInfo packet)
     {
         if (!_isActive || !Group.Contains(packet.RemotePort))
         {
@@ -108,7 +162,7 @@ public sealed class HoldModule : ITrafficModule
         {
             // Disable rather than merely pass: the operator should not have to notice that a
             // module quietly stopped working, and leaving it "on but inert" invites exactly that.
-            IsActive = false;
+            IsActiveCore = false;
             SafetyTimeoutElapsed?.Invoke(this);
             return PacketVerdict.Pass;
         }
@@ -153,6 +207,14 @@ public sealed class HoldModule : ITrafficModule
     /// </remarks>
     public void Reset()
     {
+        lock (_gate)
+        {
+            ResetCore();
+        }
+    }
+
+    private void ResetCore()
+    {
         _peers.Clear();
         _activatedAt = null;
     }
@@ -160,8 +222,11 @@ public sealed class HoldModule : ITrafficModule
     /// <summary>Clears the diagnostic counters.</summary>
     public void ResetStatistics()
     {
-        TriggersSeen = 0;
-        ResyncsStarted = 0;
+        lock (_gate)
+        {
+            TriggersSeen = 0;
+            ResyncsStarted = 0;
+        }
     }
 
     /// <summary>

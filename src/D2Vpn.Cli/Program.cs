@@ -1,4 +1,6 @@
 using D2Vpn.Cli;
+using D2Vpn.Cli.Hotkeys;
+using D2Vpn.Core.Input;
 using D2Vpn.Core.Calibration;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
@@ -18,6 +20,7 @@ try
         "watch" => await WatchAsync(args),
         "calibrate" => await CalibrateAsync(args),
         "hold" => await HoldAsync(args),
+        "run" => await RunAsync(args),
         _ => Unknown(args[0])
     };
 }
@@ -66,6 +69,15 @@ static void PrintUsage()
     Console.WriteLine("      sizes, and stop blocking when the peer asks to reconnect, so");
     Console.WriteLine("      the session survives. --dry-run reports what it WOULD drop");
     Console.WriteLine("      without touching traffic - the safe way to try it first.");
+    Console.WriteLine();
+    Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME]");
+    Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
+    Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
+    Console.WriteLine("      and useless when a desync has to start on the frame you want.");
+    Console.WriteLine("      Default key is capslock for uplink, mouse4 for downlink - matching");
+    Console.WriteLine("      what the existing AHK scripts already send. Accepts the same");
+    Console.WriteLine("      --resync-pass, --resync-ms, --cooldown-ms, --timeout-s, --no-pass");
+    Console.WriteLine("      and --no-resync as hold.");
     Console.WriteLine();
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
@@ -745,6 +757,100 @@ static IDisposable SetupInterrupt(CancellationTokenSource cts)
 
     Console.CancelKeyPress += handler;
     return new D2Vpn.Cli.Disposer(() => Console.CancelKeyPress -= handler);
+}
+
+/// <summary>
+/// Resolves a module's options from the command line, shared by hold and run.
+/// </summary>
+static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool downlink, bool full)
+{
+    var heldDirection = full
+        ? HoldDirection.Both
+        : downlink ? HoldDirection.Downlink : HoldDirection.Uplink;
+
+    var options = MeasuredDefaults.For(group, heldDirection);
+    if (options is null)
+    {
+        var what = full ? "full" : downlink ? "downlink" : "uplink";
+        throw new ArgumentException(
+            $"No {what} signature has been measured for {group}. "
+            + $"Run 'd2vpn calibrate {group.Name}{(downlink ? " --downlink" : string.Empty)}' first.");
+    }
+
+    if (LengthSetOption(args, "--resync-pass") is { } resyncPass)
+    {
+        options = options with { ResyncPassLengths = resyncPass };
+    }
+
+    var resyncMs = IntOption(args, "--resync-ms", 0);
+    if (resyncMs > 0)
+    {
+        options = options with { ResyncDuration = TimeSpan.FromMilliseconds(resyncMs) };
+    }
+
+    var cooldownMs = IntOption(args, "--cooldown-ms", 0);
+    if (cooldownMs > 0)
+    {
+        options = options with { ResyncCooldown = TimeSpan.FromMilliseconds(cooldownMs) };
+    }
+
+    var timeoutSeconds = IntOption(args, "--timeout-s", -1, allowZero: true);
+    if (timeoutSeconds >= 0)
+    {
+        options = options with
+        {
+            SafetyTimeout = timeoutSeconds == 0 ? null : TimeSpan.FromSeconds(timeoutSeconds)
+        };
+    }
+
+    if (HasFlag(args, "--no-pass"))
+    {
+        options = options with { PassLengths = new HashSet<int>() };
+    }
+
+    if (HasFlag(args, "--no-resync"))
+    {
+        options = options with { ResyncTriggerLengths = new HashSet<int>() };
+    }
+
+    return options;
+}
+
+static async Task<int> RunAsync(string[] args)
+{
+    var group = ResolveGroup(args);
+    var downlink = HasFlag(args, "--downlink");
+    var full = HasFlag(args, "--full");
+
+    if (full && downlink)
+    {
+        throw new ArgumentException("--full already covers both directions; drop --downlink.");
+    }
+
+    var keyName = StringOption(args, "--key") ?? (downlink ? "mouse4" : "capslock");
+    var toggleKey = KeyName.Parse(keyName);
+    var priority = PriorityOption(args, downlink ? (short)-1000 : (short)0);
+    var options = ResolveOptions(args, group, downlink, full);
+
+    if (!Elevation.RequireElevated())
+    {
+        return 1;
+    }
+
+    Console.WriteLine("DIVERT MODE - packets really are dropped while holding.");
+    Console.WriteLine("Any other limiter must be fully EXITED, not just idle.");
+    Console.WriteLine();
+
+    using var cts = new CancellationTokenSource();
+    using var sigint = SetupInterrupt(cts);
+
+    return await RunCommand.ExecuteAsync(group, options, toggleKey, priority, cts.Token);
+}
+
+static string? StringOption(string[] args, string name)
+{
+    var i = Array.FindIndex(args, a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
+    return i >= 0 && i + 1 < args.Length ? args[i + 1] : null;
 }
 
 static void PrintHistogram(string title, LengthHistogram histogram)
