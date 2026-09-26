@@ -76,6 +76,31 @@ public sealed record HoldModuleOptions
     public TimeSpan ResyncDuration { get; init; } = TimeSpan.FromSeconds(3.5);
 
     /// <summary>
+    /// Sizes allowed through during a resync, or <see langword="null"/> to allow everything.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A resync that stops blocking entirely defeats the hold. Measured: a 3.5 s window every
+    /// 8.5 s blocked 53% of downlink - as designed - and a buff picked up during it still arrived
+    /// instantly, because a pickup confirmation is a single packet and any open window carries it.
+    /// </para>
+    /// <para>
+    /// Naming the handshake instead keeps the block total for everything else. On 3074 downlink
+    /// those sizes are 51 and 233, both measured crossing during resync windows while 233 never
+    /// appeared in normal traffic at all. They were briefly shipped as a pass list and then
+    /// withdrawn on the grounds that a hold with resync disabled passed nothing - which was the
+    /// wrong conclusion. With resync off the exchange never starts, so those packets are never
+    /// sent; their absence showed the handshake had not happened, not that it does not need them.
+    /// </para>
+    /// <para>
+    /// Left <see langword="null"/> for uplink, which is validated as it stands and where many
+    /// sizes were observed crossing a resync window - 1254, 1258, 720 and 795 among them - so a
+    /// short list has not been established there.
+    /// </para>
+    /// </remarks>
+    public IReadOnlySet<int>? ResyncPassLengths { get; init; }
+
+    /// <summary>
     /// How long a peer must stay blocked before another resync may open.
     /// </summary>
     /// <remarks>
@@ -197,6 +222,10 @@ public static class MeasuredDefaults
     public static HoldModuleOptions Peer3074Downlink { get; } = new()
     {
         PassLengths = new HashSet<int>(),
+
+        // Let the handshake through and nothing else, so the exchange can complete without the
+        // hold leaking the state it exists to defer.
+        ResyncPassLengths = new HashSet<int> { 51, 233 },
         ResyncTriggerLengths = new HashSet<int> { 128, 136 },
         ResyncTriggerDirection = PacketDirection.Outbound,
         ResyncDuration = TimeSpan.FromSeconds(3.5),

@@ -879,10 +879,27 @@ That is the real constraint, and it is tighter than "block most of the time":
 | No resync | **no** - dies at ~30 s | **yes** |
 | 3.5 s window / 5 s cooldown | yes | **no** |
 
-A working hold needs both, so the window has to be long enough to complete a reconnect exchange
-and short enough to pass no game state. Whether such a window exists is an open question - if the
-handshake and the state travel together, no timing separates them, and a resync would have to
-select by packet rather than by time.
+A working hold needs both, and **timing is the wrong axis**. No window can be long enough to
+complete an exchange and short enough to carry no state, because the two travel together.
+
+### Finding 26b - a resync should answer the handshake, not open the gate
+
+The fix is to select by packet rather than by time: during a resync, pass the handshake and keep
+blocking everything else. On 3074 downlink those sizes are **51 and 233**, both measured crossing
+resync windows, with 233 never appearing in normal traffic at all.
+
+This also corrects an earlier mistake. 51 and 233 were shipped as a downlink pass list, then
+withdrawn (Finding 19) because a hold with resync *disabled* passed nothing at all - taken as
+proof they were resync artefacts rather than necessary. The inference was backwards. With resync
+off the exchange never starts, so those packets are never sent; their absence showed the handshake
+had not happened, not that it does not need them.
+
+They are neither ordinary traffic nor a standing exemption. They are the handshake, and they cross
+only while a window is open.
+
+Uplink keeps the open-gate behaviour for now: many sizes were seen crossing its resync windows -
+1254, 1258, 720, 795 among them - so no short list is established there, and it is validated as
+it stands.
 
 `--resync-ms`, `--cooldown-ms` and `--no-resync` exist to find out empirically, and `hold` now
 reports what fraction of the held direction was actually blocked during the hold, since a

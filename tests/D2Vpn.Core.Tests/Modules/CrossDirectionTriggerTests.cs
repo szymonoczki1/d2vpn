@@ -12,6 +12,7 @@ public class CrossDirectionTriggerTests
 {
     private const int Ordinary = 600;
     private const int ReconnectRequest = 128;
+    private const int HandshakeReply = 233;
 
     private static HoldModule Downlink() =>
         new("3074 DL", DestinyPorts.Peer, MeasuredDefaults.Peer3074Downlink);
@@ -28,8 +29,12 @@ public class CrossDirectionTriggerTests
         Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0)));
         Assert.Equal(HoldState.Resyncing, module.PeerStates.Values.Single());
 
-        // Inbound now flows so the peer can re-establish.
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, Ordinary, 1.5)));
+        // The handshake reply crosses so the exchange can complete...
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 1.5)));
+
+        // ...but game state does not. A resync that opens the gate entirely defeats the hold,
+        // because one packet is enough to carry a pickup through.
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 1.6)));
     }
 
     [Fact]
@@ -39,8 +44,10 @@ public class CrossDirectionTriggerTests
         module.IsActive = true;
 
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0));
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, Ordinary, 4.0)));
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 4.6)));
+
+        // The handshake crosses while the window is open, and stops once it closes.
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 4.0)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 4.6)));
     }
 
     [Fact]
@@ -66,10 +73,11 @@ public class CrossDirectionTriggerTests
 
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0));
 
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, Ordinary, 1.5)));
+        // The resyncing peer may complete its handshake; the other peer stays fully blocked.
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 1.5)));
         Assert.Equal(
             PacketVerdict.Drop,
-            module.Decide(TestPackets.Inbound(3074, Ordinary, 1.5, other)));
+            module.Decide(TestPackets.Inbound(3074, HandshakeReply, 1.5, other)));
     }
 
     [Fact]

@@ -254,7 +254,12 @@ public sealed class HoldModule : ITrafficModule
             {
                 if (packet.Timestamp < _resyncEndsAt)
                 {
-                    return PacketVerdict.Pass;
+                    // A resync that stops blocking entirely defeats the hold: one packet is enough
+                    // to carry a pickup or a buff. Where the handshake sizes are known, only they
+                    // cross and the block stays total for everything else.
+                    return options.ResyncPassLengths is { } allowed
+                        ? allowed.Contains(packet.PayloadLength) ? PacketVerdict.Pass : PacketVerdict.Drop
+                        : PacketVerdict.Pass;
                 }
 
                 State = HoldState.Blocking;
