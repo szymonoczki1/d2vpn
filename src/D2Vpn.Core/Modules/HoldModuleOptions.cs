@@ -208,9 +208,10 @@ public static class MeasuredDefaults
     /// to watch a direction it is not blocking.
     /// </para>
     /// <para>
-    /// So: no pass list, no resync, and a safety timeout doing the work instead. **Measured
-    /// ceiling: about 30 seconds before an error code**, the same limit an uplink hold hits when
-    /// its reconnect exchange is not being completed. The 25 second default leaves a small margin.
+    /// Nothing crosses outside a resync window. Inside one, only the handshake does - see
+    /// <see cref="HoldModuleOptions.ResyncPassLengths"/> - which keeps the block near-total while
+    /// still letting the exchange complete. Validated at 96% blocked over a 60 second hold, twice
+    /// the ~30 second ceiling a hold without a working resync dies at.
     ///
     /// What a downlink hold does in play: incoming world state stops arriving, so the client keeps
     /// acting but never learns the result. Interacting with an object does not complete until the
@@ -230,9 +231,12 @@ public static class MeasuredDefaults
         ResyncTriggerDirection = PacketDirection.Outbound,
         ResyncDuration = TimeSpan.FromSeconds(3.5),
 
-        // Kept until a resync here is confirmed to lift the ceiling the way it does on uplink.
-        // The trigger is observed but the module has never been run against a live game.
-        SafetyTimeout = TimeSpan.FromSeconds(25),
+        // Removed: the resync is proven. A 60 second hold - twice the game's ceiling - blocked 96%
+        // of downlink, survived without an error code, and deferred a pickup until release. The
+        // timeout was there because the resync was unproven, and it was also what prevented
+        // proving it: every earlier run ended at 25 s, safely short of the ceiling, so surviving
+        // meant nothing.
+        SafetyTimeout = null,
         Direction = HoldDirection.Downlink
     };
 

@@ -907,6 +907,57 @@ whole-run percentage understates it by including the warmup.
 
 ---
 
+## Validated: the downlink module
+
+```
+d2vpn hold 3074 --downlink --seconds 70 --warmup 10 --timeout-s 0
+
+UL 0/816 dropped   DL 512/722 dropped   resyncs 12
+reconnect requests seen : 24
+blocked while holding   : 96% of 536 packets
+```
+
+Sixty seconds held - twice the ~30 s ceiling - **no error code**, and a buff picked up during the
+hold did not arrive until the module released.
+
+### Finding 27 - both halves at once, and what it took
+
+Every previous configuration achieved one or the other:
+
+| | Session survives | State deferred | Blocked |
+|---|---|---|---|
+| No resync | no, dies at ~30 s | yes | 100% |
+| Resync opens the gate, 3.5 s / 5 s | yes | **no** | 53% |
+| **Resync answers the handshake** | **yes** | **yes** | **96%** |
+
+Two changes made the difference, both of them corrections to assumptions rather than new
+mechanisms.
+
+**Selecting by packet, not by time.** A window cannot be long enough to complete an exchange and
+short enough to carry no state, because the two travel together. Passing only 51 and 233 while a
+window is open keeps the block near-total - 96% against 53% - and still completes the exchange 12
+times over the hold.
+
+**Holding long enough for the test to be able to fail.** The 25 s safety timeout existed because
+the downlink resync was unproven, and it was also what made proving it impossible: every earlier
+run ended safely short of the ceiling, so "it survived" carried no information. The timeout is now
+removed, since the mechanism it was guarding against is the one that works.
+
+### The remaining 4%
+
+512 of 536 packets blocked during the hold. The 24 that crossed are the handshake completing 12
+times, which is the intended cost rather than leakage - it is what keeps the session alive, and it
+demonstrably does not carry the state.
+
+### Note on the corroborating signal
+
+Uplink *fell* during this hold, 20.1/s to 10.2/s, where an uplink hold makes downlink rise. The
+"peer sent harder" check therefore did not fire, and the run was correctly identified as working
+only because the reconnect requests were counted. Rate direction is not a reliable signal on its
+own; a fired resync is.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

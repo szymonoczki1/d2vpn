@@ -40,15 +40,26 @@ public class MeasuredDefaultsTests
     }
 
     [Fact]
-    public void Downlink_keeps_a_ceiling_until_its_resync_is_proven_in_play()
+    public void Downlink_needs_no_ceiling_now_that_its_resync_is_proven()
     {
-        // The trigger is observed but the module has never run against a live game, and a
-        // downlink hold error-codes at about 30 seconds without a working resync.
+        // Validated at 96% blocked over a 60 second hold - twice the ~30 s ceiling a hold without
+        // a working resync dies at - with a pickup deferred until release.
         var down = MeasuredDefaults.Peer3074Downlink;
 
         Assert.NotEmpty(down.ResyncTriggerLengths);
-        Assert.NotNull(down.SafetyTimeout);
-        Assert.True(down.SafetyTimeout < TimeSpan.FromSeconds(30));
+        Assert.Null(down.SafetyTimeout);
+    }
+
+    [Fact]
+    public void Downlink_answers_the_handshake_rather_than_opening_the_gate()
+    {
+        // A resync that stops blocking entirely leaks the state the hold exists to defer: one
+        // packet carries a pickup. These are the sizes measured crossing a working resync.
+        var down = MeasuredDefaults.Peer3074Downlink;
+
+        Assert.NotNull(down.ResyncPassLengths);
+        Assert.Equal([51, 233], down.ResyncPassLengths!.Order());
+        Assert.Empty(down.PassLengths);
     }
 
     [Fact]

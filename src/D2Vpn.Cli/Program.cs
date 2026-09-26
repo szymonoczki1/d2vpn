@@ -54,7 +54,10 @@ static void PrintUsage()
     Console.WriteLine();
     Console.WriteLine("  d2vpn hold <group> [--seconds N] [--warmup N] [--dry-run]");
     Console.WriteLine("                     [--downlink] [--priority N] [--no-resync]");
-    Console.WriteLine("                     [--resync-ms N] [--cooldown-ms N]");
+    Console.WriteLine("                     [--resync-ms N] [--cooldown-ms N] [--timeout-s N]");
+    Console.WriteLine("      --timeout-s overrides the safety timeout; 0 removes it. Needed to");
+    Console.WriteLine("      hold past the game's ~30s ceiling, which is the only way to tell a");
+    Console.WriteLine("      working resync from a hold that was simply too short to fail.");
     Console.WriteLine("      Hold one direction on a group: drop it except the signature");
     Console.WriteLine("      sizes, and stop blocking when the peer asks to reconnect, so");
     Console.WriteLine("      the session survives. --dry-run reports what it WOULD drop");
@@ -138,7 +141,7 @@ static short PriorityOption(string[] args, short fallback = 0)
 static bool HasFlag(string[] args, string name) =>
     args.Any(a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
 
-static int IntOption(string[] args, string name, int fallback)
+static int IntOption(string[] args, string name, int fallback, bool allowZero = false)
 {
     var i = Array.FindIndex(args, a => string.Equals(a, name, StringComparison.OrdinalIgnoreCase));
     if (i < 0 || i + 1 >= args.Length)
@@ -146,9 +149,13 @@ static int IntOption(string[] args, string name, int fallback)
         return fallback;
     }
 
-    return int.TryParse(args[i + 1], out var value) && value > 0
-        ? value
-        : throw new ArgumentException($"{name} needs a positive whole number.");
+    if (!int.TryParse(args[i + 1], out var value) || value < 0 || (value == 0 && !allowZero))
+    {
+        throw new ArgumentException(
+            $"{name} needs a {(allowZero ? "non-negative" : "positive")} whole number.");
+    }
+
+    return value;
 }
 
 static async Task<int> WatchAsync(string[] args)
@@ -331,6 +338,7 @@ static async Task<int> HoldAsync(string[] args)
     var dryRun = HasFlag(args, "--dry-run");
     var downlink = HasFlag(args, "--downlink");
     var noResync = HasFlag(args, "--no-resync");
+    var timeoutSeconds = IntOption(args, "--timeout-s", -1, allowZero: true);
     var resyncMs = IntOption(args, "--resync-ms", 0);
     var cooldownMs = IntOption(args, "--cooldown-ms", 0);
     var priority = PriorityOption(args);
@@ -348,6 +356,24 @@ static async Task<int> HoldAsync(string[] args)
     // exposed rather than guessed at: a window long enough to complete a handshake but short
     // enough not to pass game state is a property of this game on this connection, and the only
     // way to find it is to try values and watch what reaches the character.
+    if (timeoutSeconds >= 0)
+    {
+        // The safety timeout exists because a direction's resync is unproven - which makes it the
+        // thing standing between here and proving it. Holding past the game's ~30 s ceiling is the
+        // only test that distinguishes a working resync from a hold that was simply too short.
+        options = options with
+        {
+            SafetyTimeout = timeoutSeconds == 0 ? null : TimeSpan.FromSeconds(timeoutSeconds)
+        };
+
+        Console.WriteLine(timeoutSeconds == 0
+            ? "SAFETY TIMEOUT DISABLED - the hold runs for the full duration."
+            : $"Safety timeout overridden to {timeoutSeconds}s.");
+        Console.WriteLine("If the resync is not working the session dies at about 30s. Ctrl+C");
+        Console.WriteLine("releases immediately.");
+        Console.WriteLine();
+    }
+
     if (resyncMs > 0)
     {
         options = options with { ResyncDuration = TimeSpan.FromMilliseconds(resyncMs) };
