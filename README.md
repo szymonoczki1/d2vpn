@@ -6,8 +6,9 @@ Packet interception through the WinDivert kernel driver, with per-module control
 port groups. Built on measurements taken from live traffic rather than on inherited constants -
 see [docs/protocol.md](docs/protocol.md).
 
-> **Status: early.** The measurement and calibration layer works. Traffic *control* is not built
-> yet. What follows describes what exists today, not what is planned.
+> **Status: early.** Measurement, calibration and the first traffic-control module are built.
+> Control has not yet been exercised against a live game. What follows describes what exists
+> today, not what is planned.
 
 ## Why calibration is the centrepiece
 
@@ -65,10 +66,56 @@ untouched, so it cannot stall or break a live game.
 |---|---|
 | `d2vpn list` | Show the known port groups |
 | `d2vpn watch <group> [--seconds N]` | Live packet counts and a payload-size histogram |
-| `d2vpn calibrate <group> [--baseline N] [--hold N]` | Derive this machine's signature for a group |
+| `d2vpn calibrate <group> [--seconds N]` | Derive this machine's signature for a group |
+| `d2vpn hold <group> [--seconds N] [--dry-run]` | Hold uplink on a group. `--dry-run` reports what it would drop without touching traffic |
 
 Groups: `3074`, `27k`, `7500`, `30k`. Both `watch` and `calibrate` need an elevated terminal,
 because loading a kernel driver does.
+
+## Holding uplink is a cycle, not a switch
+
+The obvious design - drop uplink while a key is held, pass a list of handshake sizes so the peer
+does not give up - **caps out at about 30 seconds**, and it took an experiment to find out why.
+
+Running the same 20-second hold with a reference limiter's `AutoResync` turned off, one reconnect
+request repeated at 3-4 packets/second for the hold's entire length: the game asking to
+re-establish, over and over, because nothing ever answered. Turn `AutoResync` back on and those
+retries nearly vanish. It is not a filter. It **answers** the exchange and drives it to
+completion.
+
+So a module is a per-peer state machine:
+
+```
+Blocking   ── saw an outbound reconnect request ──▶  Resyncing
+Resyncing  ── the exchange has had time to finish ──▶  Blocking
+```
+
+While `Blocking`, uplink is dropped except the signature sizes. While `Resyncing`, everything
+passes so the game can re-establish. A 20-second hold measured across four peers at once ran
+block / resync / block, and that is the shape this reproduces.
+
+The acceptance test needs no instrumentation: **hold for more than 30 seconds.** An error code
+means the resync is not working. No error code means it is.
+
+State is per remote address because the game talks to several peers at once, each on its own tick,
+joining and leaving mid-session. Time comes from packet timestamps rather than a clock, so a whole
+hold can be driven through in a unit test with no driver and no game running.
+
+## Safety
+
+`hold` is the first thing here that can break a connection - in divert mode a received packet
+reaches its destination only if it is reinjected.
+
+- **`--dry-run` first.** It runs the module against sniffed traffic and reports what it *would*
+  have dropped, changing nothing.
+- **A packet that cannot be decided is passed, never dropped.** A module bug, an unparseable
+  packet, an exception mid-decision - all of them let traffic through.
+- **Closing the handle restores normal traffic**, so disposal is the kill switch, and it runs on
+  cancellation, on error, and on every exit path. Ctrl+C releases.
+- **Nothing is buffered.** Every packet is decided and immediately reinjected or dropped, so there
+  is no queue to lose if the process dies.
+- **Exit any other limiter completely** - not just idle. Two WinDivert handles on overlapping
+  filters both receive every packet and can each drop or reinject it independently.
 
 ## Port groups
 

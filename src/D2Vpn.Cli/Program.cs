@@ -1,6 +1,7 @@
 using D2Vpn.Cli;
 using D2Vpn.Core.Calibration;
 using D2Vpn.Core.Interception;
+using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
@@ -16,6 +17,7 @@ try
         "list" => ListGroups(),
         "watch" => await WatchAsync(args),
         "calibrate" => await CalibrateAsync(args),
+        "hold" => await HoldAsync(args),
         _ => Unknown(args[0])
     };
 }
@@ -48,9 +50,15 @@ static void PrintUsage()
     Console.WriteLine("      payload sizes that crossed while uplink was collapsed - the packets");
     Console.WriteLine("      a module must pass for the session to survive a hold.");
     Console.WriteLine();
+    Console.WriteLine("  d2vpn hold <group> [--seconds N] [--dry-run]");
+    Console.WriteLine("      Hold uplink on a group: drop it except the signature sizes, and");
+    Console.WriteLine("      stop blocking whenever the peer asks to reconnect, so the session");
+    Console.WriteLine("      survives. --dry-run reports what it WOULD drop without touching");
+    Console.WriteLine("      any traffic, which is the safe way to try it the first time.");
+    Console.WriteLine();
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
-    Console.WriteLine("Both watch and calibrate need administrator rights.");
+    Console.WriteLine("watch, calibrate and hold all need administrator rights.");
 }
 
 static int Unknown(string command)
@@ -253,6 +261,158 @@ static async Task<int> CalibrateAsync(string[] args)
     var result = calibrator.Build();
     PrintCalibration(result);
     return result.BlockDetected ? 0 : 2;
+}
+
+static async Task<int> HoldAsync(string[] args)
+{
+    var group = ResolveGroup(args);
+    var seconds = IntOption(args, "--seconds", 45);
+    var dryRun = args.Any(a => string.Equals(a, "--dry-run", StringComparison.OrdinalIgnoreCase));
+
+    var options = MeasuredDefaults.For(group);
+    if (options is null)
+    {
+        throw new ArgumentException(
+            $"No signature is known for {group}. Run 'd2vpn calibrate {group.Name}' first.");
+    }
+
+    if (options.PassLengths.Count == 0)
+    {
+        Console.WriteLine($"WARNING: no signature has been measured for {group}.");
+        Console.WriteLine("Holding it will block outright, which is likely to drop the session.");
+        Console.WriteLine($"Run 'd2vpn calibrate {group.Name}' first.");
+        Console.WriteLine();
+    }
+
+    if (!Elevation.RequireElevated())
+    {
+        return 1;
+    }
+
+    var module = new UplinkHoldModule(group.Name, group, options);
+    module.SafetyTimeoutElapsed += m =>
+        Console.WriteLine($"\n{m.Name}: safety timeout reached, module disabled.");
+
+    Console.WriteLine($"{(dryRun ? "DRY RUN" : "HOLD")}  {group}   {seconds}s");
+    Console.WriteLine($"  pass sizes   : {string.Join(", ", options.PassLengths.Order())}");
+    Console.WriteLine($"  resync starts: {string.Join(", ", options.ResyncTriggerLengths.Order())}"
+        + $"  (for {options.ResyncDuration.TotalSeconds:N1}s)");
+    Console.WriteLine($"  safety limit : {(options.SafetyTimeout is { } t ? $"{t.TotalSeconds:N0}s" : "none")}");
+    Console.WriteLine();
+
+    if (dryRun)
+    {
+        Console.WriteLine("Sniff mode - packets are copied and continue untouched. Nothing is");
+        Console.WriteLine("dropped; this only reports what a real hold would have done.");
+    }
+    else
+    {
+        Console.WriteLine("DIVERT MODE - packets really are dropped.");
+        Console.WriteLine("Any other limiter must be fully EXITED, not just idle: two handles on");
+        Console.WriteLine("overlapping filters both get every packet and both can drop it.");
+        Console.WriteLine("Ctrl+C releases immediately; closing the handle restores traffic.");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Starting in 5s - click into the game now.");
+    await Task.Delay(TimeSpan.FromSeconds(5));
+
+    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(seconds));
+    using var sigint = SetupInterrupt(cts);
+
+    module.IsActive = true;
+    var started = DateTimeOffset.UtcNow;
+
+    if (dryRun)
+    {
+        await RunDryAsync(group, module, started, seconds, cts.Token);
+        return 0;
+    }
+
+    using var controller = new WinDivertTrafficController(module);
+    var run = controller.RunAsync(cts.Token);
+
+    while (!run.IsCompleted)
+    {
+        await Task.WhenAny(run, Task.Delay(1000, CancellationToken.None));
+        var elapsed = (DateTimeOffset.UtcNow - started).TotalSeconds;
+        Console.Write($"\r{elapsed,5:N0}s / {seconds}s   seen {controller.PacketsSeen,6}"
+            + $"   dropped {controller.PacketsDropped,6}"
+            + $"   peers {module.PeerStates.Count}   {(module.IsActive ? "HOLDING" : "released")}   ");
+    }
+
+    await run;
+    module.IsActive = false;
+
+    Console.WriteLine();
+    Console.WriteLine();
+    Console.WriteLine($"seen {controller.PacketsSeen}, dropped {controller.PacketsDropped}, "
+        + $"passed {controller.PacketsSeen - controller.PacketsDropped}");
+
+    if (controller.PacketsPassedOnError > 0)
+    {
+        Console.WriteLine($"{controller.PacketsPassedOnError} packets were passed because they could");
+        Console.WriteLine("not be decided. Traffic was never at risk, but the module did not see them.");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Released. Did the game survive past 30s without an error code?");
+    Console.WriteLine("That is the whole test: a pass-list alone dies there, resync is what does not.");
+    return 0;
+}
+
+/// <summary>
+/// Runs the module against sniffed traffic, reporting decisions without acting on them.
+/// </summary>
+static async Task RunDryAsync(
+    PortGroup group, UplinkHoldModule module, DateTimeOffset started, int seconds,
+    CancellationToken token)
+{
+    using var source = new WinDivertPacketSource(group);
+    long seen = 0;
+    long wouldDrop = 0;
+    var lastPrint = started;
+
+    await foreach (var packet in source.ReadAllAsync(token))
+    {
+        seen++;
+        if (module.Decide(packet) == PacketVerdict.Drop)
+        {
+            wouldDrop++;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        if (now - lastPrint >= TimeSpan.FromSeconds(1))
+        {
+            lastPrint = now;
+            var elapsed = (now - started).TotalSeconds;
+            Console.Write($"\r{elapsed,5:N0}s / {seconds}s   seen {seen,6}"
+                + $"   would drop {wouldDrop,6}   peers {module.PeerStates.Count}   ");
+        }
+    }
+
+    module.IsActive = false;
+    Console.WriteLine();
+    Console.WriteLine();
+    Console.WriteLine($"seen {seen}, would have dropped {wouldDrop}, would have passed {seen - wouldDrop}");
+    Console.WriteLine();
+    Console.WriteLine("Nothing was actually dropped. If the drop count looks sane against the");
+    Console.WriteLine("rates in 'd2vpn watch', the module logic is behaving - run it for real next.");
+}
+
+/// <summary>Wires Ctrl+C to release the hold rather than kill the process mid-flight.</summary>
+static IDisposable SetupInterrupt(CancellationTokenSource cts)
+{
+    ConsoleCancelEventHandler handler = (_, e) =>
+    {
+        e.Cancel = true;
+        Console.WriteLine();
+        Console.WriteLine("releasing...");
+        cts.Cancel();
+    };
+
+    Console.CancelKeyPress += handler;
+    return new D2Vpn.Cli.Disposer(() => Console.CancelKeyPress -= handler);
 }
 
 static void PrintHistogram(string title, LengthHistogram histogram)

@@ -102,7 +102,7 @@ public sealed class WinDivertPacketSource : IPacketSource
     /// header, or neither an IPv4 nor an IPv6 header. Such packets cannot belong to a port group
     /// and are not worth surfacing.
     /// </returns>
-    private static unsafe PacketInfo? Describe(WinDivertPacket packet, WinDivertAddress addr)
+    internal static unsafe PacketInfo? Describe(WinDivertPacket packet, WinDivertAddress addr)
     {
         var parse = packet.GetParseResult();
 
