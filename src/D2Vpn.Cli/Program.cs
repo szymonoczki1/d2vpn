@@ -70,14 +70,15 @@ static void PrintUsage()
     Console.WriteLine("      the session survives. --dry-run reports what it WOULD drop");
     Console.WriteLine("      without touching traffic - the safe way to try it first.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME]");
+    Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME] [--log-passed]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
     Console.WriteLine("      Default key is capslock for uplink, mouse4 for downlink - matching");
     Console.WriteLine("      what the existing AHK scripts already send. Accepts the same");
     Console.WriteLine("      --resync-pass, --resync-ms, --cooldown-ms, --timeout-s, --no-pass");
-    Console.WriteLine("      and --no-resync as hold.");
+    Console.WriteLine("      and --no-resync as hold. --log-passed prints every packet that");
+    Console.WriteLine("      crosses while holding, for working out what a leak is carrying.");
     Console.WriteLine();
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
@@ -844,7 +845,8 @@ static async Task<int> RunAsync(string[] args)
     using var cts = new CancellationTokenSource();
     using var sigint = SetupInterrupt(cts);
 
-    return await RunCommand.ExecuteAsync(group, options, toggleKey, priority, cts.Token);
+    return await RunCommand.ExecuteAsync(
+        group, options, toggleKey, priority, HasFlag(args, "--log-passed"), cts.Token);
 }
 
 static string? StringOption(string[] args, string name)

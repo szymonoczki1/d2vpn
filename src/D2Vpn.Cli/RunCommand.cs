@@ -24,6 +24,7 @@ internal static class RunCommand
         HoldModuleOptions options,
         int toggleKey,
         short priority,
+        bool logPassed,
         CancellationToken cancellationToken)
     {
         var module = new HoldModule(group.Name, group, options);
@@ -32,6 +33,27 @@ internal static class RunCommand
 
         using var controller = new WinDivertTrafficController(module, priority);
         using var hotkeys = new HotkeyWatcher();
+
+        // Every size that crossed while holding, and how often. A hold that works most of the time
+        // fails on specific packets, and the totals cannot say which.
+        var passedWhileHolding = new Dictionary<int, int>();
+        var started = DateTimeOffset.UtcNow;
+
+        controller.PacketPassedWhileHolding += packet =>
+        {
+            lock (passedWhileHolding)
+            {
+                passedWhileHolding[packet.PayloadLength] =
+                    passedWhileHolding.GetValueOrDefault(packet.PayloadLength) + 1;
+            }
+
+            if (logPassed)
+            {
+                var at = (packet.Timestamp - started).TotalSeconds;
+                Console.WriteLine($"\n[{at,7:N2}s] {(packet.IsOutbound ? "OUT" : " in")} "
+                    + $"{packet.PayloadLength} bytes");
+            }
+        };
 
         var keyLabel = KeyName.Describe(toggleKey);
         var toggleCount = 0;
@@ -58,7 +80,6 @@ internal static class RunCommand
         Console.WriteLine();
 
         var run = controller.RunAsync(cancellationToken);
-        var started = DateTimeOffset.UtcNow;
 
         while (!run.IsCompleted)
         {
@@ -90,6 +111,27 @@ internal static class RunCommand
         Console.WriteLine($"downlink : {controller.InboundDropped} dropped of {controller.InboundSeen}");
         Console.WriteLine($"reconnect requests : {module.TriggersSeen}");
         Console.WriteLine($"resync windows     : {module.ResyncsStarted}");
+
+        if (passedWhileHolding.Count > 0)
+        {
+            Console.WriteLine();
+            Console.WriteLine("sizes that crossed while holding:");
+
+            IReadOnlySet<int> handshake = options.ResyncPassLengths ?? new HashSet<int>();
+            foreach (var (length, count) in passedWhileHolding.OrderByDescending(e => e.Value))
+            {
+                var role = options.PassLengths.Contains(length) ? "standing pass"
+                    : handshake.Contains(length) ? "resync pass"
+                    : "UNEXPECTED";
+
+                Console.WriteLine($"  {length,6} bytes  x{count,-5}  {role}");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Anything here could have carried the action that failed to detach.");
+            Console.WriteLine("Sizes that also occur in ordinary traffic are the ones to suspect.");
+        }
+
         Console.WriteLine();
         Console.WriteLine("Released - the handle is closed and traffic is back to normal.");
         return 0;

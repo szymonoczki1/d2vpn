@@ -82,6 +82,18 @@ public sealed class WinDivertTrafficController : IDisposable
     /// </remarks>
     public long PacketsPassedOnError { get; private set; }
 
+    /// <summary>
+    /// Raised for each packet that crosses while the module is holding.
+    /// </summary>
+    /// <remarks>
+    /// The diagnostic for "it usually works but sometimes does not". A hold that is 95% effective
+    /// fails 5% of the time, and which 5% is invisible from the totals - but a timestamped list of
+    /// exactly what got through can be lined up against the moment the trick failed.
+    ///
+    /// Only fires while holding, so it stays quiet during a warmup or after a release.
+    /// </remarks>
+    public event Action<PacketInfo>? PacketPassedWhileHolding;
+
     /// <summary>Opens a diverting handle for the module's port group.</summary>
     /// <param name="module">Decides each packet.</param>
     /// <param name="priority">
@@ -190,7 +202,14 @@ public sealed class WinDivertTrafficController : IDisposable
                 return true;
             }
 
-            return _module.Decide(info.Value) == PacketVerdict.Pass;
+            var verdict = _module.Decide(info.Value);
+
+            if (verdict == PacketVerdict.Pass && _module.IsActive)
+            {
+                PacketPassedWhileHolding?.Invoke(info.Value);
+            }
+
+            return verdict == PacketVerdict.Pass;
         }
         catch
         {
