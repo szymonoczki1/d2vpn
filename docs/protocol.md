@@ -1357,8 +1357,44 @@ dropped on the basis of a result from the one direction where it genuinely does 
 ### What this asks for
 
 Hold outbound packets while blocking and reinject them on release, rather than dropping them: a
-third verdict beside pass and drop, per-peer queues of cloned packets, a drain on release, and a
-cap so a stalled game cannot grow one without bound.
+third verdict beside pass and drop, queues of cloned packets, a drain on release, and a cap so a
+stalled game cannot grow one without bound.
+
+### Built - `--buffer`
+
+Implemented as a third verdict, `PacketVerdict.Buffer`, which `HoldModule` returns in place of
+`Drop` when `Buffering` is set. `PacketBuffer` holds the clones; `WinDivertTrafficController`
+drains it on the hold-to-release transition.
+
+Off by default. Dropping is the behaviour every measurement above was taken against, and turning
+the reference limiter's approach on by inference rather than by a result here would make this
+project's own findings untestable.
+
+Decisions worth recording, since none of them is forced by the measurement:
+
+- **One queue, not per-peer.** Replay order across peers does not matter - these are separate UDP
+  conversations - and arrival order within a peer is preserved by a single FIFO anyway.
+- **Capacity 2048.** About 100 s of uplink at the measured 20/s, roughly 3 MB of unmanaged memory.
+  The sequences this is for last two to three seconds, so the cap only engages when something has
+  already gone wrong.
+- **Max age 30 s, oldest-first eviction.** The cap bounds memory, the age bounds usefulness: a
+  position update thirty seconds stale is worse than useless on arrival. What matters on release is
+  the most recent actions - the shots just taken - so the oldest are the ones to lose.
+- **Replayed as fast as they will go.** The reference limiter's own bursts are millisecond-spaced
+  and the game copes. Pacing would mean the last actions of a hold arriving later still, which is
+  the opposite of what they are held for.
+- **Drained on the receive thread, never from the hotkey.** Releases come from a hotkey thread;
+  two threads writing one WinDivert handle is not worth finding out about. The drain also runs
+  before the packet that woke the loop is sent, so held actions arrive ahead of the live one.
+- **Discarded on disposal, not flushed.** Closing the handle is the kill switch and has to restore
+  normal traffic at once, rather than first pushing a backlog of stale actions into a session that
+  may already be in trouble.
+- **A packet that failed to parse is still passed, not held.** Replaying something malformed into a
+  live session is worse than the leak it avoids.
+
+**Not yet confirmed in game.** The acceptance test is the detach sequence under `--buffer`: if it
+approaches the reference limiter's 6-of-9 against roughly 1-in-6 without, this finding holds end to
+end. Until that run happens, the mechanism is measured but the fix is not.
 
 ---
 

@@ -131,6 +131,39 @@ public sealed record HoldModuleOptions
     public TimeSpan? SafetyTimeout { get; init; }
 
     /// <summary>
+    /// Hold blocked packets and replay them on release, instead of dropping them.
+    /// </summary>
+    /// <remarks>
+    /// Load-bearing for uplink and optional for downlink, because the two are not symmetric.
+    /// The server keeps sending current state, so a dropped inbound packet only delays what the
+    /// client learns. Nothing re-sends the player's actions, so a dropped outbound packet is
+    /// destroyed - and a shot that is destroyed never happened, where a shot that arrives late
+    /// registers against stale context. See <c>docs/protocol.md</c>, finding 36.
+    /// </remarks>
+    public bool Buffering { get; init; }
+
+    /// <summary>
+    /// Most packets to hold per peer before the oldest are discarded.
+    /// </summary>
+    /// <remarks>
+    /// Measured uplink runs about 20 packets/second, so the default is roughly 100 seconds of
+    /// holding - far past the ~30 second ceiling a hold survives - at a few megabytes. The cap
+    /// exists so a stalled game cannot grow a queue without bound, not because the number is
+    /// meaningful.
+    /// </remarks>
+    public int BufferCapacity { get; init; } = 2048;
+
+    /// <summary>
+    /// Discard held packets older than this rather than replaying them.
+    /// </summary>
+    /// <remarks>
+    /// Count alone is the wrong limit. A position update thirty seconds stale is worse than
+    /// useless on arrival, and replaying it invites the server to correct something that has long
+    /// since moved on. Age bounds what is worth delivering; capacity bounds memory.
+    /// </remarks>
+    public TimeSpan BufferMaxAge { get; init; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// Which direction this module holds. Traffic in any other direction passes untouched.
     /// </summary>
     /// <remarks>

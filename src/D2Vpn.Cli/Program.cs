@@ -72,18 +72,30 @@ static void PrintUsage()
     Console.WriteLine();
     Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME] [--log-passed]");
     Console.WriteLine("                    [--untick-ms N] [--log FILE]");
-    Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
-    Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
-    Console.WriteLine("      (worked) or f8 (failed) - labelled trials are the only way to find");
-    Console.WriteLine("      a pattern that is not visible in play.");
+    Console.WriteLine("                    [--buffer] [--buffer-size N] [--buffer-age-s N]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
     Console.WriteLine("      Default key is capslock for uplink, mouse4 for downlink - matching");
     Console.WriteLine("      what the existing AHK scripts already send. Accepts the same");
     Console.WriteLine("      --resync-pass, --resync-ms, --cooldown-ms, --timeout-s, --no-pass");
-    Console.WriteLine("      and --no-resync as hold. --log-passed prints every packet that");
-    Console.WriteLine("      crosses while holding, for working out what a leak is carrying.");
+    Console.WriteLine("      and --no-resync as hold.");
+    Console.WriteLine();
+    Console.WriteLine("      --buffer holds blocked packets and replays them on release instead");
+    Console.WriteLine("      of destroying them. Needed for uplink: nothing re-sends what the");
+    Console.WriteLine("      player did, so a dropped shot never happened, while a held one");
+    Console.WriteLine("      arrives late. Off by default. Measured uplink is ~20 packets/s, so");
+    Console.WriteLine("      the 2048 default holds ~100s; packets older than 30s are discarded");
+    Console.WriteLine("      rather than replayed, since stale actions are worse than none.");
+    Console.WriteLine("      --buffer-size and --buffer-age-s change those two limits.");
+    Console.WriteLine();
+    Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
+    Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
+    Console.WriteLine("      (worked) or f8 (failed) - labelled trials are the only way to find");
+    Console.WriteLine("      a pattern that is not visible in play. --log-passed prints every");
+    Console.WriteLine("      packet that crosses while holding, for working out what a leak is");
+    Console.WriteLine("      carrying.");
+    Console.WriteLine();
     Console.WriteLine("      --untick-ms keeps blocking after the key is released. Off by");
     Console.WriteLine("      default, and measured to make bullet detach strictly worse - every");
     Console.WriteLine("      attempt failed with it on. Kept because the result is informative,");
@@ -810,6 +822,17 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
         options = options with
         {
             SafetyTimeout = timeoutSeconds == 0 ? null : TimeSpan.FromSeconds(timeoutSeconds)
+        };
+    }
+
+    if (HasFlag(args, "--buffer"))
+    {
+        options = options with
+        {
+            Buffering = true,
+            BufferCapacity = IntOption(args, "--buffer-size", options.BufferCapacity),
+            BufferMaxAge = TimeSpan.FromSeconds(
+                IntOption(args, "--buffer-age-s", (int)options.BufferMaxAge.TotalSeconds)),
         };
     }
 

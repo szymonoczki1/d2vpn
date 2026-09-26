@@ -326,12 +326,15 @@ public sealed class HoldModule : ITrafficModule
                     // The standing pass list still applies. It was briefly overridden here, which
                     // meant a reconnect request opened a window and was then dropped by it - the
                     // request never reaching the peer it was meant to reach.
-                    return options.ResyncPassLengths is { } allowed
-                        ? allowed.Contains(packet.PayloadLength)
-                          || options.PassLengths.Contains(packet.PayloadLength)
+                    if (options.ResyncPassLengths is not { } allowed)
+                    {
+                        return PacketVerdict.Pass;
+                    }
+
+                    return allowed.Contains(packet.PayloadLength)
+                        || options.PassLengths.Contains(packet.PayloadLength)
                             ? PacketVerdict.Pass
-                            : PacketVerdict.Drop
-                        : PacketVerdict.Pass;
+                            : options.Buffering ? PacketVerdict.Buffer : PacketVerdict.Drop;
                 }
 
                 State = HoldState.Blocking;
@@ -340,7 +343,7 @@ public sealed class HoldModule : ITrafficModule
 
             return options.PassLengths.Contains(packet.PayloadLength)
                 ? PacketVerdict.Pass
-                : PacketVerdict.Drop;
+                : options.Buffering ? PacketVerdict.Buffer : PacketVerdict.Drop;
         }
     }
 }

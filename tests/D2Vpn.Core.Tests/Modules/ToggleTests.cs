@@ -53,7 +53,7 @@ public class ToggleTests
     }
 
     [Fact]
-    public void Toggling_concurrently_with_traffic_does_not_corrupt_state()
+    public async Task Toggling_concurrently_with_traffic_does_not_corrupt_state()
     {
         // Reset clears the dictionary the packet loop walks. Without a lock this throws or
         // produces torn reads; the failure is intermittent, which is why it is worth a test.
@@ -82,11 +82,11 @@ public class ToggleTests
         });
 
         // Completing without an exception is the assertion.
-        Assert.True(Task.WaitAll([packets, toggles], TimeSpan.FromSeconds(10)));
+        await Task.WhenAll(packets, toggles).WaitAsync(TimeSpan.FromSeconds(10));
     }
 
     [Fact]
-    public void Many_peers_survive_concurrent_toggling()
+    public async Task Many_peers_survive_concurrent_toggling()
     {
         var module = Module();
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
@@ -112,6 +112,6 @@ public class ToggleTests
             }
         });
 
-        Assert.True(Task.WaitAll([packets, toggles], TimeSpan.FromSeconds(10)));
+        await Task.WhenAll(packets, toggles).WaitAsync(TimeSpan.FromSeconds(10));
     }
 }

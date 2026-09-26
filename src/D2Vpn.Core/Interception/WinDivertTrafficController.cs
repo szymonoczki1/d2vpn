@@ -25,8 +25,9 @@ namespace D2Vpn.Core.Interception;
 /// cancellation, on unhandled errors, and on any exit path.
 /// </item>
 /// <item>
-/// Nothing is buffered. Every packet is decided and either reinjected or dropped immediately,
-/// so there is no queue to lose if the process dies.
+/// Buffering is opt-in. Without a buffer every packet is decided and either reinjected or dropped
+/// immediately, so there is no queue to lose if the process dies. With one, blocked packets are
+/// held and replayed on release - and are discarded, not flushed, if the handle closes instead.
 /// </item>
 /// </list>
 /// <para>
@@ -40,6 +41,8 @@ public sealed class WinDivertTrafficController : IDisposable
 {
     private readonly WinDivert _divert;
     private readonly ITrafficModule _module;
+    private readonly PacketBuffer? _buffer;
+    private bool _wasHolding;
     private bool _disposed;
 
     /// <summary>The module deciding each packet.</summary>
@@ -53,6 +56,12 @@ public sealed class WinDivertTrafficController : IDisposable
 
     /// <summary>Packets dropped since the controller started.</summary>
     public long PacketsDropped { get; private set; }
+
+    /// <summary>Packets held for replay since the controller started.</summary>
+    public long PacketsBuffered { get; private set; }
+
+    /// <summary>Packets replayed on release since the controller started.</summary>
+    public long PacketsReplayed { get; private set; }
 
     /// <summary>Outbound packets seen.</summary>
     public long OutboundSeen { get; private set; }
@@ -100,9 +109,14 @@ public sealed class WinDivertTrafficController : IDisposable
     /// Handle priority, relevant only when several handles match the same packet.
     /// </param>
     /// <exception cref="InvalidOperationException">The driver could not be opened.</exception>
-    public WinDivertTrafficController(ITrafficModule module, short priority = 0)
+    /// <param name="buffer">
+    /// Where blocked packets are held for replay, or <see langword="null"/> to drop them.
+    /// </param>
+    public WinDivertTrafficController(
+        ITrafficModule module, short priority = 0, PacketBuffer? buffer = null)
     {
         _module = module;
+        _buffer = buffer;
 
         var filter = WinDivertFilterBuilder.Build(module.Group);
         FilterExpression = filter.ToString() ?? string.Empty;
@@ -150,6 +164,21 @@ public sealed class WinDivertTrafficController : IDisposable
 
                 PacketsSeen++;
 
+                // Draining happens here rather than wherever the release came from, so that every
+                // write to the handle stays on this thread: a hold is released from a hotkey. It
+                // also runs before this packet is sent, so the held actions arrive ahead of the
+                // live one that follows them rather than behind it.
+                if (_buffer is not null)
+                {
+                    var holding = _module.IsActive;
+                    if (_wasHolding && !holding)
+                    {
+                        await ReplayAsync().ConfigureAwait(false);
+                    }
+
+                    _wasHolding = holding;
+                }
+
                 var outbound = addr.Flags.HasFlag(WinDivertAddressFlag.Outbound);
                 if (outbound)
                 {
@@ -160,7 +189,9 @@ public sealed class WinDivertTrafficController : IDisposable
                     InboundSeen++;
                 }
 
-                if (ShouldPass(packet, addr))
+                var verdict = Decide(packet, addr);
+
+                if (verdict == PacketVerdict.Pass)
                 {
                     await _divert.SendAsync(packet, addr).ConfigureAwait(false);
                 }
@@ -175,6 +206,12 @@ public sealed class WinDivertTrafficController : IDisposable
                     {
                         InboundDropped++;
                     }
+
+                    if (verdict == PacketVerdict.Buffer && _buffer is not null)
+                    {
+                        _buffer.Hold(packet, addr, DateTimeOffset.UtcNow);
+                        PacketsBuffered++;
+                    }
                 }
             }
         }
@@ -187,9 +224,43 @@ public sealed class WinDivertTrafficController : IDisposable
     }
 
     /// <summary>
+    /// Sends everything the buffer still considers worth replaying, oldest first.
+    /// </summary>
+    /// <remarks>
+    /// Sent as fast as they will go. The reference limiter replays in millisecond-spaced bursts
+    /// and the game copes, so there is nothing to gain by pacing - and pacing would mean the last
+    /// actions of a hold arriving later still, which is the opposite of what they are held for.
+    /// </remarks>
+    private async Task ReplayAsync()
+    {
+        if (_buffer is null)
+        {
+            return;
+        }
+
+        foreach (var entry in _buffer.TakeForReplay(DateTimeOffset.UtcNow))
+        {
+            try
+            {
+                await _divert.SendAsync(entry.Packet, entry.Address).ConfigureAwait(false);
+                PacketsReplayed++;
+            }
+            catch
+            {
+                // One packet that will not reinject is one packet lost, not a reason to abandon
+                // the rest of the queue or to leave the remainder undisposed.
+            }
+            finally
+            {
+                entry.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
     /// Asks the module about a packet, defaulting to passing it whenever anything goes wrong.
     /// </summary>
-    private bool ShouldPass(WinDivertPacket packet, WinDivertAddress addr)
+    private PacketVerdict Decide(WinDivertPacket packet, WinDivertAddress addr)
     {
         try
         {
@@ -199,7 +270,7 @@ public sealed class WinDivertTrafficController : IDisposable
                 // Neither TCP nor UDP, or no IP header. It cannot belong to a port group, so it is
                 // none of our business and must not be swallowed.
                 PacketsPassedOnError++;
-                return true;
+                return PacketVerdict.Pass;
             }
 
             var verdict = _module.Decide(info.Value);
@@ -209,13 +280,15 @@ public sealed class WinDivertTrafficController : IDisposable
                 PacketPassedWhileHolding?.Invoke(info.Value);
             }
 
-            return verdict == PacketVerdict.Pass;
+            return verdict;
         }
         catch
         {
-            // A module bug must not cost the user their connection.
+            // A module bug must not cost the user their connection. Passing is the safe default
+            // even now that buffering exists: holding a packet we failed to understand risks
+            // replaying something malformed into a live session.
             PacketsPassedOnError++;
-            return true;
+            return PacketVerdict.Pass;
         }
     }
 
@@ -231,6 +304,11 @@ public sealed class WinDivertTrafficController : IDisposable
 
         _disposed = true;
         _module.Reset();
+
+        // Held packets are discarded rather than flushed. Disposal is the kill switch, and it has
+        // to restore normal traffic at once rather than first pushing a backlog of stale actions
+        // into a session that may already be in trouble.
+        _buffer?.Dispose();
         _divert.Dispose();
     }
 }

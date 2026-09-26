@@ -49,7 +49,11 @@ internal static class RunCommand
             + $"resyncMs={options.ResyncDuration.TotalMilliseconds:N0} "
             + $"cooldownMs={options.ResyncCooldown.TotalMilliseconds:N0} "
             + $"untickMs={untickDelayMs} pollMs={pollMs} priority={priority}");
-        using var controller = new WinDivertTrafficController(module, priority);
+        using var buffer = options.Buffering
+            ? new PacketBuffer(options.BufferCapacity, options.BufferMaxAge)
+            : null;
+
+        using var controller = new WinDivertTrafficController(module, priority, buffer);
         using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
         // Every size that crossed while holding, and how often. A hold that works most of the time
@@ -148,6 +152,11 @@ internal static class RunCommand
             + $"{(untickDelayMs > 0 ? $"{untickDelayMs} ms" : "none")}");
         Console.WriteLine($"  pass sizes   : {Format(options.PassLengths)}");
         Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}");
+        Console.WriteLine($"  buffering    : "
+            + (options.Buffering
+                ? $"on, up to {options.BufferCapacity} packets or "
+                  + $"{options.BufferMaxAge.TotalSeconds:N0}s old"
+                : "off - blocked packets are destroyed"));
         Console.WriteLine($"  safety limit : "
             + $"{(options.SafetyTimeout is { } t ? $"{t.TotalSeconds:N0}s" : "none")}");
         Console.WriteLine();
@@ -202,6 +211,13 @@ internal static class RunCommand
         Console.WriteLine($"toggled {toggleCount} time{(toggleCount == 1 ? string.Empty : "s")}");
         Console.WriteLine($"uplink   : {controller.OutboundDropped} dropped of {controller.OutboundSeen}");
         Console.WriteLine($"downlink : {controller.InboundDropped} dropped of {controller.InboundSeen}");
+        if (buffer is not null)
+        {
+            Console.WriteLine($"buffered : {controller.PacketsBuffered}, "
+                + $"replayed {controller.PacketsReplayed}, "
+                + $"evicted {buffer.Evicted}, expired {buffer.Expired}");
+        }
+
         Console.WriteLine($"reconnect requests : {module.TriggersSeen}");
         Console.WriteLine($"resync windows     : {module.ResyncsStarted}");
 
@@ -226,14 +242,6 @@ internal static class RunCommand
         }
 
         Console.WriteLine();
-        if (session is not null)
-        {
-            Console.WriteLine($"{session.Count} events written to {session.Path}");
-            Console.WriteLine("Line that up against a capture taken alongside, and the attempts");
-            Console.WriteLine("that worked can be compared against the ones that did not.");
-            Console.WriteLine();
-        }
-
         if (session is not null)
         {
             Console.WriteLine($"{session.Count} events written to {session.Path}"
