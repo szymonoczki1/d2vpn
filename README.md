@@ -163,7 +163,7 @@ tools/capture/         PowerShell capture and analysis scripts
 docs/                  measured findings and prior-art analysis
 ```
 
-## Building
+## Building and running
 
 Needs the .NET 9 SDK.
 
@@ -171,6 +171,24 @@ Needs the .NET 9 SDK.
 dotnet build
 dotnet test
 ```
+
+`d2vpn.cmd` in the repo root forwards to the built executable, so from an elevated terminal in
+this directory:
+
+```
+.\d2vpn list
+.\d2vpn calibrate 3074 --seconds 60
+```
+
+The leading `.\` is required in PowerShell for a script in the current directory. To drop it,
+put the output directory on PATH for the session:
+
+```
+$env:PATH += ";$PWD\src\D2Vpn.Cliin\Debug
+et9.0-windows"
+```
+
+Commands that touch the driver - `watch`, `calibrate`, `hold` - need an elevated terminal.
 
 ## Documentation
 
