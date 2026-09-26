@@ -72,7 +72,7 @@ static void PrintUsage()
     Console.WriteLine();
     Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME] [--log-passed]");
     Console.WriteLine("                    [--untick-ms N] [--log FILE]");
-    Console.WriteLine("                    [--buffer] [--buffer-size N] [--buffer-age-s N]");
+    Console.WriteLine("                    [--no-buffer] [--buffer-size N] [--buffer-age-s N]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
@@ -81,13 +81,18 @@ static void PrintUsage()
     Console.WriteLine("      --resync-pass, --resync-ms, --cooldown-ms, --timeout-s, --no-pass");
     Console.WriteLine("      and --no-resync as hold.");
     Console.WriteLine();
-    Console.WriteLine("      --buffer holds blocked packets and replays them on release instead");
-    Console.WriteLine("      of destroying them. Needed for uplink: nothing re-sends what the");
-    Console.WriteLine("      player did, so a dropped shot never happened, while a held one");
-    Console.WriteLine("      arrives late. Off by default. Measured uplink is ~20 packets/s, so");
-    Console.WriteLine("      the 2048 default holds ~100s; packets older than 30s are discarded");
-    Console.WriteLine("      rather than replayed, since stale actions are worse than none.");
-    Console.WriteLine("      --buffer-size and --buffer-age-s change those two limits.");
+    Console.WriteLine("      Blocked uplink is held and replayed on release rather than being");
+    Console.WriteLine("      destroyed, because nothing re-sends what the player did: a dropped");
+    Console.WriteLine("      shot never happened, while a held one arrives late. Measured at 12");
+    Console.WriteLine("      detached shots in 15, against roughly 1 in 6 when they were thrown");
+    Console.WriteLine("      away. --no-buffer restores destroying them.");
+    Console.WriteLine("      Uplink is ~20 packets/s, so the 2048 default holds ~100s; packets");
+    Console.WriteLine("      older than 30s are discarded rather than replayed, since stale");
+    Console.WriteLine("      actions are worse than none. --buffer-size and --buffer-age-s change");
+    Console.WriteLine("      those two limits.");
+    Console.WriteLine("      A downlink-only hold does NOT buffer unless asked with --buffer.");
+    Console.WriteLine("      The server re-sends state regardless, so there is nothing to");
+    Console.WriteLine("      recover, and replaying stale inbound state could do harm.");
     Console.WriteLine();
     Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
     Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
@@ -825,16 +830,24 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
         };
     }
 
-    if (HasFlag(args, "--buffer"))
+    // On by default wherever uplink is held, because that is where it was measured: 12 detached
+    // shots in 15 against roughly 1 in 6 when blocked packets were destroyed (Finding 36). Left
+    // off for a downlink-only hold, where replay is unproven - the server re-sends state anyway,
+    // so there is nothing to recover and a queue of stale inbound state is the one case where
+    // this could plausibly do harm. --buffer turns it on there for anyone wanting to measure it.
+    var buffering = heldDirection != HoldDirection.Downlink || HasFlag(args, "--buffer");
+    if (HasFlag(args, "--no-buffer"))
     {
-        options = options with
-        {
-            Buffering = true,
-            BufferCapacity = IntOption(args, "--buffer-size", options.BufferCapacity),
-            BufferMaxAge = TimeSpan.FromSeconds(
-                IntOption(args, "--buffer-age-s", (int)options.BufferMaxAge.TotalSeconds)),
-        };
+        buffering = false;
     }
+
+    options = options with
+    {
+        Buffering = buffering,
+        BufferCapacity = IntOption(args, "--buffer-size", options.BufferCapacity),
+        BufferMaxAge = TimeSpan.FromSeconds(
+            IntOption(args, "--buffer-age-s", (int)options.BufferMaxAge.TotalSeconds)),
+    };
 
     if (HasFlag(args, "--no-pass"))
     {

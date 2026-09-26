@@ -71,7 +71,7 @@ untouched, so it cannot stall or break a live game.
 | `d2vpn watch <group> [--seconds N]` | Live packet counts and a payload-size histogram |
 | `d2vpn calibrate <group> [--seconds N] [--downlink]` | Derive this machine's signature for a group, in either direction |
 | `d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]` | Hold a group in one direction for a fixed time. `--dry-run` reports what it would drop without touching traffic |
-| `d2vpn run <group> [--key K] [--downlink] [--full] [--buffer]` | Hold a group on a hotkey, until Ctrl+C. This is the one to actually play with |
+| `d2vpn run <group> [--key K] [--downlink] [--full] [--no-buffer]` | Hold a group on a hotkey, until Ctrl+C. This is the one to actually play with |
 
 Groups: `3074`, `27k`, `7500`, `30k`. Both `watch` and `calibrate` need an elevated terminal,
 because loading a kernel driver does.
@@ -113,9 +113,9 @@ wrong stream reports that nothing happened. Only uplink on 3074 has been measure
 
 ## Dropping a packet and deferring it are different tricks
 
-`hold` and `run` destroy blocked packets by default. `--buffer` holds them and replays them the
-moment the hold is released. Which one is wanted depends entirely on the direction, and the
-asymmetry is not obvious:
+`run` holds blocked uplink and replays it the moment the hold is released; `hold`, and a
+downlink-only `run`, destroy it. Which behaviour is wanted depends entirely on the direction, and
+the asymmetry is not obvious:
 
 - **Downlink.** The server keeps sending current state, so dropping only delays what the client
   learns; the state arrives anyway. Buffering changes little.
@@ -126,13 +126,18 @@ That matters for short sequences. Some effects need the actions to *arrive late*
 so the peer registers them against stale context - and for those, dropping is the wrong tool no
 matter how well the block itself works. A reference limiter measured on this machine blocks uplink
 just as completely as this project does and then replays 46-65 packets in millisecond-spaced bursts
-on release; that replay was the entire difference in outcome. See Finding 36 in
-[docs/protocol.md](docs/protocol.md).
+on release; that replay was the entire difference in outcome.
 
-Defaults: 2048 packets (about 100 s of uplink at the measured rate, ~3 MB) and a 30 s age limit,
-both settable with `--buffer-size` and `--buffer-age-s`. The age limit is not about memory - a
-position update thirty seconds stale is worse than useless on arrival - and eviction is oldest
-first, because what matters on release is the most recent actions.
+Rebuilding it from that observation alone took the measured success rate from roughly 1 in 6 to 12
+in 15 - past the reference limiter's own 6 in 9. So it is on by default for uplink, and
+`--no-buffer` turns it off. A downlink-only hold does not buffer unless asked, because the server
+re-sends state regardless and a queue of stale inbound state is the one case where replay could
+plausibly do harm. See Finding 36 in [docs/protocol.md](docs/protocol.md).
+
+Limits are 2048 packets (about 100 s of uplink at the measured rate, ~3 MB) and a 30 s age, both
+settable with `--buffer-size` and `--buffer-age-s`. The age limit is not about memory - a position
+update thirty seconds stale is worse than useless on arrival - and eviction is oldest first,
+because what matters on release is the most recent actions.
 
 ## Safety
 
@@ -145,10 +150,10 @@ reaches its destination only if it is reinjected.
   packet, an exception mid-decision - all of them let traffic through.
 - **Closing the handle restores normal traffic**, so disposal is the kill switch, and it runs on
   cancellation, on error, and on every exit path. Ctrl+C releases.
-- **Buffering is opt-in.** By default every packet is decided and immediately reinjected or
-  dropped, so there is no queue to lose if the process dies. `--buffer` holds blocked packets
-  instead and replays them on release; the queue is capped, aged out, and discarded rather than
-  flushed if the handle closes.
+- **The buffer cannot outlive the handle.** Blocked uplink is queued and replayed on release, but
+  the queue is capped, aged out, and *discarded* rather than flushed if the handle closes - so the
+  kill switch stays instant and no backlog is ever pushed into a session already in trouble.
+  `--no-buffer` goes back to deciding every packet immediately.
 - **Exit any other limiter completely** - not just idle. Two WinDivert handles on overlapping
   filters both receive every packet and can each drop or reinject it independently.
 

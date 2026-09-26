@@ -1392,9 +1392,29 @@ Decisions worth recording, since none of them is forced by the measurement:
 - **A packet that failed to parse is still passed, not held.** Replaying something malformed into a
   live session is worse than the leak it avoids.
 
-**Not yet confirmed in game.** The acceptance test is the detach sequence under `--buffer`: if it
-approaches the reference limiter's 6-of-9 against roughly 1-in-6 without, this finding holds end to
-end. Until that run happens, the mechanism is measured but the fix is not.
+### Confirmed in game
+
+15 detach attempts under `--buffer`: **12 worked.** Of the three that did not, all three were
+called as execution - too slow through the swap-and-fire - rather than the tool failing.
+
+| | Detached | Attempts | Rate |
+|---|---|---|---|
+| This project, dropping | ~1 | 6 | ~17% |
+| Reference limiter | 6 | 9 | 67% |
+| This project, `--buffer` | 12 | 15 | **80%** |
+
+The attribution of those three misses is a judgement made in play, not a measurement, and 15
+attempts is a small sample. Neither matters much here: the effect is a four-to-five-fold change
+against a baseline that was barely working, which is far too large to be the sample or the
+bookkeeping.
+
+**Finding 36 holds end to end.** The mechanism was measured on the reference limiter, the
+difference was reproduced by building it, and the rebuilt version performs at least as well as the
+thing it was derived from. Nothing about the reference implementation was read to get here - only
+its traffic.
+
+The remaining failures are now in the player's hands rather than the tool's, which is the correct
+place for them and the signal that this line of work is finished.
 
 ---
 
