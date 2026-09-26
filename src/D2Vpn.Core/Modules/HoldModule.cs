@@ -79,6 +79,19 @@ public sealed class HoldModule : ITrafficModule
         }
     }
 
+    /// <summary>
+    /// Trigger-sized packets seen since the last <see cref="Reset"/>.
+    /// </summary>
+    /// <remarks>
+    /// The single most useful number when a hold behaves unexpectedly. Zero means the game never
+    /// asked to reconnect, or asked in a size the trigger list does not contain - either way the
+    /// resync cannot have run, and a hold is only as good as its pass list.
+    /// </remarks>
+    public long TriggersSeen { get; private set; }
+
+    /// <summary>Resync windows started since the last <see cref="Reset"/>.</summary>
+    public long ResyncsStarted { get; private set; }
+
     /// <summary>Peers this module is currently tracking, for diagnostics and the UI.</summary>
     public IReadOnlyDictionary<string, HoldState> PeerStates =>
         _peers.ToDictionary(p => p.Key, p => p.Value.State);
@@ -110,6 +123,12 @@ public sealed class HoldModule : ITrafficModule
         if (packet.Direction == Options.EffectiveTriggerDirection
             && Options.ResyncTriggerLengths.Contains(packet.PayloadLength))
         {
+            TriggersSeen++;
+            if (peer.State != HoldState.Resyncing)
+            {
+                ResyncsStarted++;
+            }
+
             peer.BeginResync(packet.Timestamp, Options.ResyncDuration);
         }
 
@@ -126,6 +145,8 @@ public sealed class HoldModule : ITrafficModule
     {
         _peers.Clear();
         _activatedAt = null;
+        TriggersSeen = 0;
+        ResyncsStarted = 0;
     }
 
     /// <summary>

@@ -353,9 +353,9 @@ static async Task<int> HoldAsync(string[] args)
 
     if (options.PassLengths.Count == 0)
     {
-        Console.WriteLine($"WARNING: no signature has been measured for {group}.");
-        Console.WriteLine("Holding it will block outright, which is likely to drop the session.");
-        Console.WriteLine($"Run 'd2vpn calibrate {group.Name}' first.");
+        Console.WriteLine("NOTE: this direction has no pass list, so it blocks outright.");
+        Console.WriteLine("For 3074 downlink that is deliberate - measurement showed nothing needs");
+        Console.WriteLine("to cross. Elsewhere it means the group has not been calibrated.");
         Console.WriteLine();
     }
 
@@ -417,12 +417,30 @@ static async Task<int> HoldAsync(string[] args)
     }
 
     await run;
+
+    // Read before releasing: disposing the controller resets the module and clears these.
+    var triggersSeen = module.TriggersSeen;
+    var resyncsStarted = module.ResyncsStarted;
     module.IsActive = false;
 
     Console.WriteLine();
     Console.WriteLine();
-    Console.WriteLine($"seen {controller.PacketsSeen}, dropped {controller.PacketsDropped}, "
-        + $"passed {controller.PacketsSeen - controller.PacketsDropped}");
+    Console.WriteLine($"uplink   : {controller.OutboundDropped} dropped of {controller.OutboundSeen} seen");
+    Console.WriteLine($"downlink : {controller.InboundDropped} dropped of {controller.InboundSeen} seen");
+    Console.WriteLine();
+    Console.WriteLine($"reconnect requests seen : {triggersSeen}");
+    Console.WriteLine($"resync windows started  : {resyncsStarted}");
+
+    if (triggersSeen == 0)
+    {
+        // Without this the run is uninterpretable: a hold that survived might have resynced, or
+        // might simply not have been blocking hard enough for the game to notice.
+        Console.WriteLine();
+        Console.WriteLine("No reconnect request was ever seen, so the resync never ran. Either the");
+        Console.WriteLine("game did not notice the block, or it asks in a size not in the trigger");
+        Console.WriteLine($"list ({string.Join(", ", options.ResyncTriggerLengths.Order())}).");
+        Console.WriteLine("Run 'd2vpn calibrate' while this is holding to see what it actually sends.");
+    }
 
     if (controller.PacketsPassedOnError > 0)
     {

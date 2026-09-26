@@ -54,6 +54,25 @@ public sealed class WinDivertTrafficController : IDisposable
     /// <summary>Packets dropped since the controller started.</summary>
     public long PacketsDropped { get; private set; }
 
+    /// <summary>Outbound packets seen.</summary>
+    public long OutboundSeen { get; private set; }
+
+    /// <summary>Outbound packets dropped.</summary>
+    public long OutboundDropped { get; private set; }
+
+    /// <summary>Inbound packets seen.</summary>
+    public long InboundSeen { get; private set; }
+
+    /// <summary>
+    /// Inbound packets dropped.
+    /// </summary>
+    /// <remarks>
+    /// Totals alone hide which direction a module actually acted on. A run that dropped 62% of
+    /// everything could be blocking all of one direction or most of both, and those are very
+    /// different bugs.
+    /// </remarks>
+    public long InboundDropped { get; private set; }
+
     /// <summary>
     /// Packets passed because something went wrong rather than because the module said so.
     /// </summary>
@@ -119,6 +138,16 @@ public sealed class WinDivertTrafficController : IDisposable
 
                 PacketsSeen++;
 
+                var outbound = addr.Flags.HasFlag(WinDivertAddressFlag.Outbound);
+                if (outbound)
+                {
+                    OutboundSeen++;
+                }
+                else
+                {
+                    InboundSeen++;
+                }
+
                 if (ShouldPass(packet, addr))
                 {
                     await _divert.SendAsync(packet, addr).ConfigureAwait(false);
@@ -126,6 +155,14 @@ public sealed class WinDivertTrafficController : IDisposable
                 else
                 {
                     PacketsDropped++;
+                    if (outbound)
+                    {
+                        OutboundDropped++;
+                    }
+                    else
+                    {
+                        InboundDropped++;
+                    }
                 }
             }
         }
