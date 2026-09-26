@@ -1266,6 +1266,45 @@ honest possibility is that the variance lives in the game rather than in anythin
 
 ---
 
+## Finding 35 - bullet detach is not distinguishable on the wire
+
+Ten labelled attempts recorded against a simultaneous packet capture, clocks aligned: 3 marked
+worked, 5 marked failed, 2 unmarked. Configuration recorded in the log - uplink, no pass list, no
+resync, no untick delay.
+
+| | worked (n=3) | failed (n=5) |
+|---|---|---|
+| Uplink during hold | **0** | **0** |
+| Downlink during hold | 10.8/s | 10.1/s |
+| Uplink flushed in 1 s after release | 11.0 packets, 8655 bytes | 11.8 packets, 7576 bytes |
+| Hold duration | 2.82 s | 3.05 s |
+
+**Uplink was zero in every attempt.** The block was total and identical whether the trick worked
+or not, so nothing about the blocking distinguishes the outcomes.
+
+No packet size separates the groups either. Checked across downlink during the hold, uplink
+flushed in the second after release, and uplink in the second before the hold: no size appears in
+every success and no failure, or the reverse. The per-group differences are consistent with two
+samples of different size drawn from the same traffic.
+
+Duration also reversed: the successes were *shorter* on average here, against longer in the n=3
+sample that originally suggested a timing effect. That sample was noise.
+
+### Conclusion
+
+Within what a capture on this machine can see, an attempt that works and an attempt that does not
+are the same. The variance is not in which packets cross, when the block starts or ends, how long
+it lasts, or what the peer is doing - all of which were measured and none of which separate.
+
+That does not prove it is unreachable, only that it is not reachable this way. It would have to be
+something the client decides internally, or something visible only from outside this machine.
+
+**This is where the investigation stops being productive.** Every tool-side lever has been tried
+and measured: which packets pass, the resync, hotkey latency, blocking past the release, hold
+duration. None of them move it, and now the packets themselves have been checked directly.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
