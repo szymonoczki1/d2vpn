@@ -11,7 +11,7 @@ namespace D2Vpn.Core.Tests.Calibration;
 /// </summary>
 public class PerPeerCalibrationTests
 {
-    private static readonly System.Net.IPAddress PeerA = System.Net.IPAddress.Parse("205.209.22.52");
+    private static readonly System.Net.IPAddress PeerA = System.Net.IPAddress.Parse("192.0.2.52");
     private static readonly System.Net.IPAddress PeerB = TestPackets.OtherPeer;
 
     private static CalibrationResult Calibrate(IEnumerable<PacketInfo> packets)

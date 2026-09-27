@@ -97,7 +97,7 @@ public class ToggleTests
             while (!cts.IsCancellationRequested)
             {
                 t += 0.01;
-                var peer = System.Net.IPAddress.Parse($"205.209.22.{(int)(t * 100) % 40 + 10}");
+                var peer = System.Net.IPAddress.Parse($"192.0.2.{(int)(t * 100) % 40 + 10}");
                 module.Decide(TestPackets.Outbound(3074, 128, t, peer));
                 module.Decide(TestPackets.Outbound(3074, 500, t, peer));
             }

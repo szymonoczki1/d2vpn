@@ -357,8 +357,8 @@ public class PacketBufferTests
         // the first second between them - a globally keyed throttle would be twice as severe.
         using var buffer = Throttled(TimeSpan.FromSeconds(1));
 
-        Hold(buffer, T0, IPAddress.Parse("205.209.22.10"));
-        Hold(buffer, T0, IPAddress.Parse("205.209.22.11"));
+        Hold(buffer, T0, IPAddress.Parse("192.0.2.10"));
+        Hold(buffer, T0, IPAddress.Parse("192.0.2.11"));
 
         var due = buffer.TakeDue(T0.AddSeconds(1));
 
@@ -376,7 +376,7 @@ public class PacketBufferTests
         // Otherwise a peer stays punished for a backlog it no longer has, the chain accumulating
         // from a release time long past.
         using var buffer = Throttled(TimeSpan.FromSeconds(1));
-        var peer = IPAddress.Parse("205.209.22.10");
+        var peer = IPAddress.Parse("192.0.2.10");
 
         Hold(buffer, T0, peer);
         foreach (var entry in buffer.TakeDue(T0.AddSeconds(1)))
@@ -397,7 +397,7 @@ public class PacketBufferTests
     {
         // Untick dumps the queue, so the next hold must not schedule against the old backlog.
         using var buffer = Throttled(TimeSpan.FromSeconds(1));
-        var peer = IPAddress.Parse("205.209.22.10");
+        var peer = IPAddress.Parse("192.0.2.10");
 
         for (var i = 0; i < 5; i++)
         {

@@ -7,10 +7,10 @@ namespace D2Vpn.Core.Tests;
 /// <summary>Builds <see cref="PacketInfo"/> values for tests without needing a driver.</summary>
 internal static class TestPackets
 {
-    private static readonly IPAddress DefaultPeer = IPAddress.Parse("205.209.22.52");
+    private static readonly IPAddress DefaultPeer = IPAddress.Parse("192.0.2.52");
 
     /// <summary>A second peer, for exercising per-peer analysis.</summary>
-    public static readonly IPAddress OtherPeer = IPAddress.Parse("205.209.19.33");
+    public static readonly IPAddress OtherPeer = IPAddress.Parse("192.0.2.33");
 
     /// <summary>Fixed origin so a test can express times as seconds from the start of a run.</summary>
     public static readonly DateTimeOffset Origin = DateTimeOffset.UnixEpoch;

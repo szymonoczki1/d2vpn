@@ -75,8 +75,8 @@ none of it is Steam or background traffic.
 Established TCP connections read directly from the OS socket table:
 
 ```
-<tunnel>:60059 -> 172.97.56.160:7500    ESTABLISHED
-<tunnel>:64968 -> 205.209.21.144:30000  ESTABLISHED
+<tunnel>:60059 -> <server>:7500    ESTABLISHED
+<tunnel>:64968 -> <server>:30000  ESTABLISHED
 ```
 
 ### Notes and corrections to the reference implementation
@@ -259,9 +259,9 @@ The game recovered immediately:
 
 | Time | Event |
 |---|---|
-| 11.219 | Two RSTs injected; streams to `205.209.22.52` and `205.209.19.191` both end |
-| 11.548 | New SYN to `205.209.22.52` - **330 ms later**, same server |
-| 53.540 | New SYN to `205.209.22.100` - a *different* server. The actual instance change |
+| 11.219 | Two RSTs injected; streams to `<server-a>` and `<server-b>` both end |
+| 11.548 | New SYN to `<server-a>` - **330 ms later**, same server |
+| 53.540 | New SYN to `<server-c>` - a *different* server. The actual instance change |
 
 **Open question.** HarryWatch injects *two* RSTs per peer - one built from an outbound sample and
 one from an inbound sample. Only outbound-looking RSTs appear in this capture. The likely
@@ -676,8 +676,8 @@ notices a peer has gone quiet and asks to reconnect** - so the request is outbou
 A packet capture during a downlink hold with resync disabled showed exactly that:
 
 ```
-10.2.0.2 -> 205.209.22.74   12118 -> 3074  Len=128
-10.2.0.2 -> 205.209.19.172  12118 -> 3074  Len=128
+<tunnel> -> <peer-a>   12118 -> 3074  Len=128
+<tunnel> -> <peer-b>  12118 -> 3074  Len=128
 ```
 
 Outbound, 128-byte payload, repeating roughly every 400 ms, to several peers at once. The same
@@ -1713,6 +1713,59 @@ module later.
 
 `Damage UL Slow`'s triggered self-releasing hold remains unbuilt and is noted here only so the
 distinction is not lost again. It is a separate module, not a correction to this one.
+
+---
+
+## Finding 41 - measured: the reference limiter's slow is a 1 packet/second rate cap
+
+A capture of BitcoinMiner's 3074 uplink slow, filtered to outbound packets outside both pass lists
+- so purely the traffic the module governs.
+
+| Phase | Packets | Behaviour |
+|---|---|---|
+| Before the toggle | 16 in 0.540 s | **29.6/s**, gaps 18-75 ms, mean 36 ms |
+| **Slow on, ~7.9 s** | **7** | gaps 1.1147, 1.0044, 0.9424, 1.0035, 1.0066, 1.0091, 1.0065 s |
+| The untick dump | 13+ in **178 us** | gaps 10-37 us |
+
+### This settles the mechanism
+
+At the pre-toggle rate, about **235 packets** should have been produced during that hold. **Seven
+left.** A fixed delay preserves the input rate - it would have released ~235, one second late. A
+rate cap releases one per second whatever arrives, which is what happened.
+
+So the reference limiter's slow is a **throttle**, confirmed by measurement rather than inferred
+from reading HarryWatch's source. And the period is 1.00 s, which is exactly HarryWatch's
+`DelayPacket(1s)` constant: the mechanism and the value were both inherited.
+
+That also closes finding 40's open question. d2vpn's `--slow` was a fixed offset, which is why a
+uniform 2000 ms produced one visible in-game effect in a whole session: it was reproducing
+latency, and the game compensates for latency. `--slow-throttle --slow-ms 1000` is this.
+
+### The dump is unpaced, again
+
+13 packets inside 178 microseconds, spaced 10-37 us. The third independent observation of the same
+thing (findings 4, 7, and HarryWatch passing 0 for its flush pacing after trying 1000 / 20 / 3).
+**No tool in this family paces a release.**
+
+The dump began 0.838 s after the last throttled packet - inside the 1 s period, so the untick landed
+before the next scheduled release rather than triggering one.
+
+### Two things this does not establish
+
+- **Whether the backlog is queued or sampled.** Only 13 dumped packets are visible before the
+  screenshot ends. If ~228 follow, it is a FIFO throttle like the one built here; if the dump is
+  only those 13, the module keeps the newest and discards the rest, which is a different design.
+  The alternating large/small sizes in the dump match the pre-toggle traffic pattern, which weakly
+  favours a FIFO, but a longer capture would settle it.
+- **Whether the cap is per peer.** Only one peer is present in this capture, so 1/s is 1/s either
+  way. HarryWatch's source keys per peer and this project follows it.
+
+### Period jitter
+
+Against a strict chain from the first release, the gaps drift by up to -53 ms and the mean period is
+1.0125 s. Small, and consistent either with a drain driven by packet arrivals rather than a timer -
+as here - or with the `RateLimiter` library the prior-art notes record. Not worth fitting more
+closely than "one per second".
 
 ---
 

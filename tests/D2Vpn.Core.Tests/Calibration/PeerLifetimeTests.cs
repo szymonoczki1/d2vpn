@@ -14,7 +14,7 @@ namespace D2Vpn.Core.Tests.Calibration;
 public class PeerLifetimeTests
 {
     private static readonly System.Net.IPAddress Established =
-        System.Net.IPAddress.Parse("205.209.22.52");
+        System.Net.IPAddress.Parse("192.0.2.52");
 
     private static readonly System.Net.IPAddress LateJoiner = TestPackets.OtherPeer;
 
