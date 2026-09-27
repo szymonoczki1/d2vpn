@@ -144,7 +144,7 @@ static void PrintUsage()
     Console.WriteLine("      attempt failed with it on. Kept because the result is informative,");
     Console.WriteLine("      not because it is worth using.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--hold-all] [--buffer]");
+    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--no-buffer] [--capture-slice]");
     Console.WriteLine("                 [--safe | --max-hold-s N] [--quiet-hold-s N]");
     Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N]");
     Console.WriteLine("      A different mechanism from the other groups, because 7500 is TCP.");
@@ -165,22 +165,23 @@ static void PrintUsage()
     Console.WriteLine("      a reset. Watch the retransmits-suppressed count: a run that withheld");
     Console.WriteLine("      segments but suppressed none leaked, and the totals will not say so.");
     Console.WriteLine("");
-    Console.WriteLine("      --hold-all withholds EVERY inbound data segment for the whole hold");
-    Console.WriteLine("      rather than capturing a slice and letting later data through. The");
-    Console.WriteLine("      two-phase default assumes a sender that bursts then stalls; measured");
-    Console.WriteLine("      here 7500 carries ~2.3 packets/s, so gaps over 100 ms are just the");
-    Console.WriteLine("      spacing between updates and the capture fires after the first");
-    Console.WriteLine("      segment - seven consecutive holds each withheld exactly one. Use");
-    Console.WriteLine("      this if packets appear to get through while holding. Stronger and");
-    Console.WriteLine("      correspondingly shorter-lived: the reset arrives sooner.");
+    Console.WriteLine("      Every inbound data segment is withheld for the whole hold.");
+    Console.WriteLine("      --capture-slice switches to the reference implementation's two-phase");
+    Console.WriteLine("      behaviour instead: withhold until the sender goes quiet for");
+    Console.WriteLine("      --capture-quiet-ms, then hold only that slice and pass later data.");
+    Console.WriteLine("      That assumes a sender which bursts then stalls, and measured here");
+    Console.WriteLine("      7500 carries ~2.3 packets/s - so gaps over 100 ms are just the");
+    Console.WriteLine("      spacing between updates, the capture fires after the first segment,");
+    Console.WriteLine("      and seven consecutive holds each withheld exactly one.");
     Console.WriteLine("");
-    Console.WriteLine("      --buffer replays the withheld slice on untick instead of destroying");
-    Console.WriteLine("      it. Without it the data only arrives when the peer next retransmits,");
-    Console.WriteLine("      and every suppression doubles that wait - so after a few seconds of");
-    Console.WriteLine("      holding the peer is backed off to around a second, felt as a delay");
-    Console.WriteLine("      before anything changes in game. Replayed segments have their ack");
-    Console.WriteLine("      numbers brought forward and checksums recalculated, since a segment");
-    Console.WriteLine("      held for seconds acknowledges a position long since passed.");
+    Console.WriteLine("      Withheld segments are replayed on untick. --no-buffer destroys them");
+    Console.WriteLine("      instead, in which case the data only arrives when the peer next");
+    Console.WriteLine("      retransmits - and every suppression doubles that wait, so after a few");
+    Console.WriteLine("      seconds of holding the peer is backed off to around a second, felt as");
+    Console.WriteLine("      a delay before anything changes in game. Replayed segments have their");
+    Console.WriteLine("      ack numbers brought forward and checksums recalculated, since one held");
+    Console.WriteLine("      for a minute acknowledges a position long since passed; measured, all");
+    Console.WriteLine("      three replayed segments in a 61s hold needed it.");
     Console.WriteLine("");
     Console.WriteLine("      The hold is UNCAPPED by default and ends only when you untick or the");
     Console.WriteLine("      peer resets. The effect lasts as long as the hold does - the game is");
@@ -895,8 +896,10 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
 
     var options = ApiBlockOptions.Api7500 with
     {
-        Buffering = HasFlag(args, "--buffer"),
-        HoldEverything = HasFlag(args, "--hold-all"),
+        // Both measured and both on. --buffer and --hold-all are still accepted, and now say
+        // what is already happening rather than changing it.
+        Buffering = !HasFlag(args, "--no-buffer"),
+        HoldEverything = !HasFlag(args, "--capture-slice"),
         CaptureQuiet = TimeSpan.FromMilliseconds(
             IntOption(args, "--capture-quiet-ms", (int)ApiBlockOptions.Api7500.CaptureQuiet.TotalMilliseconds)),
         CaptureBytes = IntOption(args, "--capture-bytes", ApiBlockOptions.Api7500.CaptureBytes),

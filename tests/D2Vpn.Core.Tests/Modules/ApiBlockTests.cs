@@ -28,6 +28,20 @@ public class ApiBlockTests
     private static ApiBlockModule Capped(bool holdEverything = false) =>
         Module(ApiBlockOptions.Reference with { HoldEverything = holdEverything });
 
+    /// <summary>The reference implementation's two-phase capture, which is no longer the default.</summary>
+    private static ApiBlockModule Slicing() =>
+        Module(ApiBlockOptions.Api7500 with { HoldEverything = false });
+
+    /// <summary>
+    /// Asserts a packet was withheld, without caring whether it was kept or destroyed.
+    /// </summary>
+    /// <remarks>
+    /// Most of these tests are about what gets held back, not about its fate afterwards - and the
+    /// fate changed when buffering became the default.
+    /// </remarks>
+    private static void AssertWithheld(PacketVerdict verdict) =>
+        Assert.NotEqual(PacketVerdict.Pass, verdict);
+
     [Fact]
     public void An_idle_module_touches_nothing()
     {
@@ -59,7 +73,7 @@ public class ApiBlockTests
     {
         var module = Module();
 
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.TcpData(Port, 500, 1000)));
+        AssertWithheld(module.Decide(TestPackets.TcpData(Port, 500, 1000)));
         Assert.Equal(1, module.SegmentsWithheld);
     }
 
@@ -93,8 +107,8 @@ public class ApiBlockTests
     [Fact]
     public void New_data_arriving_after_the_slice_is_captured_passes()
     {
-        // What makes this a hold on a fixed slice rather than a block on the whole connection.
-        var module = Module();
+        // What makes the two-phase mode a hold on a fixed slice rather than on the connection.
+        var module = Slicing();
 
         module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
 
@@ -113,8 +127,8 @@ public class ApiBlockTests
         var second = module.Decide(TestPackets.TcpData(Port, 500, sequence: 1500, atSeconds: 0.01));
         var third = module.Decide(TestPackets.TcpData(Port, 500, sequence: 2000, atSeconds: 0.02));
 
-        Assert.Equal(PacketVerdict.Drop, second);
-        Assert.Equal(PacketVerdict.Drop, third);
+        AssertWithheld(second);
+        AssertWithheld(third);
         Assert.Equal(3, module.SegmentsWithheld);
     }
 
@@ -255,7 +269,7 @@ public class ApiBlockTests
         // Same sequence number, but it is new data as far as this hold is concerned.
         var verdict = module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 5));
 
-        Assert.Equal(PacketVerdict.Drop, verdict);
+        AssertWithheld(verdict);
         Assert.Equal(2, module.SegmentsWithheld);
     }
 
@@ -271,7 +285,7 @@ public class ApiBlockTests
         var other = TestPackets.TcpData(
             Port, 500, sequence: 1000, atSeconds: 0.3, peer: TestPackets.OtherPeer);
 
-        Assert.Equal(PacketVerdict.Drop, module.Decide(other));
+        AssertWithheld(module.Decide(other));
         Assert.Equal(2, module.SegmentsWithheld);
     }
 
@@ -311,15 +325,15 @@ public class ApiBlockTests
         // Well past the 100 ms window, and genuinely new data rather than a retransmission.
         var later = module.Decide(TestPackets.TcpData(Port, 500, sequence: 9999, atSeconds: 5));
 
-        Assert.Equal(PacketVerdict.Drop, later);
+        AssertWithheld(later);
         Assert.Equal(2, module.SegmentsWithheld);
     }
 
     [Fact]
     public void Without_hold_all_new_data_passes_once_the_window_closes()
     {
-        // The behaviour hold-all exists to override, pinned so the difference stays visible.
-        var module = Module();
+        // The behaviour --capture-slice selects, pinned so the difference stays visible.
+        var module = Slicing();
 
         module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
         var later = module.Decide(TestPackets.TcpData(Port, 500, sequence: 9999, atSeconds: 5));
@@ -427,18 +441,20 @@ public class ApiBlockTests
     }
 
     [Fact]
-    public void Hold_all_is_off_by_default()
+    public void The_reference_preset_keeps_the_original_behaviour()
     {
-        Assert.False(ApiBlockOptions.Api7500.HoldEverything);
+        Assert.False(ApiBlockOptions.Reference.HoldEverything);
+        Assert.False(ApiBlockOptions.Reference.Buffering);
     }
 
     [Fact]
-    public void Buffering_is_off_by_default()
+    public void Buffering_and_holding_everything_are_both_on_by_default()
     {
-        // The sender keeps its own copy and retransmits it, so nothing is lost by dropping - and a
-        // replayed segment would carry a stale acknowledgement number this project cannot yet
-        // rewrite.
-        Assert.False(ApiBlockOptions.Api7500.Buffering);
+        // Both measured. A 61 s hold replayed all three withheld segments, every one needing its
+        // acknowledgement brought forward, and recovered visibly faster than waiting for the
+        // sender to re-send. The two-phase capture withheld one segment per hold on this channel.
+        Assert.True(ApiBlockOptions.Api7500.Buffering);
+        Assert.True(ApiBlockOptions.Api7500.HoldEverything);
     }
 
     [Fact]

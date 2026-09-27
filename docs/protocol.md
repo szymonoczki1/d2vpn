@@ -1938,6 +1938,63 @@ and the wrong one was nearly credited.
 
 ---
 
+## Finding 45 - replaying the withheld slice is what makes a 7500 hold recover
+
+The buffer had never actually replayed anything on this port across four sessions: the first
+attempt tied its age limit to the hold ceiling, and `--no-ceiling` set that to zero, so everything
+expired. With the age limit removed entirely:
+
+| | |
+|---|---|
+| Hold | 61.4 s |
+| Segments withheld | 3 |
+| **Replayed** | **3** |
+| **Acknowledgement brought forward** | **3 of 3** |
+| Expired / evicted unsent | 0 / 0 |
+| Peer resets | 0 |
+
+Recovery after unticking was **visibly faster** than the earlier runs where the segments expired -
+which is the whole point, since without a replay the data arrives only when the sender next
+retransmits, and after backoff that is most of a second away or longer.
+
+**Every replayed segment needed its acknowledgement rewritten.** Not a decoration: a segment held
+for a minute acknowledges a position the connection passed long ago, and three duplicate
+acknowledgements are the fast-retransmit signal, so replaying them verbatim would have had this
+machine re-sending data the peer already had.
+
+### An ordered stream does not want an age limit
+
+The limit exists because UDP game state is superseded - a position update half a minute old is
+worse than useless on arrival, so discarding it avoids delivering something wrong. TCP has no
+equivalent: the receiver is still waiting for that exact sequence number and can deliver nothing
+after it until it arrives. A withheld segment is not stale, it is **next**.
+
+So discarding it avoids nothing and leaves the receiver stuck until the sender retransmits. 7500
+now bounds the buffer by capacity alone.
+
+In practice the capacity never binds either. The first withheld segment closes the sender's window,
+so a hold holds one to three segments against a limit of 2048.
+
+### Both behaviours are now defaults
+
+`--hold-all` and `--buffer` were both opt-in while unproven. Both are measured now, so both are on,
+with `--capture-slice` and `--no-buffer` to get the reference implementation's behaviour back.
+
+Worth noting what the reference preset now means: two-phase capture, no buffering, and ceilings at
+54 / 19 / 24 s. Every one of those was inherited at the start of this module and every one has since
+been measured to be wrong for this channel - the capture window because the channel is too quiet,
+the ceiling because a reset came at 86.5 s, and the buffering because recovery is visibly better
+with it.
+
+### One caveat carried forward
+
+A replayed segment could in principle be rejected by PAWS, which discards segments whose TCP
+timestamp option is older than expected. This connection does not use timestamps - its bare
+acknowledgements are 40 bytes, so IP and TCP headers with no options - so it does not arise here.
+The tell, if it ever did, would be a healthy `replayed` count with no visible recovery.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

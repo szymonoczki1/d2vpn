@@ -41,8 +41,13 @@ public sealed record ApiBlockOptions
     /// closes, the sender exhausts its retries, and the reset arrives sooner. The ceiling matters
     /// more here, not less.
     /// </para>
+    /// <para>
+    /// <b>On by default.</b> The two-phase behaviour is what the reference implementation does and
+    /// remains available, but it does not fit this channel and holding a single segment is not
+    /// what anyone asking for a hold means.
+    /// </para>
     /// </remarks>
-    public bool HoldEverything { get; init; }
+    public bool HoldEverything { get; init; } = true;
 
     /// <summary>
     /// How many bytes the withheld slice must cover before the hold is considered established.
@@ -122,10 +127,16 @@ public sealed record ApiBlockOptions
     /// A replayed TCP segment cannot go out exactly as captured: its acknowledgement number is
     /// stale by then, and delivering it is a duplicate acknowledgement. <see cref="TcpAckRewriter"/>
     /// brings that field forward and recalculates the checksum, which is what the reference
-    /// implementation does. Still off by default only because it is untested in game here.
+    /// implementation does.
+    /// </para>
+    /// <para>
+    /// <b>On by default</b>, having been measured: a 61 s hold replayed all three withheld
+    /// segments, every one of which needed its acknowledgement brought forward, and recovery after
+    /// unticking was visibly faster than waiting for the sender to re-send
+    /// (<c>docs/protocol.md</c>, finding 45).
     /// </para>
     /// </remarks>
-    public bool Buffering { get; init; }
+    public bool Buffering { get; init; } = true;
 
     /// <summary>
     /// Defaults for TCP 7500: hold until the peer resets, and nothing else.
@@ -143,6 +154,8 @@ public sealed record ApiBlockOptions
     {
         MaxHold = TimeSpan.FromSeconds(54),
         QuietHold = TimeSpan.FromSeconds(19),
-        QuietRetransmit = TimeSpan.FromSeconds(24)
+        QuietRetransmit = TimeSpan.FromSeconds(24),
+        HoldEverything = false,
+        Buffering = false
     };
 }
