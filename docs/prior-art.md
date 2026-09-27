@@ -119,18 +119,33 @@ against, never code to lift.
 | Setting | Value |
 |---|---|
 | `SlowInbound` / `SlowOutbound` delay (3074) | **1 second** |
-| `Buffer` (block mode) delay (3074) | **35 seconds** |
+| `Buffer` max hold while blocking (3074) | **35 seconds** |
 | Delay queue capacity | **2048**, evicting 16 at a time |
 | Default delay when unspecified | 1 second |
 | Flush pacing on untick | **0 ms** - unpaced |
 
-Two things stand out more than the numbers.
+### The architecture is the same as this project's
 
-### HarryWatch has no "drop" - a block *is* a delay
+```csharp
+if (Inbound)
+{
+    if (Buffer) xbox.DelayPacket(p, TimeSpan.FromSeconds(35));
+    return false;
+}
+```
 
-Blocking is `DelayPacket(p, 35s)`. There is one mechanism, and block versus slow is only its depth:
-35 seconds against 1. That is a cleaner idea than this project's separate drop and buffer paths,
-and it explains the 35 s figure already recorded in the thresholds table.
+`return false` blocks the packet unconditionally. `Buffer` is a **separate opt-in toggle** that
+additionally queues a clone for later delivery. So blocking drops, buffering is optional on top, and
+35 s is the maximum a held packet waits - the direct equivalent of this project's `BufferMaxAge`,
+independently set here to 30 s.
+
+Queue capacity 2048 is also the value chosen independently here. Two of the three buffer parameters
+match to within 17%, which is worth more as corroboration than any amount of reasoning about them.
+
+**Correction.** An earlier version of this section claimed HarryWatch has no drop at all and that a
+block *is* a 35 s delay, making block and slow one mechanism at two depths. That was wrong - read
+from a grep of `DelayPacket` call sites without the surrounding `return false`. They are separate
+toggles with different queue semantics, described below.
 
 ### Its "slow" is a throttle, not an offset
 
@@ -146,16 +161,16 @@ of ~10 packets/s, one leaves per second and the queue grows by nine per second, 
 delay climbing without bound for as long as the toggle is held. There is a 10 ms floor for packets
 arriving within 10 ms of the previous one, as an anti-burst guard.
 
-Block mode passes `addFromLatest: false`, so each packet is delayed 35 s from *its own* arrival.
-That is a true fixed delay line.
+Buffering passes `addFromLatest: false`, so a held packet is scheduled 35 s from *its own* arrival -
+a ceiling on how long it may wait, not a pacing rule.
 
-**So the two modes differ in kind, not only depth**: block is a fixed offset deep enough to act as
-a drop, slow is a rate limiter at one packet per second per peer.
+**So the two are different instruments**: buffering preserves the stream's shape and replays it,
+while slow reshapes the stream into one packet per second per peer.
 
-d2vpn's `--slow` is a fixed offset, which is the block-mode semantic at a shallow depth rather than
-the slow-mode semantic. That is a deliberate specification here, not an oversight - but it means a
-constant amount of lag, where HarryWatch's produces a desync that deepens the longer it is held.
-Worth knowing when a uniform delay turns out to have little in-game effect (finding 40).
+d2vpn's `--slow` is a fixed per-packet offset, so it preserves the stream's shape and shifts it.
+HarryWatch's slow does not: it reshapes the stream and the backlog grows for as long as the toggle
+is held. That is the one substantive difference between them, and it is worth knowing when a uniform
+delay turns out to have little in-game effect (finding 40).
 
 ### The flush was never paced
 
