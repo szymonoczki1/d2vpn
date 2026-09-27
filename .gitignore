@@ -15,3 +15,7 @@ captures/
 *.pcapng
 *.pcap
 *.sockets
+
+# Session logs from individual runs. The ones worth keeping as evidence live at the
+# repo root; this folder is scratch for the current run.
+logs/

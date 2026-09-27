@@ -98,4 +98,30 @@ public class SessionLogTests : IDisposable
             File.Delete(_path);
         }
     }
+
+    [Fact]
+    public void A_missing_directory_is_created_rather_than_failing_the_run()
+    {
+        // The log is opened after the driver handle, so failing here aborted a run that had
+        // already taken the connection apart - at the moment the operator was in-game and ready.
+        var root = Path.Combine(Path.GetTempPath(), $"d2vpn-log-{Guid.NewGuid():N}");
+        var path = Path.Combine(root, "nested", "run.tsv");
+
+        try
+        {
+            using (var log = new SessionLog(path))
+            {
+                log.Write("hold");
+            }
+
+            Assert.True(File.Exists(path));
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
 }

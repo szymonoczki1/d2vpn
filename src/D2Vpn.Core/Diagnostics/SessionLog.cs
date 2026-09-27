@@ -35,6 +35,16 @@ public sealed class SessionLog : IDisposable
     {
         Path = path;
         _started = started ?? DateTimeOffset.UtcNow;
+
+        // Create the directory rather than failing on it. The log is opened after the driver
+        // handle, so a missing folder used to abort a run that had already taken the connection
+        // apart - and it aborts it at the moment the operator is in-game and ready to start.
+        var folder = System.IO.Path.GetDirectoryName(System.IO.Path.GetFullPath(path));
+        if (!string.IsNullOrEmpty(folder))
+        {
+            Directory.CreateDirectory(folder);
+        }
+
         _writer = new StreamWriter(path, append: false) { AutoFlush = true };
         _writer.WriteLine("wall_clock\toffset_s\tevent\tdetail");
         Write("start", _started.ToString("O", CultureInfo.InvariantCulture));
