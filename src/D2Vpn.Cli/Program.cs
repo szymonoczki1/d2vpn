@@ -144,6 +144,29 @@ static void PrintUsage()
     Console.WriteLine("      attempt failed with it on. Kept because the result is informative,");
     Console.WriteLine("      not because it is worth using.");
     Console.WriteLine();
+    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--max-hold-s N]");
+    Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N] [--buffer]");
+    Console.WriteLine("      A different mechanism from the other groups, because 7500 is TCP.");
+    Console.WriteLine("      Dropping a TCP segment does not destroy it - the sender re-sends the");
+    Console.WriteLine("      same data under the same sequence number - so a block that only drops");
+    Console.WriteLine("      leaks about 200 ms later. This withholds inbound data segments until");
+    Console.WriteLine("      the sender goes quiet for --capture-quiet-ms, then holds that slice by");
+    Console.WriteLine("      suppressing only its retransmissions while new traffic passes.");
+    Console.WriteLine("");
+    Console.WriteLine("      Inbound only. --downlink and --full are refused: blocking outbound");
+    Console.WriteLine("      stops the acknowledgements this machine owes, which makes the peer");
+    Console.WriteLine("      retransmit harder and reset sooner for no gain.");
+    Console.WriteLine("");
+    Console.WriteLine("      The failure mode here is a RESET and an error code, not a slow");
+    Console.WriteLine("      timeout. There is no resync keeping the connection alive the way");
+    Console.WriteLine("      there is on 3074, so the module disables itself at --max-hold-s");
+    Console.WriteLine("      (54s), earlier if the peer stops retransmitting, and immediately on");
+    Console.WriteLine("      a reset. Watch the retransmits-suppressed count: a run that withheld");
+    Console.WriteLine("      segments but suppressed none leaked, and the totals will not say so.");
+    Console.WriteLine("");
+    Console.WriteLine("      All of these values are read from a reference implementation, not");
+    Console.WriteLine("      measured here. 7500 has not been calibrated on this machine at all.");
+    Console.WriteLine("");
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
     Console.WriteLine("--priority sets the WinDivert handle priority (-30000..30000, default 0).");
@@ -827,6 +850,50 @@ static IDisposable SetupInterrupt(CancellationTokenSource cts)
 /// <summary>
 /// Resolves a module's options from the command line, shared by hold and run.
 /// </summary>
+static async Task<int> RunApiAsync(string[] args, PortGroup group)
+{
+    if (HasFlag(args, "--downlink") || HasFlag(args, "--full"))
+    {
+        throw new ArgumentException(
+            "7500 blocks inbound only, so --downlink and --full do not apply. Blocking outbound "
+            + "would stop the acknowledgements this machine owes, which makes the peer retransmit "
+            + "harder and reset sooner.");
+    }
+
+    var options = ApiBlockOptions.Api7500 with
+    {
+        Buffering = HasFlag(args, "--buffer"),
+        CaptureQuiet = TimeSpan.FromMilliseconds(
+            IntOption(args, "--capture-quiet-ms", (int)ApiBlockOptions.Api7500.CaptureQuiet.TotalMilliseconds)),
+        CaptureBytes = IntOption(args, "--capture-bytes", ApiBlockOptions.Api7500.CaptureBytes),
+        MaxHold = TimeSpan.FromSeconds(
+            IntOption(args, "--max-hold-s", (int)ApiBlockOptions.Api7500.MaxHold.TotalSeconds)),
+    };
+
+    var toggleKey = KeyName.Parse(StringOption(args, "--key") ?? "capslock");
+
+    // Inbound, so the same priority a 3074 downlink hold needs to see its traffic at all.
+    var priority = PriorityOption(args, (short)-1000);
+
+    if (!Elevation.RequireElevated())
+    {
+        return 1;
+    }
+
+    Console.WriteLine("DIVERT MODE - packets really are dropped while holding.");
+    Console.WriteLine("Any other limiter must be fully EXITED, not just idle.");
+    Console.WriteLine();
+
+    using var cts = new CancellationTokenSource();
+    using var sigint = SetupInterrupt(cts);
+
+    return await ApiRunCommand.ExecuteAsync(
+        group, options, toggleKey, priority,
+        IntOption(args, "--poll-ms", 1),
+        StringOption(args, "--log"),
+        cts.Token).ConfigureAwait(false);
+}
+
 static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool downlink, bool full)
 {
     var heldDirection = full
@@ -933,6 +1000,15 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
 static async Task<int> RunAsync(string[] args)
 {
     var group = ResolveGroup(args);
+
+    // 7500 is TCP, and a TCP hold is a different mechanism rather than a differently configured
+    // one: it works by suppressing retransmissions, has no resync, and ends in a reset. It gets
+    // its own module and its own command.
+    if (group == DestinyPorts.Api)
+    {
+        return await RunApiAsync(args, group).ConfigureAwait(false);
+    }
+
     var downlink = HasFlag(args, "--downlink");
     var full = HasFlag(args, "--full");
 

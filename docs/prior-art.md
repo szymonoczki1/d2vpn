@@ -110,6 +110,58 @@ design chosen for d2vpn. It also makes `dual.ahk` / `izivigi2700_20.ahk` redunda
 | `RawInput.Sharp` | 0.1.3 | Raw Input API for hotkeys rather than a low-level keyboard hook. More reliable alongside a fullscreen game. |
 | `SharpPcap` | 6.3.0 | Powers the built-in capture recording. |
 
+## HarryWatch's API Block, read from source
+
+`HarryWatch-1.2/Interception/Modules/ApiModule.cs`. **Read from its code, not measured here.**
+
+| Setting | Value |
+|---|---|
+| Capture window (quiet before the slice is held) | **100 ms** |
+| Capture limit | **1460 bytes** - one maximum segment |
+| Hold ceiling after capacity | **54 s** |
+| Early release: held for | **19 s** |
+| Early release: and silent for | **24 s** |
+| Self-disable on inbound RST | yes, logged `Weasel :<` |
+
+Its own description: *"blocks api updates [7.5k] / infinite rally / lobby crash (patched???) /
+predamage"*.
+
+### The mechanism is retransmission suppression, not blocking
+
+This is the part that does not carry over from the UDP modules at all. Dropping a UDP packet
+destroys it. Dropping a TCP segment only delays it - the sender gets no acknowledgement and re-sends
+the same data under the same sequence number, so a module that merely drops has leaked by the first
+retransmission.
+
+So it runs in two phases:
+
+1. **Capturing.** Every inbound `PSH` segment with payload is dropped and its sequence number kept.
+   Bare acknowledgements are left alone.
+2. **Holding.** Once nothing new has been dropped for 100 ms, the sender has run out of window and
+   is only repeating itself. From then on it blocks *only* retransmissions of sequence numbers
+   already held, and lets genuinely new data through.
+
+That second phase is what makes it a hold on a fixed slice of the conversation rather than a block
+on the whole connection.
+
+### The ceiling is a reset, not a timeout
+
+Unlike a 3074 uplink hold - no known ceiling, measured at 451 s across 35 resync cycles - nothing
+renews a TCP connection while it is starved. The peer eventually resets, which the game shows as an
+error code, and the module's own log line for that case names the Weasel error. Hence three
+independent ways out: the 54 s maximum, the 19 s + 24 s quiet path, and an immediate exit on RST.
+
+### On replay it rewrites the acknowledgement number
+
+```csharp
+p.AckNum = 0; // let storepacket assign highest
+```
+
+A TCP segment captured earlier carries an acknowledgement number that is stale by the time it is
+replayed. This project's buffer replays packets verbatim, which is correct for UDP and wrong here -
+so buffering on 7500 is exposed but off by default, and marked unproven until the same rewriting
+exists.
+
 ## HarryWatch's delay values, read from source
 
 `HarryWatch-1.2/Interception/Modules/PveModule.cs` and `PacketProviderBase.cs`. **Read from its
