@@ -144,7 +144,7 @@ static void PrintUsage()
     Console.WriteLine("      attempt failed with it on. Kept because the result is informative,");
     Console.WriteLine("      not because it is worth using.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--max-hold-s N]");
+    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--max-hold-s N] [--hold-all]");
     Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N] [--buffer]");
     Console.WriteLine("      A different mechanism from the other groups, because 7500 is TCP.");
     Console.WriteLine("      Dropping a TCP segment does not destroy it - the sender re-sends the");
@@ -163,6 +163,15 @@ static void PrintUsage()
     Console.WriteLine("      (54s), earlier if the peer stops retransmitting, and immediately on");
     Console.WriteLine("      a reset. Watch the retransmits-suppressed count: a run that withheld");
     Console.WriteLine("      segments but suppressed none leaked, and the totals will not say so.");
+    Console.WriteLine("");
+    Console.WriteLine("      --hold-all withholds EVERY inbound data segment for the whole hold");
+    Console.WriteLine("      rather than capturing a slice and letting later data through. The");
+    Console.WriteLine("      two-phase default assumes a sender that bursts then stalls; measured");
+    Console.WriteLine("      here 7500 carries ~2.3 packets/s, so gaps over 100 ms are just the");
+    Console.WriteLine("      spacing between updates and the capture fires after the first");
+    Console.WriteLine("      segment - seven consecutive holds each withheld exactly one. Use");
+    Console.WriteLine("      this if packets appear to get through while holding. Stronger and");
+    Console.WriteLine("      correspondingly shorter-lived: the reset arrives sooner.");
     Console.WriteLine("");
     Console.WriteLine("      --buffer replays the withheld slice on untick instead of destroying");
     Console.WriteLine("      it. Without it the data only arrives when the peer next retransmits,");
@@ -871,6 +880,7 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
     var options = ApiBlockOptions.Api7500 with
     {
         Buffering = HasFlag(args, "--buffer"),
+        HoldEverything = HasFlag(args, "--hold-all"),
         CaptureQuiet = TimeSpan.FromMilliseconds(
             IntOption(args, "--capture-quiet-ms", (int)ApiBlockOptions.Api7500.CaptureQuiet.TotalMilliseconds)),
         CaptureBytes = IntOption(args, "--capture-bytes", ApiBlockOptions.Api7500.CaptureBytes),

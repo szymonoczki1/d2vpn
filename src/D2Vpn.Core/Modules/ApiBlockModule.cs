@@ -168,57 +168,61 @@ public sealed class ApiBlockModule : ITrafficModule
         var state = StateFor(packet);
 
         // The sender has stopped producing new data and is only repeating itself. From here only
-        // what is already withheld stays withheld.
-        if (!state.Captured
+        // what is already withheld stays withheld - unless the hold is meant to cover everything,
+        // in which case there is no such transition and new data keeps being taken.
+        if (!Options.HoldEverything
+            && !state.Captured
             && state.Withheld.Count > 0
             && packet.Timestamp - state.LastWithheldAt >= Options.CaptureQuiet)
         {
             state.Captured = true;
         }
 
-        if (!state.Captured)
+        // Checked before the capture state rather than after it, because a retransmission is a
+        // retransmission in either mode. Under HoldEverything nothing is ever captured, so testing
+        // this second counted the peer's re-sends as fresh segments and left the suppressed count
+        // at zero - which is precisely the diagnostic that says the hold is working.
+        if (state.Withheld.ContainsKey(sequence))
         {
-            if (!packet.IsTcpData)
+            state.LastRetransmitAt = packet.Timestamp;
+            RetransmitsSuppressed++;
+
+            if (state.CapacityAt is null && state.Span >= Options.CaptureBytes)
             {
-                return PacketVerdict.Pass;
+                state.CapacityAt = packet.Timestamp;
+                CapacityReached++;
             }
 
-            state.HoldStartedAt ??= packet.Timestamp;
-            state.Withheld[sequence] = packet.PayloadLength;
-            state.LastWithheldAt = packet.Timestamp;
-
-            // Until something is suppressed there is nothing to be quiet about, so the quiet path
-            // measures from here rather than from a retransmission that has not happened yet.
-            if (state.LastRetransmitAt == default)
-            {
-                state.LastRetransmitAt = packet.Timestamp;
-            }
-
-            SegmentsWithheld++;
-            return Block();
+            // Destroyed rather than kept, even when buffering. This is the peer re-sending data
+            // already in the queue, so keeping it would replay the same bytes several times over.
+            return PacketVerdict.Drop;
         }
 
-        if (!state.Withheld.ContainsKey(sequence))
+        if (state.Captured)
         {
-            // New data, arriving after the slice was captured. Letting it through is what keeps
-            // this a hold on a fixed slice rather than a block on the whole connection.
+            // New data, arriving after the slice was captured. Letting it through is what keeps the
+            // default a hold on a fixed slice rather than a block on the whole connection.
             return PacketVerdict.Pass;
         }
 
-        state.LastRetransmitAt = packet.Timestamp;
-        RetransmitsSuppressed++;
-
-        if (state.CapacityAt is null && state.Span >= Options.CaptureBytes)
+        if (!packet.IsTcpData)
         {
-            state.CapacityAt = packet.Timestamp;
-            CapacityReached++;
+            return PacketVerdict.Pass;
         }
 
-        // Destroyed rather than kept, even when buffering. This is the peer re-sending data
-        // already in the queue, so keeping it would replay the same bytes several times over - a
-        // run holding four segments replayed fifteen packets before this. The receiver discards
-        // the duplicates, so it was waste rather than damage, but it is still waste.
-        return PacketVerdict.Drop;
+        state.HoldStartedAt ??= packet.Timestamp;
+        state.Withheld[sequence] = packet.PayloadLength;
+        state.LastWithheldAt = packet.Timestamp;
+
+        // Until something is suppressed there is nothing to be quiet about, so the quiet path
+        // measures from here rather than from a retransmission that has not happened yet.
+        if (state.LastRetransmitAt == default)
+        {
+            state.LastRetransmitAt = packet.Timestamp;
+        }
+
+        SegmentsWithheld++;
+        return Block();
     }
 
     /// <summary>

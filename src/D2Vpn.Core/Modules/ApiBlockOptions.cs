@@ -25,6 +25,26 @@ public sealed record ApiBlockOptions
     public TimeSpan CaptureQuiet { get; init; } = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
+    /// Withhold every inbound data segment for the whole hold, never switching to holding a slice.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The two-phase design assumes a sender that bursts and then stalls: withhold until it goes
+    /// quiet for <see cref="CaptureQuiet"/>, then keep that slice and let new data pass. Measured
+    /// on this machine, 7500 carries about 2.3 packets a second, so gaps longer than 100 ms are
+    /// simply the spacing between updates - the capture fires after the first segment and
+    /// everything later passes. Seven consecutive holds each withheld exactly one segment.
+    /// </para>
+    /// <para>
+    /// With this set, nothing is ever "captured" and every inbound data segment is withheld for as
+    /// long as the hold runs. Stronger, and correspondingly shorter-lived: the receive window
+    /// closes, the sender exhausts its retries, and the reset arrives sooner. The ceiling matters
+    /// more here, not less.
+    /// </para>
+    /// </remarks>
+    public bool HoldEverything { get; init; }
+
+    /// <summary>
     /// How many bytes the withheld slice must cover before the hold is considered established.
     /// </summary>
     /// <remarks>

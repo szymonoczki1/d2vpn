@@ -74,8 +74,11 @@ internal static class ApiRunCommand
         var keyLabel = KeyName.Describe(toggleKey);
         Console.WriteLine($"running {group} inbound");
         Console.WriteLine($"  toggle       : {keyLabel}  (polled every {pollMs} ms)");
-        Console.WriteLine($"  capture      : until {options.CaptureQuiet.TotalMilliseconds:F0} ms "
-            + $"quiet, then hold that slice");
+        Console.WriteLine($"  capture      : "
+            + (options.HoldEverything
+                ? "everything inbound, for the whole hold"
+                : $"until {options.CaptureQuiet.TotalMilliseconds:F0} ms quiet, then hold that "
+                  + "slice and pass later data"));
         Console.WriteLine($"  ceiling      : {options.MaxHold.TotalSeconds:F0}s, or "
             + $"{options.QuietHold.TotalSeconds:F0}s with "
             + $"{options.QuietRetransmit.TotalSeconds:F0}s of silence");
@@ -152,6 +155,16 @@ internal static class ApiRunCommand
             Console.WriteLine("arrives when the peer next retransmits it. Each suppression doubles");
             Console.WriteLine("that wait, so after a few seconds of holding the peer is backed off");
             Console.WriteLine("to around a second - which is the delay felt after unticking.");
+            Console.WriteLine();
+        }
+
+        if (!options.HoldEverything && module.SegmentsWithheld > 0 && toggleCount > 2
+            && module.SegmentsWithheld <= toggleCount / 2)
+        {
+            Console.WriteLine("About one segment was withheld per hold, which means the capture");
+            Console.WriteLine("window closed straight away and everything after it passed. That");
+            Console.WriteLine("happens when the channel is quieter than the window - try");
+            Console.WriteLine("--hold-all, or a larger --capture-quiet-ms.");
             Console.WriteLine();
         }
 

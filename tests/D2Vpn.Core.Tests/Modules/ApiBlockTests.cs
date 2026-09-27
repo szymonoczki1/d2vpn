@@ -289,6 +289,76 @@ public class ApiBlockTests
     }
 
     [Fact]
+    public void Hold_all_keeps_withholding_new_data_after_the_capture_window()
+    {
+        // The default captures a slice and passes everything later, which on a channel quieter
+        // than the capture window means exactly one segment is ever withheld. Seven consecutive
+        // holds in game each withheld one.
+        var module = Module(new ApiBlockOptions { HoldEverything = true });
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+
+        // Well past the 100 ms window, and genuinely new data rather than a retransmission.
+        var later = module.Decide(TestPackets.TcpData(Port, 500, sequence: 9999, atSeconds: 5));
+
+        Assert.Equal(PacketVerdict.Drop, later);
+        Assert.Equal(2, module.SegmentsWithheld);
+    }
+
+    [Fact]
+    public void Without_hold_all_new_data_passes_once_the_window_closes()
+    {
+        // The behaviour hold-all exists to override, pinned so the difference stays visible.
+        var module = Module();
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        var later = module.Decide(TestPackets.TcpData(Port, 500, sequence: 9999, atSeconds: 5));
+
+        Assert.Equal(PacketVerdict.Pass, later);
+        Assert.Equal(1, module.SegmentsWithheld);
+    }
+
+    [Fact]
+    public void Hold_all_still_suppresses_retransmissions()
+    {
+        var module = Module(new ApiBlockOptions { HoldEverything = true });
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        var again = module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 5));
+
+        Assert.Equal(PacketVerdict.Drop, again);
+        Assert.Equal(1, module.SegmentsWithheld);
+        Assert.Equal(1, module.RetransmitsSuppressed);
+    }
+
+    [Fact]
+    public void Hold_all_still_has_a_ceiling()
+    {
+        // It matters more here, not less: withholding everything closes the receive window, so the
+        // reset arrives sooner than under the default.
+        var module = Module(new ApiBlockOptions { HoldEverything = true });
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 60));
+
+        Assert.False(module.IsActive);
+    }
+
+    [Fact]
+    public void Hold_all_still_passes_bare_acknowledgements()
+    {
+        var module = Module(new ApiBlockOptions { HoldEverything = true });
+
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.TcpAck(Port, 1000)));
+    }
+
+    [Fact]
+    public void Hold_all_is_off_by_default()
+    {
+        Assert.False(ApiBlockOptions.Api7500.HoldEverything);
+    }
+
+    [Fact]
     public void Buffering_is_off_by_default()
     {
         // The sender keeps its own copy and retransmits it, so nothing is lost by dropping - and a
