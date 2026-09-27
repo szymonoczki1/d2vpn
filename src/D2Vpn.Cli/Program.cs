@@ -164,6 +164,14 @@ static void PrintUsage()
     Console.WriteLine("      a reset. Watch the retransmits-suppressed count: a run that withheld");
     Console.WriteLine("      segments but suppressed none leaked, and the totals will not say so.");
     Console.WriteLine("");
+    Console.WriteLine("      --buffer replays the withheld slice on untick instead of destroying");
+    Console.WriteLine("      it. Without it the data only arrives when the peer next retransmits,");
+    Console.WriteLine("      and every suppression doubles that wait - so after a few seconds of");
+    Console.WriteLine("      holding the peer is backed off to around a second, felt as a delay");
+    Console.WriteLine("      before anything changes in game. Replayed segments have their ack");
+    Console.WriteLine("      numbers brought forward and checksums recalculated, since a segment");
+    Console.WriteLine("      held for seconds acknowledges a position long since passed.");
+    Console.WriteLine("");
     Console.WriteLine("      All of these values are read from a reference implementation, not");
     Console.WriteLine("      measured here. 7500 has not been calibrated on this machine at all.");
     Console.WriteLine("");

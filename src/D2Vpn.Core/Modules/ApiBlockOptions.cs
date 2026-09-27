@@ -1,3 +1,5 @@
+using D2Vpn.Core.Interception;
+
 namespace D2Vpn.Core.Modules;
 
 /// <summary>
@@ -77,11 +79,16 @@ public sealed record ApiBlockOptions
     /// by dropping.
     /// </para>
     /// <para>
-    /// There is also a correctness problem not yet solved. A replayed TCP segment carries the
-    /// acknowledgement number it was captured with, which by then is stale; the reference
-    /// implementation rewrites it to the highest seen before replaying. Until this project does the
-    /// same, turning this on sends segments that are internally inconsistent with the connection
-    /// they belong to.
+    /// What it does buy is the wait after unticking. A withheld segment that was destroyed arrives
+    /// only when the peer next retransmits it, and every suppression doubles that interval - so a
+    /// few seconds of holding backs the peer off to around a second, which is felt as a delay
+    /// before anything changes. Replaying delivers it at once instead.
+    /// </para>
+    /// <para>
+    /// A replayed TCP segment cannot go out exactly as captured: its acknowledgement number is
+    /// stale by then, and delivering it is a duplicate acknowledgement. <see cref="TcpAckRewriter"/>
+    /// brings that field forward and recalculates the checksum, which is what the reference
+    /// implementation does. Still off by default only because it is untested in game here.
     /// </para>
     /// </remarks>
     public bool Buffering { get; init; }

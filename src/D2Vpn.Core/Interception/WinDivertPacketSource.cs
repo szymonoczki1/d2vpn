@@ -109,6 +109,7 @@ public sealed class WinDivertPacketSource : IPacketSource
         ushort srcPort;
         ushort dstPort;
         uint? sequence = null;
+        uint? acknowledgement = null;
         TcpControlFlags? flags = null;
 
         if (parse.UdpHeader != null)
@@ -126,6 +127,7 @@ public sealed class WinDivertPacketSource : IPacketSource
             // re-sent by its sender, so the sequence number is the only way to recognise the
             // retransmission as the same withheld data rather than as something new.
             sequence = tcp->SeqNum;
+            acknowledgement = tcp->AckNum;
             flags = ReadFlags(tcp);
         }
         else
@@ -164,6 +166,7 @@ public sealed class WinDivertPacketSource : IPacketSource
             PayloadLength = parse.DataLength,
             InterfaceIndex = addr.Network->IfIdx,
             SequenceNumber = sequence,
+            AckNumber = acknowledgement,
             TcpFlags = flags
         };
     }

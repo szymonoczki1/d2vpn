@@ -44,6 +44,7 @@ public sealed class WinDivertTrafficController : IDisposable
     private readonly WinDivert _divert;
     private readonly ITrafficModule _module;
     private readonly PacketBuffer? _buffer;
+    private readonly TcpAckRewriter? _rewriter;
     private bool _wasHolding;
     private bool _disposed;
 
@@ -133,11 +134,19 @@ public sealed class WinDivertTrafficController : IDisposable
     /// <param name="buffer">
     /// Where blocked packets are held for replay, or <see langword="null"/> to drop them.
     /// </param>
+    /// <param name="rewriter">
+    /// Brings a held TCP segment's acknowledgement number up to date before it is replayed, or
+    /// <see langword="null"/> for UDP, where a packet replays exactly as captured.
+    /// </param>
     public WinDivertTrafficController(
-        ITrafficModule module, short priority = 0, PacketBuffer? buffer = null)
+        ITrafficModule module,
+        short priority = 0,
+        PacketBuffer? buffer = null,
+        TcpAckRewriter? rewriter = null)
     {
         _module = module;
         _buffer = buffer;
+        _rewriter = rewriter;
 
         var filter = WinDivertFilterBuilder.Build(module.Group);
         FilterExpression = filter.ToString() ?? string.Empty;
@@ -273,6 +282,7 @@ public sealed class WinDivertTrafficController : IDisposable
         {
             try
             {
+                _rewriter?.Rewrite(entry.Packet, entry.Address);
                 await _divert.SendAsync(entry.Packet, entry.Address).ConfigureAwait(false);
                 PacketsReplayed++;
                 sent++;
@@ -343,6 +353,7 @@ public sealed class WinDivertTrafficController : IDisposable
         {
             try
             {
+                _rewriter?.Rewrite(entry.Packet, entry.Address);
                 await _divert.SendAsync(entry.Packet, entry.Address).ConfigureAwait(false);
                 PacketsReplayed++;
                 sent++;
@@ -387,6 +398,11 @@ public sealed class WinDivertTrafficController : IDisposable
             }
 
             peer = info.Value.RemoteAddress;
+
+            // Every packet, held or not: the replay needs a current value, and the only way to
+            // have one is to have been watching all along.
+            _rewriter?.Observe(info.Value);
+
             var verdict = _module.Decide(info.Value);
 
             if (verdict == PacketVerdict.Pass && _module.IsActive)

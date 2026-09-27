@@ -65,6 +65,17 @@ public readonly record struct PacketInfo
     /// <summary>The TCP flags, or <see langword="null"/> for anything that is not TCP.</summary>
     public TcpControlFlags? TcpFlags { get; init; }
 
+    /// <summary>
+    /// The TCP acknowledgement number, or <see langword="null"/> for anything that is not TCP.
+    /// </summary>
+    /// <remarks>
+    /// Needed to replay a withheld segment. A segment captured seconds ago acknowledges whatever
+    /// the sender had received by then, which is stale on arrival - so replaying it verbatim
+    /// delivers a duplicate acknowledgement, and three of those make this machine retransmit data
+    /// the peer already has.
+    /// </remarks>
+    public uint? AckNumber { get; init; }
+
     /// <summary>The sequence number just past this segment's payload.</summary>
     /// <remarks>
     /// What the peer will acknowledge next if it receives this segment, so the natural way to ask

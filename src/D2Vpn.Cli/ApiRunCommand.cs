@@ -43,7 +43,12 @@ internal static class ApiRunCommand
             ? new PacketBuffer(2048, TimeSpan.FromSeconds(35))
             : null;
 
-        using var controller = new WinDivertTrafficController(module, priority, buffer);
+        // Only when replaying. A segment held for seconds acknowledges a position the connection
+        // has long since passed, and delivering that as-is is a duplicate acknowledgement.
+        var rewriter = options.Buffering ? new TcpAckRewriter() : null;
+
+        using var controller =
+            new WinDivertTrafficController(module, priority, buffer, rewriter);
         using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
         var toggleCount = 0;
@@ -76,8 +81,8 @@ internal static class ApiRunCommand
             + $"{options.QuietRetransmit.TotalSeconds:F0}s of silence");
         Console.WriteLine($"  buffering    : "
             + (options.Buffering
-                ? "on - UNPROVEN on TCP, a replayed segment carries a stale ack number"
-                : "off - withheld segments are dropped, and the peer still holds its own copy"));
+                ? "on - withheld segments are replayed on untick, ack numbers brought forward"
+                : "off - dropped, so on untick you wait for the peer's next retransmission"));
         Console.WriteLine();
         Console.WriteLine("This is TCP, so the failure mode is a RESET and an error code, not a");
         Console.WriteLine("slow timeout. Unlike a 3074 uplink hold there is no resync to keep the");
@@ -131,7 +136,24 @@ internal static class ApiRunCommand
         Console.WriteLine($"retransmits suppressed  : {module.RetransmitsSuppressed}");
         Console.WriteLine($"capture limit reached   : {module.CapacityReached}");
         Console.WriteLine($"peer resets             : {module.ResetsSeen}");
+
+        if (rewriter is not null)
+        {
+            Console.WriteLine($"replayed                : {controller.PacketsReplayed}");
+            Console.WriteLine($"  ack brought forward   : {rewriter.Rewritten}");
+            Console.WriteLine($"  already current       : {rewriter.LeftAlone}");
+        }
+
         Console.WriteLine();
+
+        if (!options.Buffering)
+        {
+            Console.WriteLine("Without --buffer, a withheld segment is destroyed and the data only");
+            Console.WriteLine("arrives when the peer next retransmits it. Each suppression doubles");
+            Console.WriteLine("that wait, so after a few seconds of holding the peer is backed off");
+            Console.WriteLine("to around a second - which is the delay felt after unticking.");
+            Console.WriteLine();
+        }
 
         if (module.SegmentsWithheld > 0 && module.RetransmitsSuppressed == 0)
         {
