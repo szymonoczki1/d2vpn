@@ -2011,11 +2011,23 @@ A capture of the reference limiter's Reconnect on 30k, filtered to resets and co
 | That attempt going unanswered, retransmitted | 1.015 s later |
 | Reset to the connection actually being back | **7.054 s** |
 
-### 6 seconds is not an arbitrary constant
+### Recovery is a few seconds, and varies
 
 HarryWatch's source carries `// inbound rst // solo 6 sec // fireteam 40 sec` as a comment on the
-inbound reset. Measured here, solo, the gap between the reset and the game's first reconnect attempt
-is **6.003 s**. The comment is describing how long the disconnect lasts, and the figure holds.
+inbound reset. Two reconnects measured solo, minutes apart in the same session:
+
+| | Reset to first reconnect attempt | Fully back |
+|---|---|---|
+| First | **6.003 s** | 7.054 s (first SYN unanswered) |
+| Second | **2.813 s** | 2.839 s |
+
+The two are a chain: the first reset killed local port 59114 and the game opened 59460; the second
+killed 59460 and the game opened 59574.
+
+**An earlier version of this finding reported only the first and said "the figure holds".** That was
+n=1, and the second sample is less than half it. The right statement is that recovery is a few
+seconds and varies by at least a factor of two - the comment's 6 is the right order of magnitude
+rather than a constant to build on.
 
 The 40 s fireteam case is untested here.
 
