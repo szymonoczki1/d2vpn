@@ -2085,16 +2085,28 @@ First run of `d2vpn rc`. The reset went out, the connection died, and the game r
 19:50:13.6168  <server> -> <tunnel>   52  30000 > 59921 [SYN, ACK] Seq=0 Ack=1
 ```
 
-| | Bytes | Payload | Flags | `Seq` | `Win` |
+Six resets across both tools, every one the same shape:
+
+| Tool | Bytes | Payload | Flags | `Seq` | `Win` |
 |---|---|---|---|---|---|
 | **d2vpn** | 40 | 0 | `[RST]` | 53 | 6145 |
-| Reference #1 | 40 | 0 | `[RST]` | 489 | 6146 |
-| Reference #2 | 40 | 0 | `[RST]` | 265 | 6143 |
-| Reference #3 | 40 | 0 | `[RST]` | 111 | 6145 |
+| **d2vpn** | 40 | 0 | `[RST]` | **11830** | 6143 |
+| Reference | 40 | 0 | `[RST]` | 489 | 6146 |
+| Reference | 40 | 0 | `[RST]` | 265 | 6143 |
+| Reference | 40 | 0 | `[RST]` | 111 | 6145 |
+| Reference | 40 | 0 | `[RST]` | 105 | 6145 |
 
-Identical on every observable field. The sequence is a real position in the stream - the sample's
-own sequence plus its payload - and the window is carried through from the sampled packet, landing
-in the same 6143-6146 band as the reference because it is the same connection's window.
+Identical on every observable field. The window is carried through from the sampled packet, landing
+in the same 6143-6146 band across both tools because it is the same connection's window.
+
+**The sequence numbers vary by two orders of magnitude and that is not a difference between the
+tools.** `Seq` is relative, so it says how much that connection had sent before it was killed: 105
+is a connection that had barely spoken, 11830 one that had sent nearly 12 KB. Each reset sits at
+the end of whatever its own connection had sent.
+
+That 11830 is worth its own note. It is the only sample taken from a long-lived connection, and it
+confirms the sequence rule here tracks the real stream position rather than sitting near zero - if
+the rule were wrong, a connection this far along is exactly where it would show.
 
 Exactly one reset is visible, as predicted: two are injected per connection and the inbound one
 never reaches the adapter.
@@ -2103,16 +2115,19 @@ never reaches the adapter.
 
 | Sample | Reset to reconnect |
 |---|---|
-| Reference, finding 6 | 0.330 s |
 | **d2vpn** | **0.296 s** |
-| Reference #2 | 2.813 s |
-| Reference #3 | 4.228 s |
-| Reference #1 | 6.003 s |
+| Reference | 0.330 s |
+| Reference | 2.813 s |
+| Reference | 3.071 s |
+| Reference | 4.228 s |
+| Reference | 6.003 s |
 
-d2vpn's 0.296 s is the fastest recorded, but the reference's own fastest is 0.330 s and its slowest
-is 6.003 s - a **20x spread within one tool**. So this is not evidence that one recovers faster
-than the other; it is evidence that the game's reconnect delay varies enormously and that four
-samples of one tool and one of the other cannot separate them.
+The reference alone spans 0.330 to 6.003 s, mean 3.29 s across five samples - an **18x spread
+within one tool**. d2vpn's single 0.296 s is the fastest recorded and sits just below the
+reference's fastest, which is not a meaningful gap against that spread.
+
+So this separates nothing. It is evidence that the game's reconnect delay varies enormously, and
+that five samples of one tool and one of the other cannot distinguish them.
 
 What the timing does establish is that recovery happens at all, and quickly enough to be usable.
 
