@@ -275,6 +275,20 @@ public class ApiBlockTests
     }
 
     [Fact]
+    public void A_retransmission_is_destroyed_even_when_buffering()
+    {
+        // The peer is re-sending data already queued, so keeping it would replay the same bytes
+        // several times. A run holding four segments replayed fifteen packets before this.
+        var module = Module(new ApiBlockOptions { Buffering = true });
+
+        var first = module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        var again = module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0.3));
+
+        Assert.Equal(PacketVerdict.Buffer, first);
+        Assert.Equal(PacketVerdict.Drop, again);
+    }
+
+    [Fact]
     public void Buffering_is_off_by_default()
     {
         // The sender keeps its own copy and retransmits it, so nothing is lost by dropping - and a

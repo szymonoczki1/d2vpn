@@ -214,11 +214,15 @@ public sealed class ApiBlockModule : ITrafficModule
             CapacityReached++;
         }
 
-        return Block();
+        // Destroyed rather than kept, even when buffering. This is the peer re-sending data
+        // already in the queue, so keeping it would replay the same bytes several times over - a
+        // run holding four segments replayed fifteen packets before this. The receiver discards
+        // the duplicates, so it was waste rather than damage, but it is still waste.
+        return PacketVerdict.Drop;
     }
 
     /// <summary>
-    /// What to do with a segment being withheld.
+    /// What to do with a segment being withheld for the first time.
     /// </summary>
     /// <remarks>
     /// Buffering is offered but off by default, and the reasoning is not the same as on 3074. There

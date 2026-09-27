@@ -181,40 +181,55 @@ public sealed class WinDivertTrafficController : IDisposable
 
         try
         {
+            Task? receive = null;
+
             while (!cancellationToken.IsCancellationRequested)
             {
+                receive ??= _divert.RecvAsync(packet, addr, cancellationToken).AsTask();
+
+                // A tick alongside the read, so a drain does not have to wait for the next packet.
+                // Draining stays on this thread - a hold is released from a hotkey, and every write
+                // to the handle belongs here - but on a quiet port "this thread, next packet" can
+                // be most of a second away. Measured on 7500 at 2.3 packets/s, which is a ~430 ms
+                // average gap and was felt in game as a delay after unticking. The read is not
+                // cancelled to do this; it is simply left outstanding until it completes.
+                if (_buffer is not null)
+                {
+                    var tick = Task.Delay(DrainInterval, cancellationToken);
+                    var finished = await Task.WhenAny(receive, tick).ConfigureAwait(false);
+
+                    if (!ReferenceEquals(finished, receive))
+                    {
+                        // Cancellation also completes the tick, and shutdown is not a moment to
+                        // push a backlog into a session: disposal discards the buffer instead.
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            return;
+                        }
+
+                        await DrainAsync().ConfigureAwait(false);
+                        continue;
+                    }
+                }
+
                 try
                 {
-                    await _divert.RecvAsync(packet, addr, cancellationToken).ConfigureAwait(false);
+                    await receive.ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
                 {
                     return;
                 }
+                finally
+                {
+                    receive = null;
+                }
 
                 PacketsSeen++;
 
-                // Draining happens here rather than wherever the release came from, so that every
-                // write to the handle stays on this thread: a hold is released from a hotkey. It
-                // also runs before this packet is sent, so the held actions arrive ahead of the
-                // live one that follows them rather than behind it.
-                if (_buffer is not null)
-                {
-                    if (_buffer.Schedule is not null)
-                    {
-                        await DrainDueAsync().ConfigureAwait(false);
-                    }
-
-                    var holding = _module.IsActive;
-                    if (_wasHolding && !holding)
-                    {
-                        // Slow releases the remainder too. Those packets were going to be
-                        // delivered; turning the module off is not a reason to destroy them.
-                        await ReplayAsync().ConfigureAwait(false);
-                    }
-
-                    _wasHolding = holding;
-                }
+                // Before this packet is sent, so held actions arrive ahead of the live one that
+                // follows them rather than behind it.
+                await DrainAsync().ConfigureAwait(false);
 
                 var outbound = addr.Flags.HasFlag(WinDivertAddressFlag.Outbound);
                 if (outbound)
@@ -320,6 +335,42 @@ public sealed class WinDivertTrafficController : IDisposable
         }
 
         BufferDrained?.Invoke(sent, took);
+    }
+
+    /// <summary>
+    /// How often the loop wakes to drain when no packet has arrived.
+    /// </summary>
+    /// <remarks>
+    /// Sets the worst-case delay between a release and the held traffic going out. Small enough to
+    /// be imperceptible against a hotkey, and cheap: an idle timer a hundred times a second costs
+    /// nothing next to a game.
+    /// </remarks>
+    private static readonly TimeSpan DrainInterval = TimeSpan.FromMilliseconds(10);
+
+    /// <summary>
+    /// Sends whatever the buffer now owes: due packets under a schedule, everything on a release.
+    /// </summary>
+    private async Task DrainAsync()
+    {
+        if (_buffer is null)
+        {
+            return;
+        }
+
+        if (_buffer.Schedule is not null)
+        {
+            await DrainDueAsync().ConfigureAwait(false);
+        }
+
+        var holding = _module.IsActive;
+        if (_wasHolding && !holding)
+        {
+            // A release sends the remainder too, due or not. Those packets were going to be
+            // delivered; turning the module off is not a reason to destroy them.
+            await ReplayAsync().ConfigureAwait(false);
+        }
+
+        _wasHolding = holding;
     }
 
     /// <summary>
