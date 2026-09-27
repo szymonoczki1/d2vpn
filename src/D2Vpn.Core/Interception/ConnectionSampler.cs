@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.Versioning;
 using WindivertDotnet;
@@ -132,39 +133,83 @@ public sealed class ConnectionSampler : IDisposable
         }
     }
 
-    /// <summary>Clones a sample and turns it into a reset. Callers hold the lock.</summary>
-    private static bool TryBuild(
+    /// <summary>
+    /// Builds a bare reset from a sample's addressing. Callers hold the lock.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Constructed rather than cloned. Setting the flag on a copy of the sample would send a reset
+    /// carrying that sample's payload, and a reset must not carry data - receivers discard one that
+    /// does. A capture of a reference limiter doing this shows exactly 40 bytes on the wire, which
+    /// is an IPv4 header and a TCP header and nothing else.
+    /// </para>
+    /// <para>
+    /// The sequence number is the sample's, plus its payload - the next byte that side would have
+    /// sent. A reset is only acted on if its sequence sits inside the receiver's window, so the
+    /// sample's own start is already behind and an invented number is nowhere at all.
+    /// </para>
+    /// <para>
+    /// No acknowledgement, matching both the reference implementation and the capture, which shows
+    /// <c>[RST]</c> rather than <c>[RST, ACK]</c>.
+    /// </para>
+    /// </remarks>
+    private static unsafe bool TryBuild(
         WinDivertPacket sample, WinDivertAddress address, out WinDivertPacket? reset)
     {
+        const int HeaderBytes = 40;
         reset = null;
 
         try
         {
-            var clone = sample.Clone();
-            var parse = clone.GetParseResult();
+            var parse = sample.GetParseResult();
 
-            unsafe
+            // IPv4 only. The game's TCP traffic is IPv4 here, and a v6 reset needs a different
+            // header this has never had a sample of to check against.
+            if (parse.TcpHeader == null || parse.IPV4Header == null)
             {
-                if (parse.TcpHeader == null)
-                {
-                    clone.Dispose();
-                    return false;
-                }
-
-                parse.TcpHeader->Rst = true;
+                return false;
             }
 
-            // The header changed, so the checksum is now wrong and the receiver would discard the
-            // packet without saying anything - which looks exactly like the reset not working.
-            clone.CalcChecksums(address);
+            var source = parse.IPV4Header->SrcAddr;
+            var destination = parse.IPV4Header->DstAddr;
+            var sourcePort = parse.TcpHeader->SrcPort;
+            var destinationPort = parse.TcpHeader->DstPort;
+            var window = parse.TcpHeader->Window;
+            var sequence = parse.TcpHeader->SeqNum + (uint)parse.DataLength;
 
-            reset = clone;
+            var packet = new WinDivertPacket(HeaderBytes);
+            var span = packet.GetSpan(0, HeaderBytes);
+            span.Clear();
+
+            span[0] = 0x45;                                     // IPv4, five 32-bit words
+            BinaryPrimitives.WriteUInt16BigEndian(span[2..], HeaderBytes);
+            span[8] = 128;                                      // TTL
+            span[9] = 6;                                        // protocol: TCP
+            source.TryWriteBytes(span[12..16], out _);
+            destination.TryWriteBytes(span[16..20], out _);
+
+            var tcp = span[20..];
+            BinaryPrimitives.WriteUInt16BigEndian(tcp, sourcePort);
+            BinaryPrimitives.WriteUInt16BigEndian(tcp[2..], destinationPort);
+            BinaryPrimitives.WriteUInt32BigEndian(tcp[4..], sequence);
+            BinaryPrimitives.WriteUInt32BigEndian(tcp[8..], 0);  // no acknowledgement
+            tcp[12] = 0x50;                                      // five 32-bit words
+            tcp[13] = 0x04;                                      // RST alone
+            BinaryPrimitives.WriteUInt16BigEndian(tcp[14..], window);
+
+            packet.Length = HeaderBytes;
+
+            // Without this the receiver discards it without comment, which looks exactly like the
+            // reset never having been sent.
+            packet.CalcChecksums(address);
+
+            reset = packet;
             return true;
         }
         catch
         {
-            // A sample that will not clone or parse is one connection not killed, not a reason to
-            // abandon the others.
+            // A sample that will not parse is one connection not killed, not a reason to abandon
+            // the others.
             return false;
         }
     }

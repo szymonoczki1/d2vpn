@@ -151,8 +151,8 @@ public class ConnectionSamplerTests
     [Fact]
     public void A_built_reset_keeps_the_conversation_it_was_taken_from()
     {
-        // The whole reason for sampling. A reset with invented ports or sequence numbers is
-        // discarded as belonging to no connection.
+        // The whole reason for sampling. A reset with invented ports is discarded as belonging to
+        // no connection.
         using var sampler = new ConnectionSampler();
         Observe(sampler, outbound: true, sequence: 4242);
         Observe(sampler, outbound: false, sequence: 4242);
@@ -162,9 +162,70 @@ public class ConnectionSamplerTests
         foreach (var reset in resets)
         {
             var info = WinDivertPacketSource.Describe(reset.Packet, reset.Address)!.Value;
-            Assert.Equal(4242u, info.SequenceNumber);
             Assert.Equal(30000, info.RemotePort);
             Assert.Equal(RawPackets.LocalPort, info.LocalPort);
+            reset.Dispose();
+        }
+    }
+
+    [Fact]
+    public void A_built_reset_is_a_bare_header_with_no_payload()
+    {
+        // Measured on a reference limiter: exactly 40 bytes on the wire, an IPv4 header and a TCP
+        // header and nothing else. A reset must not carry data, and setting the flag on a copy of
+        // the sample would send that sample's payload along with it.
+        using var sampler = new ConnectionSampler();
+        ObserveBoth(sampler);
+
+        foreach (var reset in sampler.BuildResets(T0))
+        {
+            Assert.Equal(40, reset.Packet.Length);
+
+            var info = WinDivertPacketSource.Describe(reset.Packet, reset.Address)!.Value;
+            Assert.Equal(0, info.PayloadLength);
+            reset.Dispose();
+        }
+    }
+
+    [Fact]
+    public void A_built_reset_carries_no_acknowledgement()
+    {
+        // Matching both the reference implementation and the capture, which shows [RST] rather
+        // than [RST, ACK].
+        using var sampler = new ConnectionSampler();
+        ObserveBoth(sampler);
+
+        foreach (var reset in sampler.BuildResets(T0))
+        {
+            var info = WinDivertPacketSource.Describe(reset.Packet, reset.Address)!.Value;
+            Assert.True(info.TcpFlags!.Value.HasFlag(TcpControlFlags.Reset));
+            Assert.False(info.TcpFlags.Value.HasFlag(TcpControlFlags.Ack));
+            Assert.Equal(0u, info.AckNumber);
+            reset.Dispose();
+        }
+    }
+
+    [Fact]
+    public void A_built_reset_sequences_at_the_next_byte_that_side_would_have_sent()
+    {
+        // A reset is only acted on if its sequence sits inside the receiver's window. The sample's
+        // own start is already behind, and an invented number is nowhere at all.
+        using var sampler = new ConnectionSampler();
+        Observe(sampler, outbound: true, payload: 100, sequence: 4000);
+        Observe(sampler, outbound: false, payload: 250, sequence: 7000);
+
+        var resets = sampler.BuildResets(T0);
+
+        var outbound = resets.Single(r => r.IsOutbound);
+        var inbound = resets.Single(r => !r.IsOutbound);
+
+        Assert.Equal(
+            4100u, WinDivertPacketSource.Describe(outbound.Packet, outbound.Address)!.Value.SequenceNumber);
+        Assert.Equal(
+            7250u, WinDivertPacketSource.Describe(inbound.Packet, inbound.Address)!.Value.SequenceNumber);
+
+        foreach (var reset in resets)
+        {
             reset.Dispose();
         }
     }
@@ -223,14 +284,15 @@ public class ConnectionSamplerTests
     {
         using var sampler = new ConnectionSampler();
 
-        Observe(sampler, outbound: true, sequence: 100, atSeconds: 0);
-        Observe(sampler, outbound: true, sequence: 900, atSeconds: 1);
-        Observe(sampler, outbound: false, sequence: 500, atSeconds: 1);
+        Observe(sampler, outbound: true, payload: 100, sequence: 100, atSeconds: 0);
+        Observe(sampler, outbound: true, payload: 100, sequence: 900, atSeconds: 1);
+        Observe(sampler, outbound: false, payload: 100, sequence: 500, atSeconds: 1);
 
         var outbound = sampler.BuildResets(T0.AddSeconds(1)).Single(r => r.IsOutbound);
         var info = WinDivertPacketSource.Describe(outbound.Packet, outbound.Address)!.Value;
 
-        Assert.Equal(900u, info.SequenceNumber);
+        // 900 + 100 of payload: the newer sample, sequenced past its own data.
+        Assert.Equal(1000u, info.SequenceNumber);
         outbound.Dispose();
     }
 

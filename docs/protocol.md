@@ -263,11 +263,10 @@ The game recovered immediately:
 | 11.548 | New SYN to `<server-a>` - **330 ms later**, same server |
 | 53.540 | New SYN to `<server-c>` - a *different* server. The actual instance change |
 
-**Open question.** HarryWatch injects *two* RSTs per peer - one built from an outbound sample and
-one from an inbound sample. Only outbound-looking RSTs appear in this capture. The likely
-explanation is that a reinjected inbound packet is delivered up the local network stack and never
-reaches the adapter, so npcap cannot see it. If so, **adapter-level capture cannot verify inbound
-injection**, and d2vpn's own tests must confirm it another way. Worth settling in Phase 1.
+**Open question - settled, see finding 46.** Two resets are injected per connection and only the
+outbound one is ever visible, because an injected inbound packet is delivered up the local stack and
+never reaches the adapter. **Adapter-level capture cannot verify inbound injection**, so a tool
+reporting twice as many resets as a capture shows is correct rather than broken.
 
 ### Finding 7 - `З0k Slow` holds inbound traffic and releases it in batches
 
@@ -1992,6 +1991,62 @@ A replayed segment could in principle be rejected by PAWS, which discards segmen
 timestamp option is older than expected. This connection does not use timestamps - its bare
 acknowledgements are 40 bytes, so IP and TCP headers with no options - so it does not arise here.
 The tell, if it ever did, would be a healthy `replayed` count with no visible recovery.
+
+---
+
+## Finding 46 - measured: a reconnect is one visible 40-byte reset, and recovery takes 6 s
+
+A capture of the reference limiter's Reconnect on 30k, filtered to resets and connection setup.
+
+```
+19:34:06.425  <tunnel> -> <server>   40  59114 > 30000 [RST] Seq=489 Win=6146 Len=0
+19:34:12.428  <tunnel> -> <server>   52  59460 > 30000 [SYN] Seq=0 Win=64860
+19:34:13.443  <tunnel> -> <server>   52  [TCP Retransmission] 59460 > 30000 [SYN]
+19:34:13.479  <server> -> <tunnel>   52  30000 > 59460 [SYN, ACK]
+```
+
+| | |
+|---|---|
+| Reset to first reconnect attempt | **6.003 s** |
+| That attempt going unanswered, retransmitted | 1.015 s later |
+| Reset to the connection actually being back | **7.054 s** |
+
+### 6 seconds is not an arbitrary constant
+
+HarryWatch's source carries `// inbound rst // solo 6 sec // fireteam 40 sec` as a comment on the
+inbound reset. Measured here, solo, the gap between the reset and the game's first reconnect attempt
+is **6.003 s**. The comment is describing how long the disconnect lasts, and the figure holds.
+
+The 40 s fireteam case is untested here.
+
+### Only one reset is visible, which settles finding 6
+
+Exactly one reset appears, outbound, for one connection. Two are injected per connection - one to
+the peer and one delivered up this machine's own stack - and the inbound one never reaches the
+adapter for npcap to see, because it originates above the capture point and travels upward.
+
+**An adapter capture cannot verify inbound injection.** A tool reporting two resets per connection
+while a capture shows one is correct. That closes the open question on finding 6, which had guessed
+exactly this without being able to confirm it.
+
+### The reset is a bare header
+
+**40 bytes, `Len=0`, and `[RST]` rather than `[RST, ACK]`** - an IPv4 header and a TCP header and
+nothing else, no acknowledgement.
+
+This project's first implementation set the flag on a clone of the sampled packet, which would have
+sent a reset carrying that sample's payload, around 150 bytes. A reset must not carry data and
+receivers discard one that does, so it would have been silently ignored. Corrected before it was
+ever run, on the strength of this capture.
+
+`Seq=489` is a real position in the stream rather than zero, so the sequence matters: a reset is
+only acted on when its sequence sits inside the receiver's window. This project sequences at the
+sample's own sequence plus its payload - the next byte that side would have sent.
+
+### What was not observed
+
+Finding 6 saw a *different* server appear 42 s after the reset, which it read as the actual instance
+change. Nothing equivalent appears here, and the capture may simply not have run long enough.
 
 ---
 
