@@ -2014,22 +2014,35 @@ A capture of the reference limiter's Reconnect on 30k, filtered to resets and co
 ### Recovery is a few seconds, and varies
 
 HarryWatch's source carries `// inbound rst // solo 6 sec // fireteam 40 sec` as a comment on the
-inbound reset. Two reconnects measured solo, minutes apart in the same session:
+inbound reset. Three reconnects measured solo, over five minutes of one session:
 
-| | Reset to first reconnect attempt | Fully back |
-|---|---|---|
-| First | **6.003 s** | 7.054 s (first SYN unanswered) |
-| Second | **2.813 s** | 2.839 s |
+| Killed | Game opened | Reset `Seq` | `Win` | To first SYN | Fully back |
+|---|---|---|---|---|---|
+| 59114 | 59460 | 489 | 6146 | **6.003 s** | 7.054 s (first SYN unanswered) |
+| 59460 | 59574 | 265 | 6143 | **2.813 s** | 2.839 s |
+| 59574 | 59605 | 111 | 6145 | **4.228 s** | 4.264 s |
 
-The two are a chain: the first reset killed local port 59114 and the game opened 59460; the second
-killed 59460 and the game opened 59574.
+**Range 2.813 to 6.003 s, mean 4.35 s, a spread of 2.1x.**
+
+The three are a chain - each reset kills the connection the previous one caused the game to open -
+so they are directly comparable and the variance is real rather than a difference in conditions.
 
 **An earlier version of this finding reported only the first and said "the figure holds".** That was
-n=1, and the second sample is less than half it. The right statement is that recovery is a few
-seconds and varies by at least a factor of two - the comment's 6 is the right order of magnitude
-rather than a constant to build on.
+n=1. The comment's 6 is the right order of magnitude and the top of the observed range, not a
+constant to build on.
 
 The 40 s fireteam case is untested here.
+
+### The reset shape is identical across all three
+
+40 bytes, `Len=0`, `[RST]` with no acknowledgement, every time. The window is 6143-6146 throughout,
+which is the connection's own receive window being carried through from the sample rather than
+invented.
+
+Worth noting as a contrast: ordinary stack-generated resets on unrelated connections in the same
+captures - an HTTPS server closing a socket, for instance - show as **`[RST, ACK]`**. A reset with
+the acknowledgement flag clear is the unusual one, and is what both reference implementations and
+this project send.
 
 ### Only one reset is visible, which settles finding 6
 
