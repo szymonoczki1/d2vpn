@@ -14,4 +14,12 @@
     <PackageReference Include="WindivertDotnet" Version="1.1.2" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- Packet parsing is internal because nothing outside this assembly should be handed raw
+         WinDivert structures, but it is also where a silent misreading of a header would do the
+         most damage - so the tests reach it directly. -->
+    <InternalsVisibleTo Include="D2Vpn.Core.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -108,6 +108,9 @@ public sealed class WinDivertPacketSource : IPacketSource
 
         ushort srcPort;
         ushort dstPort;
+        uint? sequence = null;
+        TcpControlFlags? flags = null;
+
         if (parse.UdpHeader != null)
         {
             srcPort = parse.UdpHeader->SrcPort;
@@ -115,8 +118,15 @@ public sealed class WinDivertPacketSource : IPacketSource
         }
         else if (parse.TcpHeader != null)
         {
-            srcPort = parse.TcpHeader->SrcPort;
-            dstPort = parse.TcpHeader->DstPort;
+            var tcp = parse.TcpHeader;
+            srcPort = tcp->SrcPort;
+            dstPort = tcp->DstPort;
+
+            // Only read for TCP, and only the bits a module acts on. A blocked TCP segment is
+            // re-sent by its sender, so the sequence number is the only way to recognise the
+            // retransmission as the same withheld data rather than as something new.
+            sequence = tcp->SeqNum;
+            flags = ReadFlags(tcp);
         }
         else
         {
@@ -152,8 +162,25 @@ public sealed class WinDivertPacketSource : IPacketSource
             RemotePort = outbound ? dstPort : srcPort,
             RemoteAddress = (outbound ? dstAddr : srcAddr) ?? IPAddress.None,
             PayloadLength = parse.DataLength,
-            InterfaceIndex = addr.Network->IfIdx
+            InterfaceIndex = addr.Network->IfIdx,
+            SequenceNumber = sequence,
+            TcpFlags = flags
         };
+    }
+
+    /// <summary>Reads the TCP control bits into the subset this project names.</summary>
+    private static unsafe TcpControlFlags ReadFlags(TcpHeader* tcp)
+    {
+        var flags = TcpControlFlags.None;
+
+        if (tcp->Fin) flags |= TcpControlFlags.Fin;
+        if (tcp->Syn) flags |= TcpControlFlags.Syn;
+        if (tcp->Rst) flags |= TcpControlFlags.Reset;
+        if (tcp->Psh) flags |= TcpControlFlags.Push;
+        if (tcp->Ack) flags |= TcpControlFlags.Ack;
+        if (tcp->Urg) flags |= TcpControlFlags.Urgent;
+
+        return flags;
     }
 
     /// <inheritdoc/>
