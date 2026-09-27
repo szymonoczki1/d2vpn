@@ -2143,6 +2143,45 @@ in action, with no reference implementation of the injection consulted.
 
 ---
 
+## Finding 48 - "fireteam 40 sec" is not TCP reconnect time
+
+`d2vpn rc` run in a fireteam, to test the one case where the two implementations might diverge.
+
+```
+23:55:27.0815  <tunnel> -> <server>  40  49733 > 30000 [RST] Seq=281 Win=6145 Len=0
+23:55:29.4120  <tunnel> -> <server>  52  49927 > 30000 [SYN] Seq=0 Win=64860
+23:55:29.4520  <server> -> <tunnel>  52  30000 > 49927 [SYN, ACK]
+```
+
+**2.331 s to the reconnect attempt, 2.371 s fully back.** Against a solo range of 0.296 to 6.003 s
+across six samples, that is unremarkable - the middle of the distribution.
+
+HarryWatch's source carries `// inbound rst // solo 6 sec // fireteam 40 sec`. If that described
+reconnect timing, a fireteam would be an order of magnitude slower. It is not.
+
+### So the comment describes something the wire cannot show
+
+The 30k connection comes back in about two seconds whether solo or in a fireteam. Whatever is worth
+40 seconds in a fireteam happens above TCP - rejoining the activity, being pulled back to the
+instance, the fireteam reforming - and none of it appears in a capture of port 30000.
+
+**This invalidates a test proposed earlier in this project.** Having noted that the inbound reset is
+unverifiable by capture, the suggestion was to run in a fireteam and check whether the disconnect
+lasted ~40 s, on the theory that the inbound reset is what produces the longer effect. That cannot
+work: the packet-level reconnect is the same either way, so the capture says nothing about whether
+the inbound reset landed.
+
+The inbound injection remains unverifiable from the adapter, and now also unverifiable from
+reconnect timing. If it is ever to be confirmed it will have to be from in-game behaviour, or by
+instrumenting the local stack rather than the wire.
+
+### The reset shape is unchanged in a fireteam
+
+40 bytes, no payload, `[RST]`, `Win=6145` - the same band as all six previous samples, on a
+different server (`172.97.57.76` rather than the `205.209.x` seen solo).
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
