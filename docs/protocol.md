@@ -2075,6 +2075,59 @@ change. Nothing equivalent appears here, and the capture may simply not have run
 
 ---
 
+## Finding 47 - d2vpn's reconnect is indistinguishable from the reference on the wire
+
+First run of `d2vpn rc`. The reset went out, the connection died, and the game reconnected.
+
+```
+19:50:13.2946  <tunnel> -> <server>   40  59913 > 30000 [RST] Seq=53 Win=6145 Len=0
+19:50:13.5908  <tunnel> -> <server>   52  59921 > 30000 [SYN] Seq=0 Win=64860
+19:50:13.6168  <server> -> <tunnel>   52  30000 > 59921 [SYN, ACK] Seq=0 Ack=1
+```
+
+| | Bytes | Payload | Flags | `Seq` | `Win` |
+|---|---|---|---|---|---|
+| **d2vpn** | 40 | 0 | `[RST]` | 53 | 6145 |
+| Reference #1 | 40 | 0 | `[RST]` | 489 | 6146 |
+| Reference #2 | 40 | 0 | `[RST]` | 265 | 6143 |
+| Reference #3 | 40 | 0 | `[RST]` | 111 | 6145 |
+
+Identical on every observable field. The sequence is a real position in the stream - the sample's
+own sequence plus its payload - and the window is carried through from the sampled packet, landing
+in the same 6143-6146 band as the reference because it is the same connection's window.
+
+Exactly one reset is visible, as predicted: two are injected per connection and the inbound one
+never reaches the adapter.
+
+### Recovery timing says nothing about either tool
+
+| Sample | Reset to reconnect |
+|---|---|
+| Reference, finding 6 | 0.330 s |
+| **d2vpn** | **0.296 s** |
+| Reference #2 | 2.813 s |
+| Reference #3 | 4.228 s |
+| Reference #1 | 6.003 s |
+
+d2vpn's 0.296 s is the fastest recorded, but the reference's own fastest is 0.330 s and its slowest
+is 6.003 s - a **20x spread within one tool**. So this is not evidence that one recovers faster
+than the other; it is evidence that the game's reconnect delay varies enormously and that four
+samples of one tool and one of the other cannot separate them.
+
+What the timing does establish is that recovery happens at all, and quickly enough to be usable.
+
+### What this validates
+
+The whole path, end to end: sampling a live connection, constructing a reset from it rather than
+cloning, sequencing it where the receiver's window is, recalculating the checksum, and injecting in
+both directions. Any of those being wrong would have produced a reset that was silently ignored -
+the failure mode here is nothing happening, not an error.
+
+Built from a reading of two reference implementations' constants plus three captures of one of them
+in action, with no reference implementation of the injection consulted.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

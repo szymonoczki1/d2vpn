@@ -1,0 +1,14 @@
+wall_clock	offset_s	event	detail
+19:48:50.337	0.002	start	2026-09-27T19:48:50.3353374+00:00
+19:48:50.344	0.010	config	group=30k maxIdleS=10 priority=0
+19:48:56.701	6.366	requested	
+19:48:56.718	6.383	reset	connections=1 packets=2
+19:49:15.742	25.407	requested	
+19:49:15.758	25.423	reset	connections=1 packets=2
+19:49:37.165	46.830	requested	
+19:49:37.181	46.846	reset	connections=1 packets=2
+19:49:51.665	61.330	requested	
+19:49:51.680	61.345	reset	connections=1 packets=2
+19:50:13.278	82.943	requested	
+19:50:13.294	82.959	reset	connections=1 packets=2
+19:50:53.357	123.022	end	
