@@ -23,7 +23,10 @@ namespace D2Vpn.Core.Interception;
 /// </para>
 /// <para>
 /// Eviction is oldest-first. What matters on release is the most recent actions - the shots just
-/// taken - and the oldest entries are the ones whose moment has passed.
+/// taken - and the oldest entries are the ones whose moment has passed. That reasoning is about
+/// superseded state, so it is the wrong way round for an ordered stream, where the oldest entry is
+/// the one the receiver needs first. It has never been reached on such a stream - a TCP hold holds
+/// one or two segments against a capacity of 2048 - and if it ever is, this is the line to revisit.
 /// </para>
 /// <para>
 /// Each entry's <see cref="Held.DueAt"/> is computed when it is queued rather than when it is
@@ -45,6 +48,25 @@ public sealed class PacketBuffer : IDisposable
 
     /// <summary>Stands in for "no peer given", so everything paces as a single stream.</summary>
     private static readonly IPAddress AnyPeer = IPAddress.None;
+
+    /// <summary>
+    /// A <see cref="MaxAge"/> that never expires anything, leaving <see cref="Capacity"/> as the
+    /// only bound.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For an ordered stream. The age limit exists because a UDP game-state packet is superseded
+    /// by the next one, so a position update half a minute old is worse than useless on arrival.
+    /// TCP has no equivalent: the receiver is still waiting for that exact sequence number and can
+    /// deliver nothing after it until it arrives, so a withheld segment is not stale, it is next.
+    /// </para>
+    /// <para>
+    /// Discarding it therefore does not avoid delivering something wrong - it leaves the receiver
+    /// stuck until the sender retransmits, which after backoff can be tens of seconds away, or
+    /// never once the sender has given up.
+    /// </para>
+    /// </remarks>
+    public static readonly TimeSpan NeverExpires = TimeSpan.MaxValue;
 
     /// <summary>Most packets held before the oldest are discarded.</summary>
     public int Capacity { get; }

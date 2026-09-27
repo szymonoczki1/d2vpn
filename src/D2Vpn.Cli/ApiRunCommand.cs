@@ -54,16 +54,13 @@ internal static class ApiRunCommand
         // data the game had been waiting longest for. Unlike a position update, an API segment
         // does not go stale on its own: TCP will deliver it in order whenever it arrives, and the
         // receiver is still asking for exactly it.
-        // Long enough that a hold of any permitted length still replays what it withheld.
-        // Deriving it from MaxHold alone collapsed to 10 s under --no-ceiling, where MaxHold is
-        // zero, so a 75 s hold expired everything and replayed nothing. Capacity still bounds
-        // memory either way, and a TCP segment does not go stale on its own: the receiver is still
-        // waiting for exactly that sequence number however long it took to arrive.
-        var bufferAge = options.MaxHold > TimeSpan.Zero
-            ? options.MaxHold + TimeSpan.FromSeconds(10)
-            : TimeSpan.FromMinutes(5);
-
-        using var buffer = options.Buffering ? new PacketBuffer(2048, bufferAge) : null;
+        // Nothing expires here, unlike on 3074. Capacity is the only bound, and a hold holds one
+        // or two segments against 2048 - so it is a guard against a case that has never arisen
+        // rather than a working limit. See PacketBuffer.NeverExpires for why an ordered stream
+        // does not want an age limit at all.
+        using var buffer = options.Buffering
+            ? new PacketBuffer(2048, PacketBuffer.NeverExpires)
+            : null;
 
         // Only when replaying. A segment held for seconds acknowledges a position the connection
         // has long since passed, and delivering that as-is is a duplicate acknowledgement.

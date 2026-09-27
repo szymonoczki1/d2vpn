@@ -441,6 +441,36 @@ public class PacketBufferTests
     }
 
     [Fact]
+    public void Nothing_expires_when_the_age_limit_is_NeverExpires()
+    {
+        // For an ordered stream. A withheld TCP segment is not superseded by anything - the
+        // receiver is still waiting for exactly that sequence number - so discarding it for being
+        // old leaves the stream stuck rather than avoiding stale data.
+        using var buffer = new PacketBuffer(16, PacketBuffer.NeverExpires);
+        Hold(buffer, T0);
+
+        var replay = buffer.TakeForReplay(T0.AddDays(30));
+
+        Assert.Single(replay);
+        Assert.Equal(0, buffer.Expired);
+        replay[0].Dispose();
+    }
+
+    [Fact]
+    public void Capacity_still_bounds_a_buffer_that_never_expires()
+    {
+        using var buffer = new PacketBuffer(3, PacketBuffer.NeverExpires);
+
+        for (var i = 0; i < 10; i++)
+        {
+            Hold(buffer, T0.AddSeconds(i));
+        }
+
+        Assert.Equal(3, buffer.Count);
+        Assert.Equal(7, buffer.Evicted);
+    }
+
+    [Fact]
     public void Discarding_empties_the_buffer_without_replaying()
     {
         using var buffer = new PacketBuffer(16, TimeSpan.FromSeconds(30));
