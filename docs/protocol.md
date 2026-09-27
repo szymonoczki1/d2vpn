@@ -1661,7 +1661,7 @@ document that warns against it.
 
 ---
 
-## Finding 40 - "slow" names two different mechanisms, and uplink wants the other one
+## Finding 40 - "slow" names two different mechanisms, and a uniform delay is a lag injector
 
 `run 3074 --slow` at 2000 ms was tested in game. **Wireshark confirms the delay line works** -
 uplink packets leave ~2 s after they were produced, in order, nothing dropped. In game the effect
@@ -1701,14 +1701,18 @@ faithfully against the only measurement of one that exists, **4000-6000 ms is th
 
 ### Consequence
 
-`--slow` stays: it is the faithful reproduction of `З0k Slow`, and 30k inbound is where that module
-is actually used - "good for holding reconnects" per its own README. It is on the wrong port here,
-not wrong.
+The delay line is what 3074 uplink slow is, by decision: uplink delayed by a configured amount, the
+whole buffer dumped on untick, nothing dropped. That is the specified behaviour and it is what is
+built.
 
-What "3074 uplink slow" wants is the other mechanism: a **triggered, self-releasing hold**. That is
-also the fix for the only failure mode left in detach - three of the fifteen misses were called as
-the operator being too slow through a sequence that has to complete inside three seconds, and a
-module that fires on the packet does not have that problem.
+So this finding does not ask for a change. It records why the in-game effect of a *uniform* delay is
+small, which bounds what the module is for: it is a lag injector, not a desync tool, and the two are
+different instruments. `--slow` is also the faithful reproduction of `З0k Slow`, whose own README
+describes it as being for holding reconnects - so the same code is already the right shape for a 30k
+module later.
+
+`Damage UL Slow`'s triggered self-releasing hold remains unbuilt and is noted here only so the
+distinction is not lost again. It is a separate module, not a correction to this one.
 
 ---
 
