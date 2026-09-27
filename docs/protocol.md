@@ -1812,6 +1812,75 @@ capture is a baseline for the other.
 
 ---
 
+## Finding 43 - the 7500 hold works, and TCP needs a different design from UDP
+
+First working TCP module. `run 7500 --hold-all --buffer`, validated over three sessions.
+
+| | |
+|---|---|
+| Longest hold | **44.7 s**, ended by the operator |
+| Segments withheld | 11 |
+| **Retransmissions suppressed** | **14** |
+| Peer resets | **0** |
+| Inbound withheld / seen | 25 / 70 |
+| Outbound touched | **0** of 49 |
+
+The suppressed count is the result. Withholding a TCP segment does not remove it - the sender
+re-sends the same data under the same sequence number - so a block that only drops has leaked by
+the first retransmission. Fourteen suppressed across a 44.7 s hold is the mechanism working; the
+earlier sessions, whose holds ran one to two seconds, never saw one because this channel's
+retransmissions arrive about 3.4 s apart.
+
+### The two-phase capture does not fit this channel
+
+The reference implementation withholds until the sender goes quiet for 100 ms, then keeps that
+slice and passes new data. Measured here, 7500 carries about **2.3 packets a second**, so a gap over
+100 ms is simply the spacing between updates: the capture fires after the first segment and
+everything later passes.
+
+Seven consecutive holds each withheld **exactly one** segment. With `--hold-all`, which never
+captures, withheld tracked inbound-dropped exactly across 26 toggles.
+
+That constant was tuned for a burstier stream. It is inherited, not measured, and it does not
+transfer.
+
+### The 1460-byte capture limit is unreachable here
+
+Reported `capture limit reached: 0` in every session, including a 231 s one. 7500 segments are
+small - 21 to 278 bytes payload in the captures - so a withheld slice never spans a maximum
+segment.
+
+That mattered more than a diagnostic. The hold ceiling was originally measured from capacity, so it
+never armed at all, and a 92 s hold ran until the peer reset the connection. The ceiling now runs
+from the first withheld segment, which is also when a peer's patience actually starts. **A ceiling
+gated on a condition the traffic does not meet is not a ceiling.**
+
+### Retransmissions are coalesced, and keep their sequence number
+
+The captures show the sender repacking on retransmit: original segments of 21 and 27 bytes come
+back as a single 482-byte retransmission starting at the same sequence number.
+
+So matching on sequence number alone is right, and matching on length would not be. Recorded
+because the opposite is a reasonable guess.
+
+### An adapter capture cannot show what was blocked
+
+npcap captures below the filter this tool installs, so an inbound capture shows every segment that
+reached the adapter - including the ones dropped immediately afterwards. Seeing a retransmission in
+Wireshark is not evidence the hold leaked.
+
+Blocking is visible only indirectly, in the acknowledgement numbers this machine sends back: they
+stall during a hold and jump in a burst after release. Three sessions were read this way before the
+point was noticed, which is worth stating plainly for the next person.
+
+### What is still inherited rather than measured
+
+`CaptureQuiet` 100 ms, `CaptureBytes` 1460, `MaxHold` 54 s, `QuietHold` 19 s, `QuietRetransmit`
+24 s. Of these only the ceiling has any evidence behind it here, and that evidence is one reset at
+92 s. 7500 has never been calibrated on this machine.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

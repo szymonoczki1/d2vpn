@@ -49,8 +49,13 @@ internal static class ApiRunCommand
             + $"quietRetransmitS={options.QuietRetransmit.TotalSeconds:F0} "
             + $"buffering={options.Buffering} priority={priority}");
 
+        // Aged out past the hold ceiling rather than before it. A 44.7 s hold with a 35 s
+        // limit expired its earliest segment and replayed 10 of 11 withheld - the one piece of
+        // data the game had been waiting longest for. Unlike a position update, an API segment
+        // does not go stale on its own: TCP will deliver it in order whenever it arrives, and the
+        // receiver is still asking for exactly it.
         using var buffer = options.Buffering
-            ? new PacketBuffer(2048, TimeSpan.FromSeconds(35))
+            ? new PacketBuffer(2048, options.MaxHold + TimeSpan.FromSeconds(10))
             : null;
 
         // Only when replaying. A segment held for seconds acknowledges a position the connection
@@ -109,6 +114,9 @@ internal static class ApiRunCommand
         Console.WriteLine($"  ceiling      : {options.MaxHold.TotalSeconds:F0}s, or "
             + $"{options.QuietHold.TotalSeconds:F0}s with "
             + $"{options.QuietRetransmit.TotalSeconds:F0}s of silence");
+        Console.WriteLine($"  wireshark    : an inbound capture shows segments this tool then");
+        Console.WriteLine($"                 drops - npcap sits below the filter, so seeing them");
+        Console.WriteLine($"                 there does not mean they reached the game");
         Console.WriteLine($"  buffering    : "
             + (options.Buffering
                 ? "on - withheld segments are replayed on untick, ack numbers brought forward"
@@ -168,11 +176,13 @@ internal static class ApiRunCommand
         Console.WriteLine($"peer resets             : {module.ResetsSeen}");
         Console.WriteLine($"longest hold            : {longestHold.TotalSeconds:F1}s");
 
-        if (rewriter is not null)
+        if (rewriter is not null && buffer is not null)
         {
             Console.WriteLine($"replayed                : {controller.PacketsReplayed}");
             Console.WriteLine($"  ack brought forward   : {rewriter.Rewritten}");
             Console.WriteLine($"  already current       : {rewriter.LeftAlone}");
+            Console.WriteLine($"  expired unsent        : {buffer.Expired}");
+            Console.WriteLine($"  evicted unsent        : {buffer.Evicted}");
         }
 
         Console.WriteLine();
