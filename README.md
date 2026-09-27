@@ -148,10 +148,15 @@ and replaying inbound is unproven: the server re-sends state regardless, so ther
 recover, and delivering a backlog of stale state on release is the one direction where replay
 could do harm rather than nothing. `--buffer-downlink` exists so that can be measured.
 
-Limits are 2048 packets (about 100 s of uplink at the measured rate, ~3 MB) and a 30 s age, both
-settable with `--buffer-size` and `--buffer-age-s`. The age limit is not about memory - a position
-update thirty seconds stale is worse than useless on arrival - and eviction is oldest first,
-because what matters on release is the most recent actions.
+Limits are 2048 packets and a 30 s age, settable with `--buffer-size` and `--buffer-age-s`. They
+are not peers: **the age limit is the operative one**. In a measured 295 s hold it discarded 87.7%
+of the buffer, and the capacity could hold 7.4x more than the age could ever admit - so capacity
+bounds memory against a rate spike, while age decides what is actually delivered. Eviction is
+oldest first, because what matters on release is the most recent actions.
+
+That release is measured: 252 packets reinjected in 13.6 ms (54 us each), no error code and no
+in-game symptom. A full 2048-packet drain would take ~111 ms, queuing about 2 packets against
+WinDivert's 4096-deep queue - so the drain cannot stall the receive loop at these rates.
 
 ## Hold, buffer, slow - three different things
 

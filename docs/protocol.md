@@ -1554,9 +1554,9 @@ beside the reference limiter's own cycle recorded in `HoldModuleOptions`:
 two configured lists crossed at all, in the tool's own accounting or in Wireshark. So this is not
 merely "a hold that survived" - it is the reference exchange reproduced, at the same shape.
 
-Exactly one 233 in seven and a half minutes, against its presence in the standing pass list, is
-worth noting: it is close to being dead weight, and dead weight in a pass list is a leak that has
-not happened yet.
+Exactly one 233 in seven and a half minutes, against its presence in the standing pass list, looked
+like near dead weight. **Withdrawn - see finding 39**, where a second hold saw four in 295 s. The
+claim was drawn from n=1.
 
 ### This corrects Finding 9
 
@@ -1574,6 +1574,89 @@ that only reports an absence.
 0 of 3710 inbound packets dropped during an uplink hold. Worth recording because the direction gate
 has been wrong before in the other direction, and because it is what makes a uplink hold safe to
 run long: the client keeps learning the world state throughout.
+
+---
+
+## Finding 39 - buffering is safe at length, and the age limit is the operative one
+
+A second long hold, this time on stock defaults with the buffer on: **294.9 s held, released
+cleanly, no error code, and no in-game symptom** beyond a visible burst in Wireshark at the moment
+of untick.
+
+The counters reconcile exactly, which is worth stating because this is the first run where the
+buffer's own accounting could be checked end to end:
+
+```
+buffered 2726  ==  uplink dropped 2726
+evicted   678  +  held at release 2048  ==  2726          (2048 == capacity)
+expired  1796  +  replayed        252   ==  2048
+```
+
+### The receive-loop stall hypothesis is dead
+
+252 packets drained in **13.6 ms** - 54 us per packet. Extrapolated, a full 2048-packet drain would
+take ~111 ms, during which roughly 2 packets arrive against WinDivert's 4096-deep queue.
+
+That was one of the two mechanisms proposed for why a long hold might error code. It cannot happen
+at these rates, and it was never the cause of anything - see finding 37 for what was. The
+instrumentation built to measure it stays, because the number is now known rather than assumed.
+
+### The age limit does the work; capacity is only a memory bound
+
+**87.7% of the buffer was discarded as stale** (1796 of 2048). At the measured 9.2 blocked
+packets/s, the 30 s age limit can only ever admit ~277 packets, while the 2048 capacity holds 222 s
+worth - **7.4x more than the age limit can use**.
+
+So the two limits are not peers. Capacity bounds memory against a rate spike; age decides what is
+actually delivered. Sizing the capacity only matters for the worst-case rate: at the 20/s seen in
+earlier captures, 30 s is ~600 packets, so 2048 keeps roughly 3x headroom and is left alone.
+
+### This refutes a change proposed earlier in this project
+
+On suspicion that a large backlog was error coding long holds, dropping `BufferMaxAge` from 30 s to
+~3 s was proposed, on the reasoning that the detach sequence is under 3 s so nothing older could be
+useful. That reasoning was sound and the premise was false: the backlog was never the cause, and
+252 replayed packets - 5x anything previously tested - produced no symptom at all.
+
+**30 s stays.** No measurement asks for a shorter one, and the argument for it was built on a
+hypothesis that finding 37 had already killed.
+
+### The resync exchange varies between runs
+
+Both long holds, normalised per resync window:
+
+| Size | 451 s / 35 win | 295 s / 23 win | |
+|---|---|---|---|
+| 1166 | 2.14 | 1.57 | |
+| 51 | 1.71 | 1.91 | |
+| 128 | 1.00 | 1.00 | trigger, 1.0 by construction |
+| 136 | 1.00 | 1.00 | trigger, 1.0 by construction |
+| 198 | 1.54 | **0.17** | 9x |
+| 190 | 0.97 | **0.17** | 6x |
+| 238 | 0.49 | **0.00** | absent entirely |
+| 174 | 0.86 | 0.74 | |
+| 206 | 0.29 | 0.09 | |
+| 36 | 0.23 | 0.30 | |
+| 233 | 0.03 | 0.17 | |
+
+The triggers and the always-present sizes (51, 1166) are stable. 198, 190 and 238 swing by up to
+9x, and 238 does not appear at all in the second run.
+
+That is consistent with the reference limiter's three recorded cycle variants rather than a single
+exchange: 198, 190 and 206 occur in only one of the three, 238 in two, while 51 and 1166 are in all
+three. **A pass list cannot be validated from one run** - a size absent from a session is not
+thereby unnecessary, it may belong to a variant that session did not hit.
+
+Requests to windows held at exactly 2.0:1 in both runs (70:35, 46:23).
+
+### Correcting the "233 is dead weight" note in finding 38
+
+Finding 38 observed one 233-byte packet in 451 s and suggested it was close to dead weight in the
+standing pass list. This run saw four in 295 s. Combined: **one per 149 s** - rare, but real and
+four times more frequent than the single sample implied.
+
+Drawn from n=1, which is the same error as validating a pass list from one run, in the same
+document that warns against it.
 
 ---
 
