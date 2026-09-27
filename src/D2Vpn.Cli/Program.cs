@@ -144,9 +144,9 @@ static void PrintUsage()
     Console.WriteLine("      attempt failed with it on. Kept because the result is informative,");
     Console.WriteLine("      not because it is worth using.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--max-hold-s N] [--hold-all]");
-    Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N] [--buffer]");
-    Console.WriteLine("                 [--quiet-hold-s N] [--quiet-resent-s N] [--no-ceiling]");
+    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--hold-all] [--buffer]");
+    Console.WriteLine("                 [--safe | --max-hold-s N] [--quiet-hold-s N]");
+    Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N]");
     Console.WriteLine("      A different mechanism from the other groups, because 7500 is TCP.");
     Console.WriteLine("      Dropping a TCP segment does not destroy it - the sender re-sends the");
     Console.WriteLine("      same data under the same sequence number - so a block that only drops");
@@ -182,15 +182,20 @@ static void PrintUsage()
     Console.WriteLine("      numbers brought forward and checksums recalculated, since a segment");
     Console.WriteLine("      held for seconds acknowledges a position long since passed.");
     Console.WriteLine("");
-    Console.WriteLine("      Two independent ceilings end a hold. --max-hold-s (54) is the total,");
-    Console.WriteLine("      and --quiet-hold-s (19) with --quiet-resent-s (24) ends it early once");
-    Console.WriteLine("      the peer has stopped retransmitting - which measured here happens");
-    Console.WriteLine("      about 25s in, so the quiet path is what actually ends a long hold.");
-    Console.WriteLine("      Either takes 0 to disable it, and --no-ceiling disables both.");
-    Console.WriteLine("      With no ceiling the hold runs until the peer resets you, which is an");
-    Console.WriteLine("      error code. That is the only way to find where the real limit is,");
-    Console.WriteLine("      since every one of these numbers is inherited rather than measured.");
-    Console.WriteLine("      An inbound RST still disables the module whatever these are set to.");
+    Console.WriteLine("      The hold is UNCAPPED by default and ends only when you untick or the");
+    Console.WriteLine("      peer resets. The effect lasts as long as the hold does - the game is");
+    Console.WriteLine("      deprived of API data for every second it runs - so how long to hold");
+    Console.WriteLine("      is your call rather than a number this tool should pick.");
+    Console.WriteLine("");
+    Console.WriteLine("      --safe caps it at 60s. Measured on this machine a 75s hold released");
+    Console.WriteLine("      cleanly and an 86s hold was reset, so 60 leaves margin. --max-hold-s");
+    Console.WriteLine("      sets any other length. --quiet-hold-s additionally ends a hold once");
+    Console.WriteLine("      the peer has stopped retransmitting for --quiet-resent-s (24); that");
+    Console.WriteLine("      happens about 25s in, and it stops the counters moving rather than");
+    Console.WriteLine("      stopping the effect, so it is off unless you ask for it.");
+    Console.WriteLine("");
+    Console.WriteLine("      An inbound RST always disables the module. That is not a precaution,");
+    Console.WriteLine("      it is the connection already being gone.");
     Console.WriteLine("");
     Console.WriteLine("      All of these values are read from a reference implementation, not");
     Console.WriteLine("      measured here. 7500 has not been calibrated on this machine at all.");
@@ -895,20 +900,20 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
         CaptureQuiet = TimeSpan.FromMilliseconds(
             IntOption(args, "--capture-quiet-ms", (int)ApiBlockOptions.Api7500.CaptureQuiet.TotalMilliseconds)),
         CaptureBytes = IntOption(args, "--capture-bytes", ApiBlockOptions.Api7500.CaptureBytes),
-        MaxHold = TimeSpan.FromSeconds(
-            IntOption(args, "--max-hold-s", (int)ApiBlockOptions.Api7500.MaxHold.TotalSeconds,
-                allowZero: true)),
-        QuietHold = TimeSpan.FromSeconds(
-            IntOption(args, "--quiet-hold-s", (int)ApiBlockOptions.Api7500.QuietHold.TotalSeconds,
-                allowZero: true)),
+        // Uncapped unless asked otherwise. The effect lasts as long as the hold does, so how
+        // long to hold is the operator's call - the only automatic exit is a reset, which is the
+        // connection already being gone rather than a precaution.
+        MaxHold = TimeSpan.FromSeconds(IntOption(args, "--max-hold-s", 0, allowZero: true)),
+        QuietHold = TimeSpan.FromSeconds(IntOption(args, "--quiet-hold-s", 0, allowZero: true)),
         QuietRetransmit = TimeSpan.FromSeconds(
             IntOption(args, "--quiet-resent-s",
                 (int)ApiBlockOptions.Api7500.QuietRetransmit.TotalSeconds)),
     };
 
-    if (HasFlag(args, "--no-ceiling"))
+    // A ceiling below where a reset was measured, for anyone who would rather not find out.
+    if (HasFlag(args, "--safe") && options.MaxHold <= TimeSpan.Zero)
     {
-        options = options with { MaxHold = TimeSpan.Zero, QuietHold = TimeSpan.Zero };
+        options = options with { MaxHold = TimeSpan.FromSeconds(60) };
     }
 
     var toggleKey = KeyName.Parse(StringOption(args, "--key") ?? "capslock");

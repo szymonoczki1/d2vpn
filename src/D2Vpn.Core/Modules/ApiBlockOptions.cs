@@ -68,13 +68,18 @@ public sealed record ApiBlockOptions
     /// </summary>
     /// <remarks>
     /// Unlike a 3074 uplink hold, which has no known ceiling, this one ends in a connection reset
-    /// and an error code. The reference implementation gives up at 54 s and this follows it.
+    /// and an error code. Measured on this machine, an 86.5 s hold was reset and a 75.2 s hold
+    /// released cleanly, so the ceiling sits somewhere between - well past the reference
+    /// implementation's 54 s (<c>docs/protocol.md</c>, finding 44).
     ///
-    /// Zero removes the limit. The value is inherited rather than measured, and running past it
-    /// deliberately is the only way to find where the real ceiling is - at the cost of an error
-    /// code when it is found.
+    /// <b>Zero by default, meaning no limit.</b> The effect lasts as long as the hold does: the
+    /// game is deprived of API data for every second it runs, and a shorter hold is simply a
+    /// smaller effect. So how long to hold is the operator's call, not a number this type should
+    /// pick, and the only automatic exit is a reset - which is the connection already being gone.
+    ///
+    /// Set it to switch on error-code prevention, at whatever length is wanted.
     /// </remarks>
-    public TimeSpan MaxHold { get; init; } = TimeSpan.FromSeconds(54);
+    public TimeSpan MaxHold { get; init; }
 
     /// <summary>
     /// After this long, a peer that has stopped retransmitting ends the hold early.
@@ -84,10 +89,12 @@ public sealed record ApiBlockOptions
     /// data rather than on the connection, so there is nothing left to withhold and continuing only
     /// spends the remaining budget before a reset. 19 s in the reference implementation.
     ///
-    /// Measured here, a peer stopped retransmitting about 25 s into a hold, so this path is what
-    /// ends a long hold rather than <see cref="MaxHold"/>. Zero removes it.
+    /// <b>Zero by default, meaning off</b>, because that reasoning does not survive measurement. A
+    /// peer here stops retransmitting about 25 s in, and what stops then is the counters moving -
+    /// not the effect. The game stays deprived for as long as the hold runs, so a quiet peer is
+    /// not a reason to end it.
     /// </remarks>
-    public TimeSpan QuietHold { get; init; } = TimeSpan.FromSeconds(19);
+    public TimeSpan QuietHold { get; init; }
 
     /// <summary>
     /// How long without a suppressed retransmission counts as the peer having given up.
@@ -120,6 +127,22 @@ public sealed record ApiBlockOptions
     /// </remarks>
     public bool Buffering { get; init; }
 
-    /// <summary>Defaults for TCP 7500, taken from the reference implementation.</summary>
+    /// <summary>
+    /// Defaults for TCP 7500: hold until the peer resets, and nothing else.
+    /// </summary>
     public static ApiBlockOptions Api7500 { get; } = new();
+
+    /// <summary>
+    /// The reference implementation's ceilings, for comparison and for anyone who wants them.
+    /// </summary>
+    /// <remarks>
+    /// None of these were measured here, and the one that can be checked - 54 s - is about thirty
+    /// seconds short of where a reset was actually observed.
+    /// </remarks>
+    public static ApiBlockOptions Reference { get; } = new()
+    {
+        MaxHold = TimeSpan.FromSeconds(54),
+        QuietHold = TimeSpan.FromSeconds(19),
+        QuietRetransmit = TimeSpan.FromSeconds(24)
+    };
 }

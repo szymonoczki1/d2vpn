@@ -130,11 +130,11 @@ internal static class ApiRunCommand
         Console.WriteLine($"  ceiling      : "
             + (options.MaxHold > TimeSpan.Zero
                 ? $"{options.MaxHold.TotalSeconds:F0}s"
-                : "NONE")
+                : "none - hold as long as you like, RST still releases")
             + (options.QuietHold > TimeSpan.Zero
                 ? $", or {options.QuietHold.TotalSeconds:F0}s with "
                   + $"{options.QuietRetransmit.TotalSeconds:F0}s of silence"
-                : ", quiet path OFF"));
+                : string.Empty));
         Console.WriteLine($"  wireshark    : an inbound capture shows segments this tool then");
         Console.WriteLine($"                 drops - npcap sits below the filter, so seeing them");
         Console.WriteLine($"                 there does not mean they reached the game");
@@ -153,11 +153,9 @@ internal static class ApiRunCommand
 
         if (options.MaxHold <= TimeSpan.Zero && options.QuietHold <= TimeSpan.Zero)
         {
-            Console.WriteLine("WARNING: no ceiling. This hold ends when the peer resets the");
-            Console.WriteLine("  connection, which is an error code. That is the point if you are");
-            Console.WriteLine("  measuring where the limit is - note the elapsed seconds when it");
-            Console.WriteLine("  happens, since none of the built-in numbers were measured here.");
-            Console.WriteLine("  An inbound RST still disables the module.");
+            Console.WriteLine("Uncapped: this hold ends when you untick, or when the peer resets");
+            Console.WriteLine("  the connection - which is an error code. Measured here, 75s");
+            Console.WriteLine("  released cleanly and 86s was reset. --safe caps it at 60s.");
             Console.WriteLine();
         }
 

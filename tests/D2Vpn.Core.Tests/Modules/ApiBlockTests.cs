@@ -18,6 +18,16 @@ public class ApiBlockTests
         return module;
     }
 
+    /// <summary>
+    /// A module with ceilings on, for the tests that are about the ceilings.
+    /// </summary>
+    /// <remarks>
+    /// They are off by default now - the effect lasts as long as the hold, so the length is the
+    /// operator's call - but the machinery still has to work when switched on.
+    /// </remarks>
+    private static ApiBlockModule Capped(bool holdEverything = false) =>
+        Module(ApiBlockOptions.Reference with { HoldEverything = holdEverything });
+
     [Fact]
     public void An_idle_module_touches_nothing()
     {
@@ -159,7 +169,7 @@ public class ApiBlockTests
     [Fact]
     public void The_hold_ends_at_the_maximum()
     {
-        var module = Module();
+        var module = Capped();
         string? reason = null;
         module.Disabled += (_, why) => reason = why;
 
@@ -186,7 +196,7 @@ public class ApiBlockTests
     {
         // A peer that has gone quiet gave up on the data rather than on the connection, so there is
         // nothing left to withhold and continuing only spends budget before a reset.
-        var module = Module();
+        var module = Capped();
         string? reason = null;
         module.Disabled += (_, why) => reason = why;
 
@@ -202,7 +212,7 @@ public class ApiBlockTests
     [Fact]
     public void A_peer_that_keeps_retransmitting_does_not_trigger_the_quiet_limit()
     {
-        var module = Module();
+        var module = Capped();
 
         Capture(module, at: 0);
 
@@ -222,7 +232,7 @@ public class ApiBlockTests
         // While holding, inbound may fall silent entirely. Outbound is then the only thing still
         // arriving to notice the ceiling has been reached, which is why it is checked before the
         // direction gate rather than after it.
-        var module = Module();
+        var module = Capped();
 
         Capture(module, at: 0);
 
@@ -336,7 +346,7 @@ public class ApiBlockTests
     {
         // It matters more here, not less: withholding everything closes the receive window, so the
         // reset arrives sooner than under the default.
-        var module = Module(new ApiBlockOptions { HoldEverything = true });
+        var module = Capped(holdEverything: true);
 
         module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
         module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 60));
@@ -357,7 +367,7 @@ public class ApiBlockTests
     {
         // Deliberately allowed: every one of these numbers is inherited rather than measured, and
         // running past the guess is the only way to find where the real limit is.
-        var module = Module(new ApiBlockOptions { MaxHold = TimeSpan.Zero });
+        var module = Module(ApiBlockOptions.Reference with { MaxHold = TimeSpan.Zero });
 
         module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
 
@@ -373,7 +383,7 @@ public class ApiBlockTests
     [Fact]
     public void A_zero_quiet_hold_removes_the_early_release()
     {
-        var module = Module(new ApiBlockOptions { QuietHold = TimeSpan.Zero });
+        var module = Module(ApiBlockOptions.Reference with { QuietHold = TimeSpan.Zero });
 
         module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
 
@@ -432,23 +442,57 @@ public class ApiBlockTests
     }
 
     [Fact]
-    public void The_defaults_are_the_reference_implementation_values()
+    public void The_hold_is_uncapped_by_default()
+    {
+        // The effect lasts as long as the hold does - the game is deprived of API data for every
+        // second it runs - so how long to hold is the operator's call. The only automatic exit is
+        // a reset, which is the connection already being gone rather than a precaution.
+        var options = ApiBlockOptions.Api7500;
+
+        Assert.Equal(TimeSpan.Zero, options.MaxHold);
+        Assert.Equal(TimeSpan.Zero, options.QuietHold);
+    }
+
+    [Fact]
+    public void The_capture_values_still_come_from_the_reference_implementation()
     {
         var options = ApiBlockOptions.Api7500;
 
         Assert.Equal(TimeSpan.FromMilliseconds(100), options.CaptureQuiet);
         Assert.Equal(1460, options.CaptureBytes);
+    }
+
+    [Fact]
+    public void The_reference_preset_keeps_the_inherited_ceilings()
+    {
+        var options = ApiBlockOptions.Reference;
+
         Assert.Equal(TimeSpan.FromSeconds(54), options.MaxHold);
         Assert.Equal(TimeSpan.FromSeconds(19), options.QuietHold);
         Assert.Equal(TimeSpan.FromSeconds(24), options.QuietRetransmit);
     }
 
     [Fact]
-    public void This_port_always_has_a_ceiling_unlike_3074_uplink()
+    public void An_uncapped_hold_still_ends_on_a_reset()
     {
-        // A 3074 uplink hold survived 451 s across 35 resync cycles. Nothing equivalent protects a
-        // TCP connection, so a hold here always ends in a reset if left alone.
-        Assert.True(ApiBlockOptions.Api7500.MaxHold > TimeSpan.Zero);
+        // The one exit that survives every setting, because it is not a timer.
+        var module = Module();
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        module.Decide(TestPackets.TcpReset(Port, atSeconds: 600));
+
+        Assert.False(module.IsActive);
+    }
+
+    [Fact]
+    public void An_uncapped_hold_runs_indefinitely_otherwise()
+    {
+        var module = Module();
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 3600));
+
+        Assert.True(module.IsActive);
     }
 
     [Fact]
@@ -458,7 +502,7 @@ public class ApiBlockTests
         // reached, and a 231 s run in game reached it zero times - 7500 segments are small and the
         // slice never spans 1460 bytes - so the timers never armed and a 92 s hold ran until the
         // peer reset it. A ceiling gated on a condition the traffic does not meet is not a ceiling.
-        var module = Module();
+        var module = Capped();
         string? reason = null;
         module.Disabled += (_, why) => reason = why;
 
@@ -484,7 +528,7 @@ public class ApiBlockTests
     [Fact]
     public void A_quiet_peer_ends_a_hold_that_never_reached_the_capture_limit()
     {
-        var module = Module();
+        var module = Capped();
         string? reason = null;
         module.Disabled += (_, why) => reason = why;
 
@@ -500,7 +544,7 @@ public class ApiBlockTests
     {
         // Not from activation: a module toggled on while the connection is idle has withheld
         // nothing, and there is nothing yet for a peer to lose patience over.
-        var module = Module();
+        var module = Capped();
 
         module.Decide(TestPackets.TcpAck(Port, 1000, atSeconds: 0));
         module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 100));

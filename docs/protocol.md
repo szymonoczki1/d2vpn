@@ -1898,16 +1898,28 @@ The reference implementation gives up at 54 s, which is conservative here by aro
 That figure stays as the default - it is a safety margin and being early costs nothing - but it is
 now known to be a margin rather than a limit.
 
-### The quiet path, not the maximum, ends most long holds
+### What stops at 25 seconds is the counters, not the effect
 
 An earlier run ended at 52 s with "no retransmission for 27 s", meaning the peer stopped re-sending
-about 25 s into the hold. Past that point nothing further is being withheld, because nothing
-further is arriving - the hold is inert well before it is dangerous.
+about 25 s into the hold. Both long holds withheld **exactly one segment**: the first one blocks the
+sender's window, so nothing new ever arrives, and the 8-9 suppressions are that same segment being
+re-sent with doubling gaps until the sender gives up.
 
-Two limits worth separating, then:
+So after ~25 s nothing arrives at all and `withheld` and `resent` stop moving.
 
-- **~25 s** - the peer exhausts its retransmissions. The hold stops achieving anything.
-- **~87 s** - the peer resets. The hold starts costing something.
+**This was first recorded here as "the useful window ended at 25 s", which is wrong.** The game is
+deprived of API data for every second the hold runs, from the first one to the last. What stops
+growing is the *amount withheld* - one segment either way - not the *duration of deprivation*, and
+for anything duration-based, which is most of what this module is for, that duration is the effect.
+
+| | |
+|---|---|
+| 0-25 s | the peer retransmits, suppressions accumulate |
+| 25-87 s | the peer is silent, counters frozen, **the game is still deprived** |
+| ~87 s | reset |
+
+The consequence is that the module should not pick a length. It holds until the operator unticks or
+the peer resets, with a ceiling available for anyone who wants one.
 
 ### Recovery from a 75 second hold is possible
 
