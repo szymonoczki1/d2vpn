@@ -78,6 +78,40 @@ internal static class RawPackets
         return packet;
     }
 
+    /// <summary>
+    /// Builds a TCP packet oriented for a direction, with the addresses the right way round.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Tcp"/> always lays the server out as the source, so describing it as outbound
+    /// reinterprets those bytes rather than producing an outbound packet - local and remote come
+    /// back swapped, and the two directions look like two different connections. Anything that
+    /// keys on a connection needs both directions to agree, so it needs this instead.
+    /// </remarks>
+    public static WinDivertPacket TcpFor(
+        bool outbound,
+        int payload = 100,
+        byte flags = PushAck,
+        uint sequence = 0x01020304,
+        uint acknowledgement = 0,
+        ushort localPort = LocalPort,
+        ushort remotePort = RemotePort)
+    {
+        var packet = Tcp(payload, flags, sequence, acknowledgement, localPort, remotePort);
+
+        if (!outbound)
+        {
+            return packet;
+        }
+
+        // Turn it around: this machine sending to the server.
+        var span = packet.GetSpan(0, packet.Length);
+        span[12] = 10; span[13] = 0; span[14] = 0; span[15] = 1;          // src 10.0.0.1
+        span[16] = 192; span[17] = 0; span[18] = 2; span[19] = 52;        // dst 192.0.2.52
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(span[20..], localPort);
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt16BigEndian(span[22..], remotePort);
+        return packet;
+    }
+
     /// <summary>An address carrying only a direction, which is all the parser reads from it.</summary>
     public static WinDivertAddress Address(bool outbound) =>
         new() { Flags = outbound ? WinDivertAddressFlag.Outbound : default };
