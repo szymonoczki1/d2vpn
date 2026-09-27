@@ -1,0 +1,43 @@
+wall_clock	offset_s	event	detail
+18:26:47.846	0.002	start	2026-09-27T18:26:47.8443798+00:00
+18:26:47.853	0.009	config	group=7500 captureQuietMs=100 captureBytes=1460 maxHoldS=0 quietHoldS=0 quietRetransmitS=24 buffering=True priority=-1000
+18:26:52.128	4.284	hold	
+18:26:53.787	5.943	release	heldFor=1.66s
+18:26:54.898	7.054	hold	
+18:26:57.782	9.938	release	heldFor=2.88s
+18:27:01.173	13.329	hold	
+18:27:03.135	15.291	release	heldFor=1.96s
+18:27:06.120	18.276	hold	
+18:27:07.824	19.980	release	heldFor=1.70s
+18:27:10.974	23.130	hold	
+18:27:12.781	24.937	release	heldFor=1.81s
+18:27:15.997	28.153	hold	
+18:27:17.562	29.718	release	heldFor=1.57s
+18:27:20.408	32.564	hold	
+18:27:21.971	34.127	release	heldFor=1.56s
+18:27:24.834	36.990	hold	
+18:27:26.401	38.557	release	heldFor=1.57s
+18:27:29.260	41.416	hold	
+18:27:31.281	43.438	release	heldFor=2.02s
+18:27:36.105	48.261	hold	
+18:27:38.261	50.418	release	heldFor=2.16s
+18:27:42.232	54.388	hold	
+18:27:43.894	56.050	release	heldFor=1.66s
+18:27:47.835	59.991	hold	
+18:27:50.152	62.308	release	heldFor=2.32s
+18:27:54.645	66.801	hold	
+18:28:00.205	72.362	release	heldFor=5.56s
+18:28:03.769	75.925	hold	
+18:28:05.682	77.838	release	heldFor=1.91s
+18:28:08.811	80.967	hold	
+18:28:10.363	82.519	release	heldFor=1.55s
+18:28:23.222	95.378	hold	
+18:28:24.971	97.127	release	heldFor=1.75s
+18:28:27.673	99.829	hold	
+18:28:29.454	101.610	release	heldFor=1.78s
+18:28:32.196	104.352	hold	
+18:28:33.763	105.919	release	heldFor=1.57s
+18:28:36.220	108.377	hold	
+18:28:37.681	109.837	release	heldFor=1.46s
+18:28:40.654	112.811	hold	
+18:28:42.999	115.155	release	heldFor=2.34s

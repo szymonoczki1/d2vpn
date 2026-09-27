@@ -1881,6 +1881,51 @@ point was noticed, which is worth stating plainly for the next person.
 
 ---
 
+## Finding 44 - measured: the 7500 ceiling is between 75 and 87 seconds
+
+Run with both ceilings disabled, to find where the real limit is rather than trust an inherited
+one.
+
+| Hold | Length | Outcome |
+|---|---|---|
+| 1 | **86.5 s** | peer reset the connection |
+| 2 | **75.2 s** | released by hand, connection recovered |
+
+So a 7500 hold survives at least 75 s and is dead by 87 s. **The first number in this module with
+any evidence behind it.**
+
+The reference implementation gives up at 54 s, which is conservative here by around thirty seconds.
+That figure stays as the default - it is a safety margin and being early costs nothing - but it is
+now known to be a margin rather than a limit.
+
+### The quiet path, not the maximum, ends most long holds
+
+An earlier run ended at 52 s with "no retransmission for 27 s", meaning the peer stopped re-sending
+about 25 s into the hold. Past that point nothing further is being withheld, because nothing
+further is arriving - the hold is inert well before it is dangerous.
+
+Two limits worth separating, then:
+
+- **~25 s** - the peer exhausts its retransmissions. The hold stops achieving anything.
+- **~87 s** - the peer resets. The hold starts costing something.
+
+### Recovery from a 75 second hold is possible
+
+The second hold ran 75.2 s and released cleanly, with the connection carrying on. So the window
+between "inert" and "fatal" is large, and unticking inside it recovers rather than error codes.
+
+### A bug this run exposed
+
+The run reported `replayed 0, expired unsent 2`. The buffer's age limit had been derived as
+`MaxHold + 10 s`, and `--no-ceiling` sets `MaxHold` to zero - so the age collapsed to 10 seconds
+against a 75 second hold and everything expired before the release. Nothing was replayed at all.
+
+The visible burst of traffic after the release was therefore the peer's own retransmissions
+resuming, not this tool's replay. Worth recording because the two look identical from a capture,
+and the wrong one was nearly credited.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

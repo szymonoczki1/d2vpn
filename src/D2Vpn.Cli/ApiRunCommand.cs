@@ -54,9 +54,16 @@ internal static class ApiRunCommand
         // data the game had been waiting longest for. Unlike a position update, an API segment
         // does not go stale on its own: TCP will deliver it in order whenever it arrives, and the
         // receiver is still asking for exactly it.
-        using var buffer = options.Buffering
-            ? new PacketBuffer(2048, options.MaxHold + TimeSpan.FromSeconds(10))
-            : null;
+        // Long enough that a hold of any permitted length still replays what it withheld.
+        // Deriving it from MaxHold alone collapsed to 10 s under --no-ceiling, where MaxHold is
+        // zero, so a 75 s hold expired everything and replayed nothing. Capacity still bounds
+        // memory either way, and a TCP segment does not go stale on its own: the receiver is still
+        // waiting for exactly that sequence number however long it took to arrive.
+        var bufferAge = options.MaxHold > TimeSpan.Zero
+            ? options.MaxHold + TimeSpan.FromSeconds(10)
+            : TimeSpan.FromMinutes(5);
+
+        using var buffer = options.Buffering ? new PacketBuffer(2048, bufferAge) : null;
 
         // Only when replaying. A segment held for seconds acknowledges a position the connection
         // has long since passed, and delivering that as-is is a duplicate acknowledgement.
@@ -73,8 +80,17 @@ internal static class ApiRunCommand
 
         module.Disabled += (_, why) =>
         {
-            session?.Write("self-disabled", why);
-            Console.WriteLine($"\n[{DateTime.UtcNow:HH:mm:ss}] released by the module: {why}");
+            // Recorded here too, not only on a hotkey release. The hold that ends by itself
+            // is the one whose length is the measurement - it is where the ceiling is.
+            var lasted = DateTimeOffset.UtcNow - holdStarted;
+            if (lasted > longestHold)
+            {
+                longestHold = lasted;
+            }
+
+            session?.Write("self-disabled", $"{why} heldFor={lasted.TotalSeconds:F2}s");
+            Console.WriteLine($"\n[{DateTime.UtcNow:HH:mm:ss}] released by the module after "
+                + $"{lasted.TotalSeconds:F1}s: {why}");
         };
 
         hotkeys.Bind(toggleKey, () =>
@@ -238,8 +254,21 @@ internal static class ApiRunCommand
 
         if (module.ResetsSeen > 0)
         {
-            Console.WriteLine("The peer reset the connection, which is the ceiling being hit.");
-            Console.WriteLine("Shorten the hold, or lower --max-hold-s so it releases sooner.");
+            Console.WriteLine($"The peer reset the connection after {longestHold.TotalSeconds:F0}s, "
+                + "which is where the");
+            Console.WriteLine("ceiling actually is on this connection.");
+
+            if (options.MaxHold <= TimeSpan.Zero)
+            {
+                Console.WriteLine($"That is the measurement. Set --max-hold-s a few seconds below "
+                    + $"{longestHold.TotalSeconds:F0}");
+                Console.WriteLine("to hold as long as possible without reaching it.");
+            }
+            else
+            {
+                Console.WriteLine("Lower --max-hold-s so it releases before this point.");
+            }
+
             Console.WriteLine();
         }
 
