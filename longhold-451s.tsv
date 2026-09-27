@@ -1,0 +1,6 @@
+wall_clock	offset_s	event	detail
+00:03:50.310	0.002	start	2026-09-27T00:03:50.3088038+00:00
+00:03:50.321	0.013	config	group=3074 direction=Uplink pass=[36, 51, 128, 136, 233, 1166] resyncPass=[51, 174, 190, 198, 206, 233, 238, 1166] triggers=[128, 136] resyncMs=3,500 cooldownMs=5,000 untickMs=0 pollMs=1 priority=0 buffering=False bufferInbound=False slow=False slowMs=2,000
+00:03:54.181	3.873	hold	
+00:11:25.228	454.920	release	heldFor=451.05s queued=0
+00:11:42.914	472.606	end	

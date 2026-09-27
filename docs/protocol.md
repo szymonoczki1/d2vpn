@@ -342,7 +342,7 @@ Destiny has focus. Any capture run needs the game focused before the toggle.
 
 | Module | Practical ceiling | Evidence |
 |---|---|---|
-| 3074 UL (`PVE` outbound) | **None known** | Held over 20 minutes with no disconnect |
+| 3074 UL (`PVE` outbound) | **None known** | 451 s across 35 resync cycles, instrumented - see finding 38. (An earlier, uncounted "over 20 minutes" from this session is superseded by it.) |
 | `З0k Slow` | **~25-30 s** | "60 is a bit unrealistic since its gonna error code me" |
 
 The 3074 hold survives because the handshake pass-through keeps renewing peer liveness
@@ -1504,6 +1504,76 @@ leave it to be rediscovered in a session.
 This is the third time on this project that reasoning forward from the most recent change lost to a
 measurement that already existed. The log was on disk, unexamined, while a test plan was being
 written to rediscover what it said. Check the recorded evidence before designing an experiment.
+
+---
+
+## Finding 38 - the uplink resync holds for 451 s across 35 cycles
+
+The first properly instrumented long hold. `run 3074 --no-buffer` with stock defaults - standing
+pass list and resync both armed, no safety timeout - held for **451.0 s (7.5 min) with no error
+code**, and released cleanly with the session still live.
+
+| | |
+|---|---|
+| Held | 451.0 s |
+| Uplink seen / dropped while held | 4826 / 4463 - **92.5% blocked** |
+| Uplink rate while held | 10.7 packets/s |
+| Downlink dropped | **0** of 3710 |
+| Reconnect requests | 70 |
+| **Resync windows** | **35** |
+| Wireshark leak filter | empty throughout |
+
+**The 35 is the result, not the 451.** Surviving one long stretch is weak evidence; the renewal
+exchange running to completion 35 consecutive times is the mechanism being demonstrated. One window
+every 12.9 s, steady for the whole hold - the game asks, is answered, goes quiet, asks again.
+
+Requests to windows is exactly 2.0:1, which is expected rather than lossy: each reconnect attempt
+sends both trigger sizes, 128 and 136, and the second falls inside the 5 s cooldown of the window
+the first opened. `TriggersSeen` counts requests, `ResyncsStarted` counts windows.
+
+### What crossed, against what the reference limiter permits
+
+359 packets crossed in 451 s - 0.8/s against 9.9/s dropped. Normalised per resync window, and set
+beside the reference limiter's own cycle recorded in `HoldModuleOptions`:
+
+| Size | Count | Per window | In reference cycles |
+|---|---|---|---|
+| 1166 | 75 | 2.1 | all 3 |
+| 51 | 60 | 1.7 | all 3 |
+| 198 | 54 | 1.5 | 1 of 3 |
+| 128 | 35 | 1.0 | 2 of 3 (trigger) |
+| 136 | 35 | 1.0 | 2 of 3 (trigger) |
+| 190 | 34 | 1.0 | 1 of 3 |
+| 174 | 30 | 0.86 | 1 of 3 |
+| 238 | 17 | 0.49 | 2 of 3 |
+| 206 | 10 | 0.29 | 1 of 3 |
+| 36 | 8 | 0.23 | - |
+| 233 | 1 | 0.03 | 1 of 3 |
+
+51 and 1166 lead, and they are the two sizes present in every reference cycle. Nothing outside the
+two configured lists crossed at all, in the tool's own accounting or in Wireshark. So this is not
+merely "a hold that survived" - it is the reference exchange reproduced, at the same shape.
+
+Exactly one 233 in seven and a half minutes, against its presence in the standing pass list, is
+worth noting: it is close to being dead weight, and dead weight in a pass list is a leak that has
+not happened yet.
+
+### This corrects Finding 9
+
+Finding 9 recorded the 3074 uplink ceiling as "none known", evidenced by "held over 20 minutes with
+no disconnect" - a single casual observation from an early session, taken before the resync pass
+list was twice corrected, with no counts attached. It was then quoted in this project as though it
+were a requirement, which set a 20-minute target that nothing derived.
+
+The ceiling is still "none known", but now on evidence: 451 s, 35 completed cycles, 92.5% blocked,
+zero leaks. A shorter run that demonstrates the mechanism cycling is worth more than a longer one
+that only reports an absence.
+
+### Downlink was untouched
+
+0 of 3710 inbound packets dropped during an uplink hold. Worth recording because the direction gate
+has been wrong before in the other direction, and because it is what makes a uplink hold safe to
+run long: the client keeps learning the world state throughout.
 
 ---
 
