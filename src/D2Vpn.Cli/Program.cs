@@ -30,6 +30,7 @@ try
         "calibrate" => await CalibrateAsync(args),
         "hold" => await HoldAsync(args),
         "run" => await RunAsync(args),
+        "reconnect" or "rc" => await ReconnectAsync(args),
         _ => Unknown(args[0])
     };
 }
@@ -203,6 +204,28 @@ static void PrintUsage()
     Console.WriteLine("      --capture-quiet-ms, and --capture-bytes (1460) is never reached");
     Console.WriteLine("      because segments are 21-278 bytes. They are exposed to be calibrated,");
     Console.WriteLine("      not because the defaults are known to be right.");
+    Console.WriteLine("");
+    Console.WriteLine("  d2vpn reconnect [group] [--key NAME] [--idle-s N] [--log FILE]");
+    Console.WriteLine("      Also 'rc'. The one command here that is not a hold: nothing is");
+    Console.WriteLine("      blocked, traffic passes untouched, and one keypress injects a TCP");
+    Console.WriteLine("      reset into every live connection on the group. The game notices at");
+    Console.WriteLine("      once, error codes, and reconnects by itself.");
+    Console.WriteLine("");
+    Console.WriteLine("      Two resets go out per connection, built from packets it recently");
+    Console.WriteLine("      sent. One goes to the peer, saying this machine is finished; one is");
+    Console.WriteLine("      delivered up this machine's own stack, saying the peer is. Killing");
+    Console.WriteLine("      one end leaves the other believing the connection is alive.");
+    Console.WriteLine("");
+    Console.WriteLine("      Defaults to 30k, where a capture here showed the game opening a new");
+    Console.WriteLine("      connection 330 ms later, and a reference limiter reports the effect");
+    Console.WriteLine("      lasting ~6s solo and ~40s in a fireteam. Its uses per that tool:");
+    Console.WriteLine("      change public instance, reload world state, pull to fireteam leader.");
+    Console.WriteLine("");
+    Console.WriteLine("      A connection can only be reset once a packet carrying payload has");
+    Console.WriteLine("      been seen in BOTH directions, so give it a few seconds of traffic");
+    Console.WriteLine("      first. The live count on the status line says when a press will do");
+    Console.WriteLine("      something. --idle-s (10) is how long a silent connection still");
+    Console.WriteLine("      counts as live. Trigger defaults to f9.");
     Console.WriteLine("");
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
@@ -887,6 +910,45 @@ static IDisposable SetupInterrupt(CancellationTokenSource cts)
 /// <summary>
 /// Resolves a module's options from the command line, shared by hold and run.
 /// </summary>
+static async Task<int> ReconnectAsync(string[] args)
+{
+    // 30k by default, which is where the reference implementation does this and where a reset was
+    // measured recovering in 330 ms. The group is still selectable: the mechanism is not specific
+    // to a port, only to TCP.
+    var group = args.Length > 1 && !args[1].StartsWith('-')
+        ? ResolveGroup(args)
+        : DestinyPorts.Instance;
+
+    if (group.Protocol != PortProtocol.Tcp)
+    {
+        throw new ArgumentException(
+            $"{group.Name} is UDP, and a reset is a TCP mechanism. There is no connection to tear "
+            + "down, so there would be nothing for the peer to act on. Use 30k or 7500.");
+    }
+
+    var triggerKey = KeyName.Parse(StringOption(args, "--key") ?? "f9");
+    var priority = PriorityOption(args, (short)0);
+
+    if (!Elevation.RequireElevated())
+    {
+        return 1;
+    }
+
+    Console.WriteLine("This injects packets. Nothing is blocked, but a reset really does kill");
+    Console.WriteLine("the connection it is aimed at.");
+    Console.WriteLine();
+
+    using var cts = new CancellationTokenSource();
+    using var sigint = SetupInterrupt(cts);
+
+    return await ReconnectCommand.ExecuteAsync(
+        group, triggerKey, priority,
+        IntOption(args, "--poll-ms", 1),
+        IntOption(args, "--idle-s", 10),
+        StringOption(args, "--log"),
+        cts.Token).ConfigureAwait(false);
+}
+
 static async Task<int> RunApiAsync(string[] args, PortGroup group)
 {
     if (HasFlag(args, "--downlink") || HasFlag(args, "--full"))

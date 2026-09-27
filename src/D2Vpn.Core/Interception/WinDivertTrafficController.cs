@@ -45,6 +45,8 @@ public sealed class WinDivertTrafficController : IDisposable
     private readonly ITrafficModule _module;
     private readonly PacketBuffer? _buffer;
     private readonly TcpAckRewriter? _rewriter;
+    private readonly ConnectionSampler? _sampler;
+    private int _resetRequested;
     private bool _wasHolding;
     private bool _disposed;
 
@@ -65,6 +67,15 @@ public sealed class WinDivertTrafficController : IDisposable
 
     /// <summary>Packets replayed on release since the controller started.</summary>
     public long PacketsReplayed { get; private set; }
+
+    /// <summary>Resets injected since the controller started.</summary>
+    public long ResetsInjected { get; private set; }
+
+    /// <summary>Connections reset by the most recent request.</summary>
+    public int LastResetConnections { get; private set; }
+
+    /// <summary>Raised after a reset request is carried out, with how many connections it hit.</summary>
+    public event Action<int, int>? ResetsSent;
 
     /// <summary>Outbound packets seen.</summary>
     public long OutboundSeen { get; private set; }
@@ -138,15 +149,21 @@ public sealed class WinDivertTrafficController : IDisposable
     /// Brings a held TCP segment's acknowledgement number up to date before it is replayed, or
     /// <see langword="null"/> for UDP, where a packet replays exactly as captured.
     /// </param>
+    /// <param name="sampler">
+    /// Keeps a recent packet per connection so resets can be built from them, or
+    /// <see langword="null"/> for a controller that never injects.
+    /// </param>
     public WinDivertTrafficController(
         ITrafficModule module,
         short priority = 0,
         PacketBuffer? buffer = null,
-        TcpAckRewriter? rewriter = null)
+        TcpAckRewriter? rewriter = null,
+        ConnectionSampler? sampler = null)
     {
         _module = module;
         _buffer = buffer;
         _rewriter = rewriter;
+        _sampler = sampler;
 
         var filter = WinDivertFilterBuilder.Build(module.Group);
         FilterExpression = filter.ToString() ?? string.Empty;
@@ -198,7 +215,7 @@ public sealed class WinDivertTrafficController : IDisposable
                 // be most of a second away. Measured on 7500 at 2.3 packets/s, which is a ~430 ms
                 // average gap and was felt in game as a delay after unticking. The read is not
                 // cancelled to do this; it is simply left outstanding until it completes.
-                if (_buffer is not null)
+                if (_buffer is not null || _sampler is not null)
                 {
                     var tick = Task.Delay(DrainInterval, cancellationToken);
                     var finished = await Task.WhenAny(receive, tick).ConfigureAwait(false);
@@ -213,6 +230,7 @@ public sealed class WinDivertTrafficController : IDisposable
                         }
 
                         await DrainAsync().ConfigureAwait(false);
+                        await InjectResetsAsync().ConfigureAwait(false);
                         continue;
                     }
                 }
@@ -235,6 +253,7 @@ public sealed class WinDivertTrafficController : IDisposable
                 // Before this packet is sent, so held actions arrive ahead of the live one that
                 // follows them rather than behind it.
                 await DrainAsync().ConfigureAwait(false);
+                await InjectResetsAsync().ConfigureAwait(false);
 
                 var outbound = addr.Flags.HasFlag(WinDivertAddressFlag.Outbound);
                 if (outbound)
@@ -369,6 +388,57 @@ public sealed class WinDivertTrafficController : IDisposable
     private static readonly TimeSpan DrainInterval = TimeSpan.FromMilliseconds(10);
 
     /// <summary>
+    /// Asks for every live connection on this handle's group to be reset.
+    /// </summary>
+    /// <remarks>
+    /// Safe to call from any thread. The work happens on the receive loop, within one drain
+    /// interval, because every write to the handle belongs there - this is triggered from a hotkey.
+    /// </remarks>
+    public void RequestReset() => Interlocked.Exchange(ref _resetRequested, 1);
+
+    /// <summary>Builds and sends resets, if one was asked for.</summary>
+    private async Task InjectResetsAsync()
+    {
+        if (_sampler is null || Interlocked.Exchange(ref _resetRequested, 0) == 0)
+        {
+            return;
+        }
+
+        var resets = _sampler.BuildResets(DateTimeOffset.UtcNow);
+        var connections = 0;
+        var sent = 0;
+        ConnectionSampler.Connection? previous = null;
+
+        foreach (var reset in resets)
+        {
+            try
+            {
+                if (previous != reset.Connection)
+                {
+                    connections++;
+                    previous = reset.Connection;
+                }
+
+                await _divert.SendAsync(reset.Packet, reset.Address).ConfigureAwait(false);
+                ResetsInjected++;
+                sent++;
+            }
+            catch
+            {
+                // One connection not killed is not a reason to leave the others alive, or to
+                // leave the remaining resets undisposed.
+            }
+            finally
+            {
+                reset.Dispose();
+            }
+        }
+
+        LastResetConnections = connections;
+        ResetsSent?.Invoke(connections, sent);
+    }
+
+    /// <summary>
     /// Sends whatever the buffer now owes: due packets under a schedule, everything on a release.
     /// </summary>
     private async Task DrainAsync()
@@ -474,6 +544,7 @@ public sealed class WinDivertTrafficController : IDisposable
             // Every packet, held or not: the replay needs a current value, and the only way to
             // have one is to have been watching all along.
             _rewriter?.Observe(info.Value);
+            _sampler?.Observe(info.Value, packet, addr);
 
             var verdict = _module.Decide(info.Value);
 
@@ -511,6 +582,7 @@ public sealed class WinDivertTrafficController : IDisposable
         // to restore normal traffic at once rather than first pushing a backlog of stale actions
         // into a session that may already be in trouble.
         _buffer?.Dispose();
+        _sampler?.Dispose();
         _divert.Dispose();
     }
 }

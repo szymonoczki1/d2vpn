@@ -110,6 +110,56 @@ design chosen for d2vpn. It also makes `dual.ahk` / `izivigi2700_20.ahk` redunda
 | `RawInput.Sharp` | 0.1.3 | Raw Input API for hotkeys rather than a low-level keyboard hook. More reliable alongside a fullscreen game. |
 | `SharpPcap` | 6.3.0 | Powers the built-in capture recording. |
 
+## HarryWatch's Reconnect, read from source
+
+`HarryWatch-1.2/Interception/Modules/ReconnectModule.cs`. **Read from its code, not measured here**,
+though finding 6 measured its traffic independently.
+
+Its own description: *"instant disconnect/reconnect [30k] / change public instances / reload world
+state / pull yourself to ft leader"*.
+
+| Setting | Value |
+|---|---|
+| Group | **30k** (TCP 30000-30009) |
+| Connection counts as live within | **10 s** of its last packet |
+| Resets per connection | **2** - one built from an outbound sample, one from an inbound |
+| Sample requirement | last packet **carrying payload** in that direction |
+| Auto-deactivates after | **150 ms** - it is one-shot, not a hold |
+
+```csharp
+// inbound rst // solo 6 sec // fireteam 40 sec
+```
+
+That comment sits on the *inbound* reset, so the longer fireteam effect is attributed to the one
+delivered up the local stack rather than the one sent to the peer.
+
+### Both directions, and why
+
+```csharp
+var out_example = con.LastOrDefault(x => !x.Inbound && x.Length != 0);
+var in_example  = con.LastOrDefault(x =>  x.Inbound && x.Length != 0);
+if (out_example is null || in_example is null) { /* can't kill */ }
+```
+
+A reset has to look like it came from the side it claims, so each is built from a sample of that
+side. If either sample is missing the connection is skipped entirely - half a kill leaves the other
+end believing the connection is alive.
+
+Payload-only samples: a bare acknowledgement parses fine but its sequence number sits where the
+stream already is rather than where it is going.
+
+### It mutates a clone rather than constructing a packet
+
+```csharp
+var p1 = out_example.BuildSameDirection();
+p1.ParseResult.TcpHeader->Rst = true;
+p1.Recalc();
+```
+
+Set the flag on a copy of a real packet, recalculate, inject. Nothing is built from scratch, because
+a reset carrying invented ports or sequence numbers belongs to no connection and is discarded. This
+project does the same, in `ConnectionSampler`.
+
 ## HarryWatch's API Block, read from source
 
 `HarryWatch-1.2/Interception/Modules/ApiModule.cs`. **Read from its code, not measured here.**
