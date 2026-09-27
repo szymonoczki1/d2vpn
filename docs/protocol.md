@@ -1769,6 +1769,49 @@ closely than "one per second".
 
 ---
 
+## Finding 42 - `--slow-throttle` reproduces the reference limiter on the wire
+
+Same capture and same filter as finding 41, this time running
+`run 3074 --slow-throttle --slow-ms 1000`.
+
+| | d2vpn | Reference limiter |
+|---|---|---|
+| Packets released during the hold | **7** | **7** |
+| Gap mean | **1.0268 s** | 1.0125 s |
+| Gap spread | **0.102 s** | 0.172 s |
+| Individual gaps | 1.098, 0.998, 1.029, 0.996, 0.999, 1.007, 1.061 | 1.115, 1.004, 0.942, 1.004, 1.007, 1.009, 1.007 |
+| Untick dump | 14 visible in 404 us | 13 visible in 178 us |
+
+The period matches to within 14 ms of mean, and this implementation holds it *more* tightly - about
+half the jitter. That is expected rather than flattering: the chain here is computed from the
+previous packet's scheduled release, so error does not accumulate, whereas the reference drifts up
+to -53 ms against a strict chain (finding 41).
+
+**The mechanism is reproduced.** Derived from a traffic measurement plus a reading of a different
+tool's constants, with no reference implementation of the throttle consulted.
+
+### The backlog behaved as designed
+
+The throttle ran 8.46 s against an input of 10.7/s, so ~90 packets were produced and 7 left: ~83 in
+the dump, the oldest about 8.5 s behind by the time it was sent. Comfortably inside the 30 s age
+limit, so nothing expired - consistent with what that limit implies, that a throttled hold starts
+discarding once its tail reaches `BufferMaxAge`, which at this rate is around 30 s of holding.
+
+### The input traffic differed between the two captures
+
+| | Finding 41 | Finding 42 |
+|---|---|---|
+| Pre-toggle rate | 29.6/s | 10.7/s |
+| Pre-toggle gaps | 18-75 ms, irregular | 96-104 ms, mean 100.5 |
+| Payload sizes | 110-550, mixed large and small | 694-766, uniformly large |
+
+A different game state, not a difference between the tools - the throttle governs output rate, and
+output was 1/s in both. The 100.5 ms regularity is worth noting on its own: a 10 Hz uplink tick,
+where finding 41 caught a moment carrying roughly three times that in mixed-size traffic. Neither
+capture is a baseline for the other.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
