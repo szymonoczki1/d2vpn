@@ -1661,6 +1661,57 @@ document that warns against it.
 
 ---
 
+## Finding 40 - "slow" names two different mechanisms, and uplink wants the other one
+
+`run 3074 --slow` at 2000 ms was tested in game. **Wireshark confirms the delay line works** -
+uplink packets leave ~2 s after they were produced, in order, nothing dropped. In game the effect
+was visible **once** across a whole session.
+
+The mechanism is correct and the design was the wrong one. The prior art has two modules called
+"slow" and this project conflated them:
+
+| Module | Mechanism | Built here |
+|---|---|---|
+| `З0k Slow` | "delays all inbound packets from 30k by a fixed number of seconds" - a blanket delay line | **yes**, as `--slow` |
+| `Damage UL Slow` | `TriggerLength` (default 184) plus a **2000 ms untick delay after a damage trigger fires** | no |
+
+`Damage UL Slow` is not a delay line at all. It watches for a packet of a calibrated length, then
+holds uplink for a fixed duration and **releases itself**. That is the block-then-dump shape, fired
+automatically at the moment damage is dealt.
+
+### Why a uniform delay does little
+
+A constant offset applied to every outbound packet is indistinguishable from latency, and the game
+compensates for latency - the server corrects the client's position rather than accepting a stale
+one. Nothing about a steady 2 s offset presents a contradiction for it to mishandle.
+
+What worked, at 12 detached shots in 15, was a **discontinuity**: block completely, then deliver the
+backlog at once, so actions arrive with a coherent gap behind them. Finding 36 measured exactly that
+in the reference limiter and nothing else. A delay line has no discontinuity except at untick, which
+is the one moment a delay line and a hold behave identically.
+
+So the two are not variations in strength. **A hold desynchronises; a delay adds lag.**
+
+### The 2000 ms default was borrowed from the wrong mechanism
+
+`SlowDelay` defaults to 2 s, justified here as a starting point between finding 7's measured 3.91 s
+and 5.94 s gaps. It sits below both, and 2000 ms is also - exactly - `Damage UL Slow`'s untick
+delay, which is a hold duration rather than a delay depth. If the delay line is to be tested
+faithfully against the only measurement of one that exists, **4000-6000 ms is the range**, not 2000.
+
+### Consequence
+
+`--slow` stays: it is the faithful reproduction of `З0k Slow`, and 30k inbound is where that module
+is actually used - "good for holding reconnects" per its own README. It is on the wrong port here,
+not wrong.
+
+What "3074 uplink slow" wants is the other mechanism: a **triggered, self-releasing hold**. That is
+also the fix for the only failure mode left in detach - three of the fifteen misses were called as
+the operator being too slow through a sequence that has to complete inside three seconds, and a
+module that fires on the packet does not have that problem.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
