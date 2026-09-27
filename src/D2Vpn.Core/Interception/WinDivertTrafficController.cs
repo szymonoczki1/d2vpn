@@ -1,3 +1,4 @@
+using System.Net;
 using System.Runtime.Versioning;
 using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
@@ -43,7 +44,6 @@ public sealed class WinDivertTrafficController : IDisposable
     private readonly WinDivert _divert;
     private readonly ITrafficModule _module;
     private readonly PacketBuffer? _buffer;
-    private readonly TimeSpan? _slowDelay;
     private bool _wasHolding;
     private bool _disposed;
 
@@ -133,19 +133,11 @@ public sealed class WinDivertTrafficController : IDisposable
     /// <param name="buffer">
     /// Where blocked packets are held for replay, or <see langword="null"/> to drop them.
     /// </param>
-    /// <param name="slowDelay">
-    /// Deliver held packets this long after they arrived, rather than withholding them until the
-    /// hold is released. <see langword="null"/> for an ordinary hold.
-    /// </param>
     public WinDivertTrafficController(
-        ITrafficModule module,
-        short priority = 0,
-        PacketBuffer? buffer = null,
-        TimeSpan? slowDelay = null)
+        ITrafficModule module, short priority = 0, PacketBuffer? buffer = null)
     {
         _module = module;
         _buffer = buffer;
-        _slowDelay = slowDelay;
 
         var filter = WinDivertFilterBuilder.Build(module.Group);
         FilterExpression = filter.ToString() ?? string.Empty;
@@ -199,9 +191,9 @@ public sealed class WinDivertTrafficController : IDisposable
                 // live one that follows them rather than behind it.
                 if (_buffer is not null)
                 {
-                    if (_slowDelay is { } delay)
+                    if (_buffer.Schedule is not null)
                     {
-                        await DrainDueAsync(delay).ConfigureAwait(false);
+                        await DrainDueAsync().ConfigureAwait(false);
                     }
 
                     var holding = _module.IsActive;
@@ -225,7 +217,7 @@ public sealed class WinDivertTrafficController : IDisposable
                     InboundSeen++;
                 }
 
-                var verdict = Decide(packet, addr);
+                var verdict = Decide(packet, addr, out var peer);
 
                 if (verdict == PacketVerdict.Pass)
                 {
@@ -245,7 +237,7 @@ public sealed class WinDivertTrafficController : IDisposable
 
                     if (verdict == PacketVerdict.Buffer && _buffer is not null)
                     {
-                        _buffer.Hold(packet, addr, DateTimeOffset.UtcNow);
+                        _buffer.Hold(packet, addr, DateTimeOffset.UtcNow, peer);
                         PacketsBuffered++;
                     }
                 }
@@ -337,7 +329,7 @@ public sealed class WinDivertTrafficController : IDisposable
     /// waiting is discarded rather than sent stale.
     /// </para>
     /// </remarks>
-    private async Task DrainDueAsync(TimeSpan delay)
+    private async Task DrainDueAsync()
     {
         if (_buffer is null)
         {
@@ -347,7 +339,7 @@ public sealed class WinDivertTrafficController : IDisposable
         var started = System.Diagnostics.Stopwatch.StartNew();
         var sent = 0;
 
-        foreach (var entry in _buffer.TakeDue(DateTimeOffset.UtcNow, delay))
+        foreach (var entry in _buffer.TakeDue(DateTimeOffset.UtcNow))
         {
             try
             {
@@ -372,8 +364,17 @@ public sealed class WinDivertTrafficController : IDisposable
     /// <summary>
     /// Asks the module about a packet, defaulting to passing it whenever anything goes wrong.
     /// </summary>
-    private PacketVerdict Decide(WinDivertPacket packet, WinDivertAddress addr)
+    /// <param name="packet">The packet just received.</param>
+    /// <param name="addr">The address it arrived with.</param>
+    /// <param name="peer">
+    /// The remote address, handed back so a throttled buffer can pace per peer without describing
+    /// the packet a second time. Null whenever the verdict came from a failure path.
+    /// </param>
+    private PacketVerdict Decide(
+        WinDivertPacket packet, WinDivertAddress addr, out IPAddress? peer)
     {
+        peer = null;
+
         try
         {
             var info = WinDivertPacketSource.Describe(packet, addr);
@@ -385,6 +386,7 @@ public sealed class WinDivertTrafficController : IDisposable
                 return PacketVerdict.Pass;
             }
 
+            peer = info.Value.RemoteAddress;
             var verdict = _module.Decide(info.Value);
 
             if (verdict == PacketVerdict.Pass && _module.IsActive)

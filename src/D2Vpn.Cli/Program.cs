@@ -83,6 +83,7 @@ static void PrintUsage()
     Console.WriteLine("                    [--untick-ms N] [--log FILE]");
     Console.WriteLine("                    [--no-buffer] [--buffer-size N] [--buffer-age-s N]");
     Console.WriteLine("                    [--buffer-downlink] [--slow] [--slow-ms N]");
+    Console.WriteLine("                    [--slow-throttle] [--slow-burst-ms N]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
@@ -116,6 +117,18 @@ static void PrintUsage()
     Console.WriteLine("      Default 2000 ms, and that is a starting point to calibrate from, not");
     Console.WriteLine("      a measured value - what was measured was the reference limiter's 30k");
     Console.WriteLine("      variant, which is inbound TCP on another port. Expect to tune it.");
+    Console.WriteLine("");
+    Console.WriteLine("      --slow-throttle changes it from a delay into a rate cap. Instead of");
+    Console.WriteLine("      each packet leaving --slow-ms after it arrived, it leaves --slow-ms");
+    Console.WriteLine("      after the PREVIOUS one for that peer - so the send rate is capped");
+    Console.WriteLine("      whatever arrives, the backlog grows, and the desync deepens the");
+    Console.WriteLine("      longer you hold. A fixed offset is just latency, which the game");
+    Console.WriteLine("      compensates for; a capped rate starves the peer instead. This is");
+    Console.WriteLine("      HarryWatch's behaviour, where the delay is 1000 ms.");
+    Console.WriteLine("      Use a much shorter --slow-ms with it: the effect builds on its own.");
+    Console.WriteLine("      --slow-burst-ms (default 10) keeps a burst together - packets");
+    Console.WriteLine("      arriving that close are spaced by it rather than the full delay, so");
+    Console.WriteLine("      four packets 2 ms apart do not leave four seconds apart.");
     Console.WriteLine("");
     Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
     Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
@@ -859,7 +872,8 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
     // replaying inbound is unproven, the server re-sends state regardless, and a backlog of stale
     // inbound state is the one direction where replay could do harm rather than nothing.
     var slowMs = IntOption(args, "--slow-ms", 0);
-    var slow = HasFlag(args, "--slow") || slowMs > 0;
+    var throttle = HasFlag(args, "--slow-throttle");
+    var slow = HasFlag(args, "--slow") || throttle || slowMs > 0;
 
     options = options with
     {
@@ -870,6 +884,9 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
             IntOption(args, "--buffer-age-s", (int)options.BufferMaxAge.TotalSeconds)),
         SlowMode = slow,
         SlowDelay = slowMs > 0 ? TimeSpan.FromMilliseconds(slowMs) : options.SlowDelay,
+        SlowThrottle = throttle,
+        SlowBurstWindow = TimeSpan.FromMilliseconds(
+            IntOption(args, "--slow-burst-ms", (int)options.SlowBurstWindow.TotalMilliseconds)),
     };
 
     if (slow && HasFlag(args, "--no-buffer"))

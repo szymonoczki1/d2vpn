@@ -50,13 +50,19 @@ internal static class RunCommand
             + $"cooldownMs={options.ResyncCooldown.TotalMilliseconds:N0} "
             + $"untickMs={untickDelayMs} pollMs={pollMs} priority={priority} "
             + $"buffering={options.Buffering} bufferInbound={options.BufferInbound} "
-            + $"slow={options.SlowMode} slowMs={options.SlowDelay.TotalMilliseconds:N0}");
-        using var buffer = options.Buffering
-            ? new PacketBuffer(options.BufferCapacity, options.BufferMaxAge)
+            + $"slow={options.SlowMode} slowMs={options.SlowDelay.TotalMilliseconds:N0} "
+            + $"throttle={options.SlowThrottle} "
+            + $"burstMs={options.SlowBurstWindow.TotalMilliseconds:N0}");
+        var schedule = options.SlowMode
+            ? new PacketBuffer.SlowSchedule(
+                options.SlowDelay, options.SlowThrottle, options.SlowBurstWindow)
             : null;
 
-        using var controller = new WinDivertTrafficController(
-            module, priority, buffer, options.SlowMode ? options.SlowDelay : null);
+        using var buffer = options.Buffering
+            ? new PacketBuffer(options.BufferCapacity, options.BufferMaxAge, schedule)
+            : null;
+
+        using var controller = new WinDivertTrafficController(module, priority, buffer);
         using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
         // Every size that crossed while holding, and how often. A hold that works most of the time
@@ -191,8 +197,12 @@ internal static class RunCommand
         Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}");
         Console.WriteLine($"  mode         : "
             + (options.SlowMode
-                ? "SLOW - nothing is blocked, everything arrives "
-                  + $"{options.SlowDelay.TotalMilliseconds:N0} ms late"
+                ? options.SlowThrottle
+                    ? $"SLOW THROTTLE - {Describe(options.Direction)} capped at one packet every "
+                      + $"{options.SlowDelay.TotalMilliseconds:N0} ms per peer; the backlog grows "
+                      + "while held"
+                    : $"SLOW - nothing is blocked, {Describe(options.Direction)} arrives "
+                      + $"{options.SlowDelay.TotalMilliseconds:N0} ms late"
                 : "hold - blocked traffic is withheld until release"));
         Console.WriteLine($"  buffering    : "
             + (options.Buffering

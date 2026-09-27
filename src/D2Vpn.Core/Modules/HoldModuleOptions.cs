@@ -197,6 +197,53 @@ public sealed record HoldModuleOptions
     public TimeSpan SlowDelay { get; init; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
+    /// Pace the output instead of shifting it: cap the send rate rather than adding a fixed offset.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The difference between the two slow behaviours, and it is a difference in kind.
+    /// </para>
+    /// <para>
+    /// Off, each packet leaves <see cref="SlowDelay"/> after it arrived. Output rate equals input
+    /// rate and the stream keeps its shape - the peer sees a complete, correctly shaped stream that
+    /// is late, which is indistinguishable from latency and gets compensated for. A uniform offset
+    /// produced one visible in-game effect across a whole session (<c>docs/protocol.md</c>,
+    /// finding 40).
+    /// </para>
+    /// <para>
+    /// On, each packet leaves <see cref="SlowDelay"/> after the previous one for that peer, so the
+    /// rate is capped whatever arrives. Input outruns output, the backlog grows, and the effective
+    /// delay climbs for as long as the hold runs. The peer is not receiving late data, it is
+    /// receiving a starved stream - which compounds rather than being absorbed. This is HarryWatch's
+    /// behaviour, read from its source, where the delay is 1 s.
+    /// </para>
+    /// <para>
+    /// A throttled delay wants to be much shorter than a fixed one: the desync builds on its own,
+    /// so seconds of it are not needed up front.
+    /// </para>
+    /// <para>
+    /// <b>Unlike a fixed offset, this one can drop packets.</b> A fixed delay holds only
+    /// rate x delay packets at a time, far inside <see cref="BufferMaxAge"/>, so nothing ever
+    /// expires. A throttled backlog grows until its tail reaches that age and then starts expiring
+    /// - so the age limit becomes the ceiling on how deep the desync can get, and how long the
+    /// hold can run before it turns into a partial block. Raise <see cref="BufferMaxAge"/> to push
+    /// that out; the <c>expired</c> count in a run summary says whether it was reached.
+    /// </para>
+    /// </remarks>
+    public bool SlowThrottle { get; init; }
+
+    /// <summary>
+    /// Under <see cref="SlowThrottle"/>, packets arriving this close together stay together.
+    /// </summary>
+    /// <remarks>
+    /// Without it a burst is smeared across as many delays as it has packets - four packets 2 ms
+    /// apart would leave four seconds apart at a 1 s delay - which throttles far harder than the
+    /// rate suggests and destroys any structure a burst carries. Packets arriving inside this
+    /// window are spaced by the window instead. 10 ms is HarryWatch's value.
+    /// </remarks>
+    public TimeSpan SlowBurstWindow { get; init; } = TimeSpan.FromMilliseconds(10);
+
+    /// <summary>
     /// Most packets to hold per peer before the oldest are discarded.
     /// </summary>
     /// <remarks>
