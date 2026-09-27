@@ -83,7 +83,7 @@ static void PrintUsage()
     Console.WriteLine("                    [--untick-ms N] [--log FILE]");
     Console.WriteLine("                    [--no-buffer] [--buffer-size N] [--buffer-age-s N]");
     Console.WriteLine("                    [--buffer-downlink] [--slow] [--slow-ms N]");
-    Console.WriteLine("                    [--slow-throttle] [--slow-burst-ms N]");
+    Console.WriteLine("                    [--slow-fixed] [--slow-burst-ms N]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
     Console.WriteLine("      and useless when a desync has to start on the frame you want.");
@@ -107,28 +107,30 @@ static void PrintUsage()
     Console.WriteLine("      and a backlog of stale inbound state is the one direction where");
     Console.WriteLine("      replay could do harm. --buffer-downlink enables it to be measured.");
     Console.WriteLine();
-    Console.WriteLine("      --slow is a different mode, not a stronger hold. Nothing is");
-    Console.WriteLine("      blocked: every packet still arrives, --slow-ms later than it should");
-    Console.WriteLine("      have, so the peer sees a stream that is behind rather than a gap in");
-    Console.WriteLine("      one. It delays whichever direction the hold covers - so a plain");
-    Console.WriteLine("      3074 run delays only uplink - where buffering covers outbound");
-    Console.WriteLine("      only regardless. The pass list still passes immediately, so the");
-    Console.WriteLine("      sizes that keep a session alive are never held.");
-    Console.WriteLine("      Default 2000 ms, and that is a starting point to calibrate from, not");
-    Console.WriteLine("      a measured value - what was measured was the reference limiter's 30k");
-    Console.WriteLine("      variant, which is inbound TCP on another port. Expect to tune it.");
+    Console.WriteLine("      --slow is a different mode, not a stronger hold. Nothing is blocked");
+    Console.WriteLine("      and nothing is dropped: packets are queued and released late, so the");
+    Console.WriteLine("      peer sees a stream that is behind rather than a gap in one. It covers");
+    Console.WriteLine("      whichever direction the hold does - a plain 3074 run slows only");
+    Console.WriteLine("      uplink - where buffering covers outbound only regardless. The pass");
+    Console.WriteLine("      list still passes immediately, so the sizes that keep a session alive");
+    Console.WriteLine("      are never held. On untick the whole queue is dumped.");
     Console.WriteLine("");
-    Console.WriteLine("      --slow-throttle changes it from a delay into a rate cap. Instead of");
-    Console.WriteLine("      each packet leaving --slow-ms after it arrived, it leaves --slow-ms");
-    Console.WriteLine("      after the PREVIOUS one for that peer - so the send rate is capped");
-    Console.WriteLine("      whatever arrives, the backlog grows, and the desync deepens the");
-    Console.WriteLine("      longer you hold. A fixed offset is just latency, which the game");
-    Console.WriteLine("      compensates for; a capped rate starves the peer instead. This is");
-    Console.WriteLine("      HarryWatch's behaviour, where the delay is 1000 ms.");
-    Console.WriteLine("      Use a much shorter --slow-ms with it: the effect builds on its own.");
-    Console.WriteLine("      --slow-burst-ms (default 10) keeps a burst together - packets");
-    Console.WriteLine("      arriving that close are spaced by it rather than the full delay, so");
-    Console.WriteLine("      four packets 2 ms apart do not leave four seconds apart.");
+    Console.WriteLine("      On 3074 it is a RATE CAP: one packet every --slow-ms per peer,");
+    Console.WriteLine("      whatever arrives. Input outruns output, the backlog grows, and the");
+    Console.WriteLine("      desync deepens the longer you hold - so a larger --slow-ms is more");
+    Console.WriteLine("      aggressive, not less. Default 1000 ms, which is what both reference");
+    Console.WriteLine("      limiters use and what was measured on the wire.");
+    Console.WriteLine("      A fixed offset was tried first and is indistinguishable from latency,");
+    Console.WriteLine("      which the game compensates for. --slow-fixed selects it anyway: it is");
+    Console.WriteLine("      the right mechanism for 30k, whose slow really is a fixed delay.");
+    Console.WriteLine("");
+    Console.WriteLine("      --slow-burst-ms (default 10) keeps a burst together under a rate cap:");
+    Console.WriteLine("      packets arriving that close are spaced by it rather than by the full");
+    Console.WriteLine("      period, so four packets 2 ms apart do not leave four seconds apart.");
+    Console.WriteLine("      A rate cap is the one mode that CAN drop: the backlog grows until its");
+    Console.WriteLine("      tail reaches --buffer-age-s and then expires, so a held throttle turns");
+    Console.WriteLine("      into a partial block after about that long. The summary says how many");
+    Console.WriteLine("      expired.");
     Console.WriteLine("");
     Console.WriteLine("      --log records holds, releases and outcomes with timestamps, so a");
     Console.WriteLine("      run can be lined up against a capture. Mark each attempt with f7");
@@ -872,8 +874,19 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
     // replaying inbound is unproven, the server re-sends state regardless, and a backlog of stale
     // inbound state is the one direction where replay could do harm rather than nothing.
     var slowMs = IntOption(args, "--slow-ms", 0);
-    var throttle = HasFlag(args, "--slow-throttle");
-    var slow = HasFlag(args, "--slow") || throttle || slowMs > 0;
+    var slow = HasFlag(args, "--slow") || HasFlag(args, "--slow-throttle")
+        || HasFlag(args, "--slow-fixed") || slowMs > 0;
+
+    // Each group's measured default decides which kind of slow it means - a rate cap on 3074, a
+    // fixed offset on 30k - because they are different mechanisms rather than settings of one.
+    // The flags override it either way.
+    var throttle = HasFlag(args, "--slow-fixed") ? false
+        : HasFlag(args, "--slow-throttle") || options.SlowThrottle;
+
+    if (HasFlag(args, "--slow-fixed") && HasFlag(args, "--slow-throttle"))
+    {
+        throw new ArgumentException("--slow-fixed and --slow-throttle are opposites; pick one.");
+    }
 
     options = options with
     {

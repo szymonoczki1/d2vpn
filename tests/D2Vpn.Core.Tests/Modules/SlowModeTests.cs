@@ -107,4 +107,29 @@ public class SlowModeTests
         Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Outbound(3074, 500, 0)));
         Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Inbound(3074, 500, 0)));
     }
+
+    [Fact]
+    public void Slow_on_3074_is_a_rate_cap_rather_than_an_offset()
+    {
+        // Measured on the wire in both reference limiters and here: one packet per second, not a
+        // stream shifted by a second. A fixed offset reads as latency, which the game compensates
+        // for. Findings 40 to 42.
+        Assert.True(MeasuredDefaults.Peer3074.SlowThrottle);
+        Assert.True(MeasuredDefaults.Peer3074Downlink.SlowThrottle);
+        Assert.True(MeasuredDefaults.Peer3074Full.SlowThrottle);
+    }
+
+    [Fact]
+    public void The_measured_slow_period_is_one_second()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(1), MeasuredDefaults.Peer3074.SlowDelay);
+    }
+
+    [Fact]
+    public void Slow_on_30k_stays_a_fixed_offset()
+    {
+        // A different module in the prior art, not a setting of the same one: its README calls it
+        // a fixed delay on inbound, and finding 7 measured gaps rather than a rate cap.
+        Assert.False(MeasuredDefaults.Instance30k.SlowThrottle);
+    }
 }

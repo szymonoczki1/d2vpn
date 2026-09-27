@@ -189,12 +189,18 @@ public sealed record HoldModuleOptions
     /// How far behind to run the stream when <see cref="SlowMode"/> is on.
     /// </summary>
     /// <remarks>
-    /// No default is derivable from anything measured here. The 3.91 s and 5.94 s gaps in finding
-    /// 7 are inbound TCP on a different port under a reconnect, which constrains the order of
-    /// magnitude and nothing finer, so 2 s is a starting point to calibrate from rather than a
-    /// result.
+    /// <para>
+    /// Under <see cref="SlowThrottle"/> this is a period rather than a depth, so a larger value is
+    /// more aggressive, not less: it is the inverse of the send rate.
+    /// </para>
+    /// <para>
+    /// 1 s is measured - both reference limiters use it on 3074, one in its source and the other
+    /// on the wire (<c>docs/protocol.md</c>, findings 41 and 42). It is not established for any
+    /// other port: finding 7's 3.91 s and 5.94 s gaps are inbound TCP on 30k under a reconnect,
+    /// which fixes an order of magnitude and nothing finer.
+    /// </para>
     /// </remarks>
-    public TimeSpan SlowDelay { get; init; } = TimeSpan.FromSeconds(2);
+    public TimeSpan SlowDelay { get; init; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Pace the output instead of shifting it: cap the send rate rather than adding a fixed offset.
@@ -317,6 +323,12 @@ public static class MeasuredDefaults
         ResyncTriggerLengths = new HashSet<int> { 128, 136 },
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = null,
+
+        // Slow on 3074 is a rate cap, not an offset. Both reference limiters do it this way -
+        // one in its source, the other measured on the wire at one packet per second - and a
+        // fixed offset was tried here first and is indistinguishable from latency in game,
+        // which the game compensates for. Findings 40 to 42.
+        SlowThrottle = true,
         Direction = HoldDirection.Uplink
     };
 
@@ -335,6 +347,13 @@ public static class MeasuredDefaults
         ResyncTriggerLengths = new HashSet<int>(),
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = TimeSpan.FromSeconds(20),
+
+        // Deliberately NOT a throttle, unlike 3074. The reference limiter's 30k variant is
+        // described by its own README as delaying all inbound packets by a fixed number of
+        // seconds, and finding 7 measured it as gaps of 3.91 s and 5.94 s rather than as a rate
+        // cap. Different port, different module, different mechanism - and this one is unmeasured
+        // here either way.
+        SlowThrottle = false,
         Direction = HoldDirection.Uplink
     };
 
@@ -388,6 +407,12 @@ public static class MeasuredDefaults
         // proving it: every earlier run ended at 25 s, safely short of the ceiling, so surviving
         // meant nothing.
         SafetyTimeout = null,
+
+        // Slow on 3074 is a rate cap, not an offset. Both reference limiters do it this way -
+        // one in its source, the other measured on the wire at one packet per second - and a
+        // fixed offset was tried here first and is indistinguishable from latency in game,
+        // which the game compensates for. Findings 40 to 42.
+        SlowThrottle = true,
         Direction = HoldDirection.Downlink
     };
 
@@ -419,6 +444,12 @@ public static class MeasuredDefaults
         ResyncTriggerDirection = PacketDirection.Outbound,
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = TimeSpan.FromSeconds(25),
+
+        // Slow on 3074 is a rate cap, not an offset. Both reference limiters do it this way -
+        // one in its source, the other measured on the wire at one packet per second - and a
+        // fixed offset was tried here first and is indistinguishable from latency in game,
+        // which the game compensates for. Findings 40 to 42.
+        SlowThrottle = true,
         Direction = HoldDirection.Both
     };
 

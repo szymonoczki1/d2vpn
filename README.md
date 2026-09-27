@@ -166,14 +166,35 @@ WinDivert's 4096-deep queue - so the drain cannot stall the receive loop at thes
 | default | held, replayed on release | a gap, then the actions arrive late |
 | `--slow` | held, released after `--slow-ms` | no gap - a stream running behind |
 
-Slow is not a stronger hold, it is a different mode. Nothing is withheld permanently and nothing is
-dropped, so there is no gap for the peer to react to: the whole conversation just runs late. It
-delays whichever direction the hold covers - so a plain `run 3074 --slow` delays only uplink -
-where buffering covers outbound only regardless of the hold.
+Slow is not a stronger hold, it is a different mode. Nothing is blocked and nothing is dropped, so
+there is no gap for the peer to react to: the conversation just runs behind. It covers whichever
+direction the hold does - a plain `run 3074 --slow` slows only uplink - where buffering covers
+outbound only regardless.
 
-The delay defaults to 2000 ms and is the one number here with no measurement behind it. What was
-measured was the reference limiter's 30k variant - inbound TCP on a different port, under a
-reconnect - which pins the order of magnitude and nothing finer. Expect to calibrate it.
+**On 3074 it is a rate cap, not a delay**, and the distinction turned out to be the whole thing. A
+fixed offset shifts the stream: the peer receives every packet, in order, correctly spaced, one
+second late - which is indistinguishable from a player on 1000 ms ping, and netcode is built to
+absorb exactly that. A rate cap releases one packet per period per peer whatever arrives, so input
+outruns output, the backlog grows, and the desync deepens for as long as the hold runs.
+
+| | Fixed offset | Rate cap |
+|---|---|---|
+| Output rate | equal to input | one per period |
+| Queue while held | constant | grows |
+| How far behind the peer is | constant | grows |
+| Dumped at untick | one period's worth | as much as you held for |
+
+A fixed offset was built here first, tested, and produced one visible in-game effect across a whole
+session. The rate cap works. Both reference limiters do it this way - one in its source, the other
+measured on the wire at one packet per second - so the 1000 ms default is a measurement rather than
+a guess. Larger is more aggressive, not less: it is the inverse of the send rate.
+
+`--slow-fixed` selects the offset anyway. It is the right mechanism for 30k, whose slow genuinely is
+a fixed delay on inbound - a different module in the prior art, not a setting of the same one.
+
+One consequence: a rate cap is the only mode here that can drop. The backlog grows until its tail
+reaches `--buffer-age-s` and then expires, so a held throttle becomes a partial block after roughly
+that long. The run summary reports how many expired.
 
 ## Safety
 
