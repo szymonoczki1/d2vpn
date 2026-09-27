@@ -303,6 +303,63 @@ public class ApiBlockTests
         Assert.True(ApiBlockOptions.Api7500.MaxHold > TimeSpan.Zero);
     }
 
+    [Fact]
+    public void A_hold_that_never_reaches_the_capture_limit_still_has_a_ceiling()
+    {
+        // The bug this exists for. The ceiling used to be measured from the capture limit being
+        // reached, and a 231 s run in game reached it zero times - 7500 segments are small and the
+        // slice never spans 1460 bytes - so the timers never armed and a 92 s hold ran until the
+        // peer reset it. A ceiling gated on a condition the traffic does not meet is not a ceiling.
+        var module = Module();
+        string? reason = null;
+        module.Disabled += (_, why) => reason = why;
+
+        // One small segment: nowhere near 1460 bytes, so capacity is never reached.
+        module.Decide(TestPackets.TcpData(Port, 200, sequence: 1000, atSeconds: 0));
+
+        // Retransmissions throughout, so only the maximum can end this.
+        for (var t = 5.0; t <= 50; t += 5)
+        {
+            module.Decide(TestPackets.TcpData(Port, 200, sequence: 1000, atSeconds: t));
+        }
+
+        Assert.Equal(0, module.CapacityReached);
+        Assert.True(module.IsActive);
+
+        module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 60));
+
+        Assert.False(module.IsActive);
+        Assert.Equal(0, module.CapacityReached);
+        Assert.Contains("past the", reason);
+    }
+
+    [Fact]
+    public void A_quiet_peer_ends_a_hold_that_never_reached_the_capture_limit()
+    {
+        var module = Module();
+        string? reason = null;
+        module.Disabled += (_, why) => reason = why;
+
+        module.Decide(TestPackets.TcpData(Port, 200, sequence: 1000, atSeconds: 0));
+        module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 30));
+
+        Assert.False(module.IsActive);
+        Assert.Contains("no retransmission", reason);
+    }
+
+    [Fact]
+    public void The_ceiling_runs_from_the_first_withheld_segment()
+    {
+        // Not from activation: a module toggled on while the connection is idle has withheld
+        // nothing, and there is nothing yet for a peer to lose patience over.
+        var module = Module();
+
+        module.Decide(TestPackets.TcpAck(Port, 1000, atSeconds: 0));
+        module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 100));
+
+        Assert.True(module.IsActive);
+    }
+
     /// <summary>Withholds enough to span the capture limit and establishes the hold.</summary>
     private static void Capture(ApiBlockModule module, double at)
     {

@@ -183,8 +183,17 @@ public sealed class ApiBlockModule : ITrafficModule
                 return PacketVerdict.Pass;
             }
 
+            state.HoldStartedAt ??= packet.Timestamp;
             state.Withheld[sequence] = packet.PayloadLength;
             state.LastWithheldAt = packet.Timestamp;
+
+            // Until something is suppressed there is nothing to be quiet about, so the quiet path
+            // measures from here rather than from a retransmission that has not happened yet.
+            if (state.LastRetransmitAt == default)
+            {
+                state.LastRetransmitAt = packet.Timestamp;
+            }
+
             SegmentsWithheld++;
             return Block();
         }
@@ -234,12 +243,17 @@ public sealed class ApiBlockModule : ITrafficModule
     {
         foreach (var state in _connections.Values)
         {
-            if (state.CapacityAt is not { } capacity)
+            // Measured from the first segment withheld, not from the capture limit being reached.
+            // The reference implementation starts its clock at capacity, and a 231 s run here
+            // reached that limit zero times - 7500 segments are small and the slice never spans
+            // 1460 bytes - so the timers never armed and a 92 s hold ran until the peer reset it.
+            // A ceiling gated on a condition the traffic does not meet is not a ceiling.
+            if (state.HoldStartedAt is not { } start)
             {
                 continue;
             }
 
-            var held = now - capacity;
+            var held = now - start;
 
             if (held >= Options.MaxHold)
             {
@@ -320,6 +334,13 @@ public sealed class ApiBlockModule : ITrafficModule
 
         /// <summary>When something was last withheld for the first time.</summary>
         public DateTimeOffset LastWithheldAt { get; set; }
+
+        /// <summary>When this connection first had anything withheld from it.</summary>
+        /// <remarks>
+        /// The clock the ceiling runs on. A peer's patience starts when data stops arriving, not
+        /// when some number of bytes have accumulated.
+        /// </remarks>
+        public DateTimeOffset? HoldStartedAt { get; set; }
 
         /// <summary>When a retransmission was last suppressed.</summary>
         public DateTimeOffset LastRetransmitAt { get; set; }
