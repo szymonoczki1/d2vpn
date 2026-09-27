@@ -179,10 +179,15 @@ public sealed class WinDivertTrafficController : IDisposable
         using var packet = new WinDivertPacket();
         using var addr = new WinDivertAddress();
 
+        // Declared outside the try so the exit path can wait for it. A read left outstanding
+        // when the handle closes registers a cancellation callback against that handle, and the
+        // callback runs after disposal - which threw ObjectDisposedException out of the Ctrl+C
+        // handler. Before the loop kept a read across iterations this could not happen, because
+        // every read was awaited before the loop could exit.
+        Task? receive = null;
+
         try
         {
-            Task? receive = null;
-
             while (!cancellationToken.IsCancellationRequested)
             {
                 receive ??= _divert.RecvAsync(packet, addr, cancellationToken).AsTask();
@@ -269,6 +274,22 @@ public sealed class WinDivertTrafficController : IDisposable
         }
         finally
         {
+            // Let the outstanding read finish before the handle goes. It is already cancelled by
+            // this point, so this is waiting for the cancellation to be observed rather than for a
+            // packet - and whatever it throws is the reason we are here anyway.
+            if (receive is not null)
+            {
+                try
+                {
+                    await receive.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Cancelled, or the handle failed. Either way there is nothing to salvage and
+                    // the close below is what matters.
+                }
+            }
+
             // The handle must close on every exit path. While it is open the driver keeps handing
             // packets to a loop that is no longer reading them, and the connection stalls.
             Dispose();

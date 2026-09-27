@@ -20,6 +20,16 @@ namespace D2Vpn.Cli;
 [SupportedOSPlatform("windows")]
 internal static class ApiRunCommand
 {
+    /// <summary>
+    /// How long a hold must run before zero suppressed retransmissions means anything.
+    /// </summary>
+    /// <remarks>
+    /// The peer only re-sends once its retransmission timer expires, measured on this channel
+    /// at roughly 3.4 s between attempts. A shorter hold ends before the first one is due, so
+    /// zero suppressed is the expected result rather than evidence of a leak.
+    /// </remarks>
+    private static readonly TimeSpan RetransmitPatience = TimeSpan.FromSeconds(5);
+
     public static async Task<int> ExecuteAsync(
         PortGroup group,
         ApiBlockOptions options,
@@ -53,6 +63,8 @@ internal static class ApiRunCommand
 
         var toggleCount = 0;
         var started = DateTimeOffset.UtcNow;
+        var holdStarted = DateTimeOffset.UtcNow;
+        var longestHold = TimeSpan.Zero;
 
         module.Disabled += (_, why) =>
         {
@@ -64,7 +76,22 @@ internal static class ApiRunCommand
         {
             toggleCount++;
             var active = module.Toggle();
-            session?.Write(active ? "hold" : "release");
+
+            if (active)
+            {
+                holdStarted = DateTimeOffset.UtcNow;
+                session?.Write("hold");
+            }
+            else
+            {
+                var lasted = DateTimeOffset.UtcNow - holdStarted;
+                if (lasted > longestHold)
+                {
+                    longestHold = lasted;
+                }
+
+                session?.Write("release", $"heldFor={lasted.TotalSeconds:F2}s");
+            }
             Console.WriteLine($"\n[{DateTime.UtcNow:HH:mm:ss}] {(active ? "HOLDING" : "released")}"
                 + $"  ({toggleCount} toggle{(toggleCount == 1 ? string.Empty : "s")})");
         });
@@ -139,6 +166,7 @@ internal static class ApiRunCommand
         Console.WriteLine($"retransmits suppressed  : {module.RetransmitsSuppressed}");
         Console.WriteLine($"capture limit reached   : {module.CapacityReached}");
         Console.WriteLine($"peer resets             : {module.ResetsSeen}");
+        Console.WriteLine($"longest hold            : {longestHold.TotalSeconds:F1}s");
 
         if (rewriter is not null)
         {
@@ -168,11 +196,18 @@ internal static class ApiRunCommand
             Console.WriteLine();
         }
 
-        if (module.SegmentsWithheld > 0 && module.RetransmitsSuppressed == 0)
+        // Only meaningful once a hold ran long enough for the peer to try again. Measured on
+        // this channel the retransmissions come about 3.4 s apart, so a one-second hold ends
+        // before the first is due and zero suppressed is simply correct. Warning on that said
+        // the hold had leaked when it had not.
+        if (module.SegmentsWithheld > 0
+            && module.RetransmitsSuppressed == 0
+            && longestHold > RetransmitPatience)
         {
-            Console.WriteLine("No retransmissions were suppressed. On TCP that means the hold");
-            Console.WriteLine("leaked: the peer re-sent what was withheld and it got through, so");
-            Console.WriteLine("nothing was actually held back. Check the capture window.");
+            Console.WriteLine($"No retransmissions were suppressed across a "
+                + $"{longestHold.TotalSeconds:F0}s hold, which is long enough for the peer");
+            Console.WriteLine("to have tried again - so the hold leaked: what was withheld got");
+            Console.WriteLine("through on a re-send and nothing was actually held back.");
             Console.WriteLine();
         }
 
