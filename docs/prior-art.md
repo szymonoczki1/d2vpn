@@ -105,10 +105,65 @@ design chosen for d2vpn. It also makes `dual.ahk` / `izivigi2700_20.ahk` redunda
 
 | Library | Version | Why it matters |
 |---|---|---|
-| `RateLimiter` + `ComposableAsync.Core` | 2.2.0 | "Slow" is a real rate limiter, not HarryWatch's fixed `DelayPacket(1s)`. Likely also paces buffer drain - the thing HarryWatch never settled (`// 1000 / 20 / 3`). |
+| `RateLimiter` + `ComposableAsync.Core` | 2.2.0 | "Slow" is a real rate limiter. So is HarryWatch's - see below; the "fixed `DelayPacket(1s)`" description here was wrong. Likely also paces buffer drain, the thing HarryWatch never settled (`// 1000 / 20 / 3`). |
 | `PacketDotNet` | 1.4.7 | Proper packet dissection instead of hand-walking headers with raw pointers. |
 | `RawInput.Sharp` | 0.1.3 | Raw Input API for hotkeys rather than a low-level keyboard hook. More reliable alongside a fullscreen game. |
 | `SharpPcap` | 6.3.0 | Powers the built-in capture recording. |
+
+## HarryWatch's delay values, read from source
+
+`HarryWatch-1.2/Interception/Modules/PveModule.cs` and `PacketProviderBase.cs`. **Read from its
+code, not measured here** - and HarryWatch carries no license, so these are facts to compare
+against, never code to lift.
+
+| Setting | Value |
+|---|---|
+| `SlowInbound` / `SlowOutbound` delay (3074) | **1 second** |
+| `Buffer` (block mode) delay (3074) | **35 seconds** |
+| Delay queue capacity | **2048**, evicting 16 at a time |
+| Default delay when unspecified | 1 second |
+| Flush pacing on untick | **0 ms** - unpaced |
+
+Two things stand out more than the numbers.
+
+### HarryWatch has no "drop" - a block *is* a delay
+
+Blocking is `DelayPacket(p, 35s)`. There is one mechanism, and block versus slow is only its depth:
+35 seconds against 1. That is a cleaner idea than this project's separate drop and buffer paths,
+and it explains the 35 s figure already recorded in the thresholds table.
+
+### Its "slow" is a throttle, not an offset
+
+Slow passes `addFromLatest: true, sameDirection: true`, and that flag changes the meaning entirely:
+
+```
+clone.CreatedAt = (last ?? clone).CreatedAt.Add(delay);
+```
+
+The packet is scheduled one second after the **last already-delayed packet for that peer and
+direction** - not one second after its own arrival. So the delays accumulate. At an inbound stream
+of ~10 packets/s, one leaves per second and the queue grows by nine per second, with the effective
+delay climbing without bound for as long as the toggle is held. There is a 10 ms floor for packets
+arriving within 10 ms of the previous one, as an anti-burst guard.
+
+Block mode passes `addFromLatest: false`, so each packet is delayed 35 s from *its own* arrival.
+That is a true fixed delay line.
+
+**So the two modes differ in kind, not only depth**: block is a fixed offset deep enough to act as
+a drop, slow is a rate limiter at one packet per second per peer.
+
+d2vpn's `--slow` is a fixed offset, which is the block-mode semantic at a shallow depth rather than
+the slow-mode semantic. That is a deliberate specification here, not an oversight - but it means a
+constant amount of lag, where HarryWatch's produces a desync that deepens the longer it is held.
+Worth knowing when a uniform delay turns out to have little in-game effect (finding 40).
+
+### The flush was never paced
+
+`ClearDelayQueue(null, Buffer, Buffer ? 0 : 0)  // 1000 / 20 / 3`
+
+The parameter is flush pacing in milliseconds, its default is 25, and both branches pass 0. The
+comment preserves three values that were tried and abandoned. Independent corroboration of findings
+4 and 7 here: **neither reference tool paces a release**, and this one stopped trying.
 
 ### 8. Built-in recording
 
