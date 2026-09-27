@@ -196,7 +196,8 @@ internal static class RunCommand
                 : "hold - blocked traffic is withheld until release"));
         Console.WriteLine($"  buffering    : "
             + (options.Buffering
-                ? $"{(options.SlowMode || options.BufferInbound ? "both" : "uplink only")}, "
+                ? $"{(options.SlowMode ? Describe(options.Direction)
+                       : options.BufferInbound ? "both directions" : "uplink only")}, "
                   + $"up to {options.BufferCapacity} packets or "
                   + $"{options.BufferMaxAge.TotalSeconds:N0}s old"
                 : "off - blocked packets are destroyed"));

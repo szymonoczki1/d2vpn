@@ -84,4 +84,27 @@ public class SlowModeTests
         var options = MeasuredDefaults.Peer3074;
         Assert.True(options.SlowDelay < options.BufferMaxAge);
     }
+
+    [Fact]
+    public void An_uplink_slow_hold_leaves_downlink_alone()
+    {
+        // Slow delays whichever direction the hold covers, not both. The direction gate runs
+        // before the slow logic, so an uplink hold never sees an inbound packet - which is what
+        // makes "3074 ul slow" delay only what this machine sends.
+        var module = Module(MeasuredDefaults.Peer3074 with { SlowMode = true });
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Outbound(3074, 500, 0)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 500, 0)));
+    }
+
+    [Fact]
+    public void A_full_slow_hold_delays_both_directions()
+    {
+        var module = Module(MeasuredDefaults.Peer3074Full with { SlowMode = true });
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Outbound(3074, 500, 0)));
+        Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Inbound(3074, 500, 0)));
+    }
 }

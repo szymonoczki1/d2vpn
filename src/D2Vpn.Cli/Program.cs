@@ -109,8 +109,10 @@ static void PrintUsage()
     Console.WriteLine("      --slow is a different mode, not a stronger hold. Nothing is");
     Console.WriteLine("      blocked: every packet still arrives, --slow-ms later than it should");
     Console.WriteLine("      have, so the peer sees a stream that is behind rather than a gap in");
-    Console.WriteLine("      one. Both directions are delayed. The pass list still passes");
-    Console.WriteLine("      immediately, so the sizes that keep a session alive are never held.");
+    Console.WriteLine("      one. It delays whichever direction the hold covers - so a plain");
+    Console.WriteLine("      3074 run delays only uplink - where buffering covers outbound");
+    Console.WriteLine("      only regardless. The pass list still passes immediately, so the");
+    Console.WriteLine("      sizes that keep a session alive are never held.");
     Console.WriteLine("      Default 2000 ms, and that is a starting point to calibrate from, not");
     Console.WriteLine("      a measured value - what was measured was the reference limiter's 30k");
     Console.WriteLine("      variant, which is inbound TCP on another port. Expect to tune it.");

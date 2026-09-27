@@ -313,9 +313,10 @@ default is 2 s and is a starting point to calibrate from, not a result.
 
 Decisions worth recording:
 
-- **Both directions, unlike buffering.** A plain hold buffers outbound only, because the server
-  re-sends inbound state anyway. That argument does not apply here: delaying inbound is the whole
-  of what the reference module does.
+- **Scoped to the hold's direction, unlike buffering.** Buffering covers outbound only whatever
+  the hold covers, because the server re-sends inbound state anyway. That argument does not apply
+  to a delay - delaying inbound is the whole of what the reference module does - so slow follows
+  the hold instead: `run 3074 --slow` delays only uplink, `--full --slow` delays both.
 - **The pass list still passes immediately.** Delaying a handshake size would put the machinery
   that keeps a session alive behind the same delay as everything else, which is how a hold turns
   into an error code.

@@ -168,7 +168,8 @@ WinDivert's 4096-deep queue - so the drain cannot stall the receive loop at thes
 
 Slow is not a stronger hold, it is a different mode. Nothing is withheld permanently and nothing is
 dropped, so there is no gap for the peer to react to: the whole conversation just runs late. It
-delays both directions, where buffering deliberately covers outbound only.
+delays whichever direction the hold covers - so a plain `run 3074 --slow` delays only uplink -
+where buffering covers outbound only regardless of the hold.
 
 The delay defaults to 2000 ms and is the one number here with no measurement behind it. What was
 measured was the reference limiter's 30k variant - inbound TCP on a different port, under a

@@ -355,10 +355,12 @@ public sealed class HoldModule : ITrafficModule
         /// sends, which is the only case with a result behind it.
         /// </remarks>
         private static PacketVerdict Blocked(PacketInfo packet, HoldModuleOptions options) =>
-            // Slow implies buffering in whichever direction is held: a packet cannot be delivered
-            // late unless it was kept, and unlike a hold there is no direction here that gains
-            // nothing from it - delaying inbound is the whole of what the reference limiter's 30k
-            // variant does.
+            // Slow implies buffering: a packet cannot be delivered late unless it was kept.
+            // It is not restricted to outbound the way plain buffering is, because the reason for
+            // that restriction - the server re-sends inbound state anyway - does not apply to a
+            // delay. Delaying inbound is the whole of what the reference limiter's 30k variant
+            // does. Scope still comes from the direction gate above, so an uplink hold delays
+            // only uplink.
             (options.SlowMode || options.Buffering)
                 && (packet.IsOutbound || options.BufferInbound || options.SlowMode)
                     ? PacketVerdict.Buffer
