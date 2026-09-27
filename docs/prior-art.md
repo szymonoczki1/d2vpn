@@ -172,13 +172,47 @@ HarryWatch's slow does not: it reshapes the stream and the backlog grows for as 
 is held. That is the one substantive difference between them, and it is worth knowing when a uniform
 delay turns out to have little in-game effect (finding 40).
 
+### The two uplink-slow designs side by side
+
+| | HarryWatch `SlowOutbound` | d2vpn `--slow` |
+|---|---|---|
+| Delay value | 1 s | configurable, 2 s default |
+| Scheduled relative to | the last already-queued packet for that peer | the packet's own arrival |
+| Output rate | 1 packet/s per peer, fixed | equal to the input rate |
+| Effective delay | climbs while held | constant |
+| Stream shape | reshaped - 10/s becomes 1/s | preserved, shifted |
+| Queue size | grows to the 2048 cap, then evicts 16 at a time | steady at rate x delay |
+| On untick | sent only if `Buffer` is also on, else discarded | always dumped |
+| Burst handling | sub-10 ms arrivals spaced 10 ms, not 1 s | untouched |
+
+**One is a delay, the other a throttle.** d2vpn shifts uplink into the past and leaves it otherwise
+intact, so the peer receives a complete, correctly shaped stream that is late - which is
+indistinguishable from latency and is compensated for. HarryWatch caps uplink at one packet per
+second per peer, so input exceeds output, the backlog grows by ~9 packets/s, and the effective delay
+climbs linearly: held 30 s, the oldest queued packet is minutes behind. The peer is not receiving
+late data, it is receiving a starved stream, and that compounds rather than being absorbed.
+
+This is the likeliest explanation for finding 40's result - a uniform offset producing one visible
+effect in a whole session.
+
+The 10 ms floor is an anti-burst guard: without it a four-packet burst would be smeared across four
+seconds, so the throttle is less brutal than 1/s alone suggests.
+
 ### The flush was never paced
 
 `ClearDelayQueue(null, Buffer, Buffer ? 0 : 0)  // 1000 / 20 / 3`
 
-The parameter is flush pacing in milliseconds, its default is 25, and both branches pass 0. The
-comment preserves three values that were tried and abandoned. Independent corroboration of findings
-4 and 7 here: **neither reference tool paces a release**, and this one stopped trying.
+The third parameter is flush pacing in milliseconds, its default is 25, and **both branches of the
+ternary pass 0**. The comment preserves three values tried and abandoned. Independent corroboration
+of findings 4 and 7: **neither reference tool paces a release**, and this one stopped trying.
+
+The flush itself groups by peer and runs those groups in parallel, ordered by scheduled time within
+each. So ordering is guaranteed per peer and not across peers - which is the same conclusion reached
+here independently, that a single FIFO suffices because cross-peer order carries no meaning.
+
+The second parameter is `sendSaved`, and it is passed the `Buffer` flag. **A slow queue is therefore
+discarded on untick unless buffering is separately enabled.** d2vpn always dumps, which is a
+deliberate difference rather than an oversight.
 
 ### 8. Built-in recording
 
