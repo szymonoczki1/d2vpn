@@ -69,6 +69,10 @@ public sealed record ApiBlockOptions
     /// <remarks>
     /// Unlike a 3074 uplink hold, which has no known ceiling, this one ends in a connection reset
     /// and an error code. The reference implementation gives up at 54 s and this follows it.
+    ///
+    /// Zero removes the limit. The value is inherited rather than measured, and running past it
+    /// deliberately is the only way to find where the real ceiling is - at the cost of an error
+    /// code when it is found.
     /// </remarks>
     public TimeSpan MaxHold { get; init; } = TimeSpan.FromSeconds(54);
 
@@ -79,6 +83,9 @@ public sealed record ApiBlockOptions
     /// Paired with <see cref="QuietRetransmit"/>. A peer that has gone quiet has given up on the
     /// data rather than on the connection, so there is nothing left to withhold and continuing only
     /// spends the remaining budget before a reset. 19 s in the reference implementation.
+    ///
+    /// Measured here, a peer stopped retransmitting about 25 s into a hold, so this path is what
+    /// ends a long hold rather than <see cref="MaxHold"/>. Zero removes it.
     /// </remarks>
     public TimeSpan QuietHold { get; init; } = TimeSpan.FromSeconds(19);
 

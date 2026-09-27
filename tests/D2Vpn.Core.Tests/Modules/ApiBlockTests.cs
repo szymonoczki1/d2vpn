@@ -353,6 +353,70 @@ public class ApiBlockTests
     }
 
     [Fact]
+    public void A_zero_maximum_removes_that_ceiling()
+    {
+        // Deliberately allowed: every one of these numbers is inherited rather than measured, and
+        // running past the guess is the only way to find where the real limit is.
+        var module = Module(new ApiBlockOptions { MaxHold = TimeSpan.Zero });
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+
+        // Retransmissions throughout, so the quiet path cannot end it either.
+        for (var t = 5.0; t <= 300; t += 5)
+        {
+            module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: t));
+        }
+
+        Assert.True(module.IsActive);
+    }
+
+    [Fact]
+    public void A_zero_quiet_hold_removes_the_early_release()
+    {
+        var module = Module(new ApiBlockOptions { QuietHold = TimeSpan.Zero });
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+
+        // Silent well past QuietRetransmit, but inside the 54 s maximum.
+        module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 40));
+
+        Assert.True(module.IsActive);
+    }
+
+    [Fact]
+    public void Both_ceilings_off_means_the_hold_never_ends_on_its_own()
+    {
+        var module = Module(new ApiBlockOptions
+        {
+            MaxHold = TimeSpan.Zero,
+            QuietHold = TimeSpan.Zero
+        });
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 600));
+
+        Assert.True(module.IsActive);
+    }
+
+    [Fact]
+    public void A_reset_still_disables_the_module_with_no_ceiling()
+    {
+        // The one exit that is not a timer, so it must survive turning the timers off - the peer
+        // resetting is the connection actually being gone, not a precaution.
+        var module = Module(new ApiBlockOptions
+        {
+            MaxHold = TimeSpan.Zero,
+            QuietHold = TimeSpan.Zero
+        });
+
+        module.Decide(TestPackets.TcpData(Port, 500, sequence: 1000, atSeconds: 0));
+        module.Decide(TestPackets.TcpReset(Port, atSeconds: 600));
+
+        Assert.False(module.IsActive);
+        Assert.Equal(1, module.ResetsSeen);
+    }
+
+    [Fact]
     public void Hold_all_is_off_by_default()
     {
         Assert.False(ApiBlockOptions.Api7500.HoldEverything);

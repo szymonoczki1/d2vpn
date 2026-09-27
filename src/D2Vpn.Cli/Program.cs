@@ -146,6 +146,7 @@ static void PrintUsage()
     Console.WriteLine();
     Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--max-hold-s N] [--hold-all]");
     Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N] [--buffer]");
+    Console.WriteLine("                 [--quiet-hold-s N] [--quiet-resent-s N] [--no-ceiling]");
     Console.WriteLine("      A different mechanism from the other groups, because 7500 is TCP.");
     Console.WriteLine("      Dropping a TCP segment does not destroy it - the sender re-sends the");
     Console.WriteLine("      same data under the same sequence number - so a block that only drops");
@@ -180,6 +181,16 @@ static void PrintUsage()
     Console.WriteLine("      before anything changes in game. Replayed segments have their ack");
     Console.WriteLine("      numbers brought forward and checksums recalculated, since a segment");
     Console.WriteLine("      held for seconds acknowledges a position long since passed.");
+    Console.WriteLine("");
+    Console.WriteLine("      Two independent ceilings end a hold. --max-hold-s (54) is the total,");
+    Console.WriteLine("      and --quiet-hold-s (19) with --quiet-resent-s (24) ends it early once");
+    Console.WriteLine("      the peer has stopped retransmitting - which measured here happens");
+    Console.WriteLine("      about 25s in, so the quiet path is what actually ends a long hold.");
+    Console.WriteLine("      Either takes 0 to disable it, and --no-ceiling disables both.");
+    Console.WriteLine("      With no ceiling the hold runs until the peer resets you, which is an");
+    Console.WriteLine("      error code. That is the only way to find where the real limit is,");
+    Console.WriteLine("      since every one of these numbers is inherited rather than measured.");
+    Console.WriteLine("      An inbound RST still disables the module whatever these are set to.");
     Console.WriteLine("");
     Console.WriteLine("      All of these values are read from a reference implementation, not");
     Console.WriteLine("      measured here. 7500 has not been calibrated on this machine at all.");
@@ -885,8 +896,20 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
             IntOption(args, "--capture-quiet-ms", (int)ApiBlockOptions.Api7500.CaptureQuiet.TotalMilliseconds)),
         CaptureBytes = IntOption(args, "--capture-bytes", ApiBlockOptions.Api7500.CaptureBytes),
         MaxHold = TimeSpan.FromSeconds(
-            IntOption(args, "--max-hold-s", (int)ApiBlockOptions.Api7500.MaxHold.TotalSeconds)),
+            IntOption(args, "--max-hold-s", (int)ApiBlockOptions.Api7500.MaxHold.TotalSeconds,
+                allowZero: true)),
+        QuietHold = TimeSpan.FromSeconds(
+            IntOption(args, "--quiet-hold-s", (int)ApiBlockOptions.Api7500.QuietHold.TotalSeconds,
+                allowZero: true)),
+        QuietRetransmit = TimeSpan.FromSeconds(
+            IntOption(args, "--quiet-resent-s",
+                (int)ApiBlockOptions.Api7500.QuietRetransmit.TotalSeconds)),
     };
+
+    if (HasFlag(args, "--no-ceiling"))
+    {
+        options = options with { MaxHold = TimeSpan.Zero, QuietHold = TimeSpan.Zero };
+    }
 
     var toggleKey = KeyName.Parse(StringOption(args, "--key") ?? "capslock");
 

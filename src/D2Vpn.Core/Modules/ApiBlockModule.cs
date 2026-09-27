@@ -263,12 +263,17 @@ public sealed class ApiBlockModule : ITrafficModule
 
             var held = now - start;
 
-            if (held >= Options.MaxHold)
+            // Zero disables a limit. Deliberately allowed, because the only way to find where a
+            // ceiling actually is on this connection is to run past the inherited guess - and the
+            // inherited guess is all these numbers are.
+            if (Options.MaxHold > TimeSpan.Zero && held >= Options.MaxHold)
             {
                 return $"held {held.TotalSeconds:F0}s, past the {Options.MaxHold.TotalSeconds:F0}s limit";
             }
 
-            if (held >= Options.QuietHold && now - state.LastRetransmitAt >= Options.QuietRetransmit)
+            if (Options.QuietHold > TimeSpan.Zero
+                && held >= Options.QuietHold
+                && now - state.LastRetransmitAt >= Options.QuietRetransmit)
             {
                 return $"held {held.TotalSeconds:F0}s with no retransmission for "
                     + $"{(now - state.LastRetransmitAt).TotalSeconds:F0}s";
