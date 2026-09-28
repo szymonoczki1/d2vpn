@@ -163,9 +163,11 @@ internal static class ApiRunCommand
         }
         Console.WriteLine($"  keepalive    : "
             + (options.PassLengths.Count > 0
-                ? $"{string.Join(", ", options.PassLengths.Order())} bytes pass, so the hold can "
-                  + "run indefinitely"
-                : "none - nothing is passed, so the session survives on its own or not at all"));
+                ? $"{string.Join(", ", options.PassLengths.Order())} bytes pass"
+                  + (options.ReleaseAfter is null
+                      ? ", so the hold can sit armed until there is something to block"
+                      : " (inert under slow - the queue already keeps the stream fed)")
+                : "none"));
         Console.WriteLine($"  mode         : "
             + (options.ReleaseAfter is { } release
                 ? $"SLOW - inbound is delayed by {release.TotalSeconds:F0}s and keeps flowing"
@@ -313,12 +315,20 @@ internal static class ApiRunCommand
             Console.WriteLine();
         }
 
-        if (options.PassLengths.Count > 0 && module.KeepalivesPassed == 0 && toggleCount > 0)
+        // Only meaningful for a block. A keepalive exists to stop an idle hold dying before there
+        // is anything to withhold; under a delay line the queue keeps delivering, so the stream
+        // never starves and the pass has nothing to rescue. Saying "the connection had about
+        // twenty seconds" after a four-minute slow hold was simply wrong.
+        if (options.PassLengths.Count > 0
+            && module.KeepalivesPassed == 0
+            && toggleCount > 0
+            && options.ReleaseAfter is null)
         {
-            Console.WriteLine("No keepalives passed. On a port with a heartbeat that means the");
-            Console.WriteLine("pass list does not match this machine's, so the hold was total and");
-            Console.WriteLine("the connection had about twenty seconds. Check what size arrives");
-            Console.WriteLine("every few seconds inbound and set --pass to it.");
+            Console.WriteLine("No keepalives passed, so the pass list does not match this server's");
+            Console.WriteLine("heartbeat. That only costs you while nothing is being withheld - it");
+            Console.WriteLine("is what lets a block sit armed for free until content arrives, and");
+            Console.WriteLine("without it an idle hold dies in about twenty seconds. Check what");
+            Console.WriteLine("size arrives every few seconds inbound and set --pass to it.");
             Console.WriteLine();
         }
 
