@@ -125,6 +125,11 @@ internal static class ApiRunCommand
         var keyLabel = KeyName.Describe(toggleKey);
         Console.WriteLine($"running {group} inbound");
         Console.WriteLine($"  toggle       : {keyLabel}  (polled every {pollMs} ms)");
+        Console.WriteLine($"  keepalive    : "
+            + (options.PassLengths.Count > 0
+                ? $"{string.Join(", ", options.PassLengths.Order())} bytes pass, so the hold can "
+                  + "run indefinitely"
+                : "none - nothing is passed, so the session survives on its own or not at all"));
         Console.WriteLine($"  mode         : "
             + (options.ReleaseAfter is { } release
                 ? $"SLOW - inbound is delayed by {release.TotalSeconds:F0}s and keeps flowing"
@@ -192,6 +197,7 @@ internal static class ApiRunCommand
                 + $"in {controller.InboundDropped}/{controller.InboundSeen}  "
                 + $"withheld {module.SegmentsWithheld}  "
                 + $"resent {module.RetransmitsSuppressed}  "
+                + $"alive {module.KeepalivesPassed}  "
                 + $"{(module.IsActive ? "HOLDING " : "idle    ")}   ");
         }
 
@@ -211,6 +217,7 @@ internal static class ApiRunCommand
         Console.WriteLine($"outbound  : {controller.OutboundDropped} of {controller.OutboundSeen} (never touched)");
         Console.WriteLine($"segments withheld       : {module.SegmentsWithheld}");
         Console.WriteLine($"retransmits suppressed  : {module.RetransmitsSuppressed}");
+        Console.WriteLine($"keepalives passed       : {module.KeepalivesPassed}");
         Console.WriteLine($"capture limit reached   : {module.CapacityReached}");
         Console.WriteLine($"peer resets             : {module.ResetsSeen}");
         Console.WriteLine($"longest hold            : {longestHold.TotalSeconds:F1}s");
@@ -257,6 +264,15 @@ internal static class ApiRunCommand
                 + $"{longestHold.TotalSeconds:F0}s hold, which is long enough for the peer");
             Console.WriteLine("to have tried again - so the hold leaked: what was withheld got");
             Console.WriteLine("through on a re-send and nothing was actually held back.");
+            Console.WriteLine();
+        }
+
+        if (options.PassLengths.Count > 0 && module.KeepalivesPassed == 0 && toggleCount > 0)
+        {
+            Console.WriteLine("No keepalives passed. On a port with a heartbeat that means the");
+            Console.WriteLine("pass list does not match this machine's, so the hold was total and");
+            Console.WriteLine("the connection had about twenty seconds. Check what size arrives");
+            Console.WriteLine("every few seconds inbound and set --pass to it.");
             Console.WriteLine();
         }
 

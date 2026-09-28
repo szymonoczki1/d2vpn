@@ -2269,15 +2269,33 @@ for three minutes, it is not a cleverer way of blocking.
 Only one connection is involved - a single local port for the whole capture - so this is not a
 second connection carrying the traffic.
 
-### What this leaves open
+### And with autoresync off, the same capture answers it
 
-Either autoresync suppresses the block entirely, in which case holding indefinitely is trivial and
-the module is doing nothing while it is on, or the effect it produces is not visible in the TCP
-stream at all.
+| | Acknowledgement | Outcome |
+|---|---|---|
+| **Autoresync on** | +73 every 3.02 s, eighteen times, never stalls | holds past three minutes |
+| **Autoresync off** | **frozen at 74** for **20.50 s** | game sends FIN, closes the connection itself, reconnects 0.28 s later |
 
-Distinguishing them needs the same capture with autoresync **off**: if the acknowledgement stalls
-there, the block works without it and autoresync is what stops it working. That capture has not
-been taken yet.
+`Ack=74` is exactly one heartbeat taken - relative sequence starts at 1 - and nothing after it. So
+without autoresync the block is total, and what it is blocking is the heartbeat.
+
+**Autoresync passes the heartbeat and withholds everything else.** That is the 3074 resync
+philosophy applied to a stream: let through exactly what the session needs to stay alive, and
+withhold the rest. Nothing is being periodically released and no acknowledgements are being
+injected; the keepalive simply never gets stopped.
+
+Note also how it fails. On 7500 the *peer* resets. Here the **game** gives up and sends FIN - it is
+the client's own patience that runs out at twenty seconds, not the server's.
+
+### Implemented as a pass list
+
+`ApiBlockOptions.PassLengths`, defaulting to `{73}` on 30k and empty on 7500, which survives about
+87 s unaided with no keepalive identified. `--no-resync` clears it; `--pass` overrides the size for
+a machine whose heartbeat differs.
+
+One caveat on the evidence: every inbound segment in the autoresync capture was a heartbeat, because
+the game was idle. So that capture shows the heartbeat passing but cannot show non-heartbeat traffic
+being withheld - the block half is inferred from the module having an effect at all, not observed.
 
 ---
 

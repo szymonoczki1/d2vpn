@@ -160,6 +160,27 @@ public sealed record ApiBlockOptions
     public TimeSpan? ReleaseAfter { get; init; }
 
     /// <summary>
+    /// Inbound payload lengths that always pass, however long the hold runs.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The keepalive, and the same idea as the 3074 resync: let through only what the session needs
+    /// to stay alive, and withhold everything else.
+    /// </para>
+    /// <para>
+    /// Measured on 30k. Inbound is a <b>73-byte heartbeat every 3.02 s</b>, and blocking it kills
+    /// the connection in about twenty seconds - the acknowledgement freezes at the first beat and
+    /// the game eventually sends FIN and reconnects. Passing it lets a hold run indefinitely, which
+    /// is what the reference limiter's autoresync does (<c>docs/protocol.md</c>, findings 50
+    /// and 51).
+    /// </para>
+    /// <para>
+    /// Empty for 7500, which survives about 87 s unaided and has no keepalive identified.
+    /// </para>
+    /// </remarks>
+    public IReadOnlySet<int> PassLengths { get; init; } = new HashSet<int>();
+
+    /// <summary>
     /// Defaults for TCP 7500: hold until the peer resets, and nothing else.
     /// </summary>
     public static ApiBlockOptions Api7500 { get; } = new();
@@ -172,12 +193,18 @@ public sealed record ApiBlockOptions
     /// 30k updates by 6 seconds while active". The same mechanism at two depths, so only
     /// <see cref="ReleaseAfter"/> separates them here.
     /// </remarks>
-    public static ApiBlockOptions Instance30k { get; } = new();
+    public static ApiBlockOptions Instance30k { get; } = new()
+    {
+        // The heartbeat. Without it a hold dies in ~20 s; with it, over three minutes was measured
+        // on the reference limiter and the acknowledgement never stalled.
+        PassLengths = new HashSet<int> { 73 }
+    };
 
     /// <summary>The 30k delay line, at the 6 seconds the reference limiter states.</summary>
     public static ApiBlockOptions Instance30kSlow { get; } = new()
     {
-        ReleaseAfter = TimeSpan.FromSeconds(6)
+        ReleaseAfter = TimeSpan.FromSeconds(6),
+        PassLengths = new HashSet<int> { 73 }
     };
 
     /// <summary>

@@ -154,6 +154,14 @@ static void PrintUsage()
     Console.WriteLine("      leaks about 200 ms later. This withholds inbound data segments and");
     Console.WriteLine("      keeps suppressing their retransmissions for as long as the hold runs.");
     Console.WriteLine("");
+    Console.WriteLine("      On 30k a 73-byte heartbeat arrives every ~3s and is passed through,");
+    Console.WriteLine("      which is what lets a hold run indefinitely - blocking it freezes the");
+    Console.WriteLine("      acknowledgement and the game gives up after about twenty seconds,");
+    Console.WriteLine("      sending FIN and reconnecting. --no-resync stops passing it, to see");
+    Console.WriteLine("      that happen; --pass A,B,C overrides the size if this machine's");
+    Console.WriteLine("      heartbeat differs. Watch the keepalive count: zero while holding 30k");
+    Console.WriteLine("      means the list is wrong and the connection has ~20s left.");
+    Console.WriteLine("");
     Console.WriteLine("      --slow delays inbound instead of stopping it: every segment is still");
     Console.WriteLine("      withheld and its retransmissions still suppressed, but each goes out");
     Console.WriteLine("      once it has waited --slow-s, so the stream runs permanently behind");
@@ -993,6 +1001,12 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
         CaptureQuiet = TimeSpan.FromMilliseconds(
             IntOption(args, "--capture-quiet-ms", (int)ApiBlockOptions.Api7500.CaptureQuiet.TotalMilliseconds)),
         CaptureBytes = IntOption(args, "--capture-bytes", defaults.CaptureBytes),
+
+        // The keepalive. --no-resync clears it, which on 30k means the hold dies in about twenty
+        // seconds; --pass overrides it for a machine whose heartbeat is a different size.
+        PassLengths = HasFlag(args, "--no-resync")
+            ? new HashSet<int>()
+            : LengthSetOption(args, "--pass") ?? defaults.PassLengths,
         ReleaseAfter = slow
             ? TimeSpan.FromSeconds(
                 slowSeconds > 0 ? slowSeconds : (defaults.ReleaseAfter ?? TimeSpan.FromSeconds(6)).TotalSeconds)

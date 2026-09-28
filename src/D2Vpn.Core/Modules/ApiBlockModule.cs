@@ -70,6 +70,13 @@ public sealed class ApiBlockModule : ITrafficModule
     /// <summary>Connections that reached their capture limit.</summary>
     public long CapacityReached { get; private set; }
 
+    /// <summary>Keepalive segments passed through since the module was created.</summary>
+    /// <remarks>
+    /// On a port with a heartbeat this is what keeps the hold alive. Zero while holding 30k means
+    /// the pass list is wrong for this machine, and the connection has about twenty seconds left.
+    /// </remarks>
+    public long KeepalivesPassed { get; private set; }
+
     /// <summary>Resets seen from a peer while holding.</summary>
     /// <remarks>
     /// Non-zero means the hold went too far at least once. The module disables itself on the first
@@ -162,6 +169,15 @@ public sealed class ApiBlockModule : ITrafficModule
         if (packet.SequenceNumber is not { } sequence)
         {
             // Not TCP. It cannot belong to this module's traffic, so it is none of its business.
+            return PacketVerdict.Pass;
+        }
+
+        // The keepalive passes before anything else looks at it, so it never enters the withheld
+        // set and its own retransmissions never need suppressing. Same shape as the 3074 resync:
+        // let through exactly what the session needs to survive, withhold the rest.
+        if (Options.PassLengths.Contains(packet.PayloadLength))
+        {
+            KeepalivesPassed++;
             return PacketVerdict.Pass;
         }
 
@@ -368,6 +384,7 @@ public sealed class ApiBlockModule : ITrafficModule
         {
             SegmentsWithheld = 0;
             RetransmitsSuppressed = 0;
+            KeepalivesPassed = 0;
             CapacityReached = 0;
             ResetsSeen = 0;
         }

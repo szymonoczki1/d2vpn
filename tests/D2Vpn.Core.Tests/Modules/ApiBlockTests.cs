@@ -576,6 +576,74 @@ public class ApiBlockTests
         Assert.True(module.IsActive);
     }
 
+    // ---- the keepalive, which is what a resync is on a stream ----
+
+    [Fact]
+    public void A_keepalive_sized_segment_passes_however_long_the_hold_runs()
+    {
+        // Measured on 30k: inbound is a 73-byte heartbeat every ~3s, and blocking it freezes the
+        // acknowledgement and kills the connection in about twenty seconds. Passing it lets a hold
+        // run indefinitely, which is what the reference limiter's autoresync does.
+        var module = Instance(ApiBlockOptions.Instance30k);
+
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.TcpData(30000, 73, 1000)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.TcpData(30000, 73, 2000, 200)));
+        Assert.Equal(2, module.KeepalivesPassed);
+    }
+
+    [Fact]
+    public void Everything_that_is_not_the_keepalive_is_still_withheld()
+    {
+        // Otherwise the module would be doing nothing at all while it is on.
+        var module = Instance(ApiBlockOptions.Instance30k);
+
+        AssertWithheld(module.Decide(TestPackets.TcpData(30000, 500, 1000)));
+        AssertWithheld(module.Decide(TestPackets.TcpData(30000, 72, 2000)));
+        AssertWithheld(module.Decide(TestPackets.TcpData(30000, 74, 3000)));
+        Assert.Equal(0, module.KeepalivesPassed);
+        Assert.Equal(3, module.SegmentsWithheld);
+    }
+
+    [Fact]
+    public void A_keepalive_never_enters_the_withheld_set()
+    {
+        // It passes before anything else looks at it, so its own retransmissions never need
+        // suppressing - a repeat is just another keepalive.
+        var module = Instance(ApiBlockOptions.Instance30k);
+
+        module.Decide(TestPackets.TcpData(30000, 73, sequence: 1000, atSeconds: 0));
+        var again = module.Decide(TestPackets.TcpData(30000, 73, sequence: 1000, atSeconds: 1));
+
+        Assert.Equal(PacketVerdict.Pass, again);
+        Assert.Equal(0, module.RetransmitsSuppressed);
+        Assert.Equal(0, module.SegmentsWithheld);
+    }
+
+    [Fact]
+    public void Clearing_the_pass_list_makes_the_hold_total()
+    {
+        // What --no-resync does, and on 30k it is the difference between holding indefinitely and
+        // the game giving up after about twenty seconds.
+        var module = Instance(ApiBlockOptions.Instance30k with { PassLengths = new HashSet<int>() });
+
+        AssertWithheld(module.Decide(TestPackets.TcpData(30000, 73, 1000)));
+        Assert.Equal(0, module.KeepalivesPassed);
+    }
+
+    [Fact]
+    public void The_30k_presets_pass_the_measured_heartbeat()
+    {
+        Assert.Contains(73, ApiBlockOptions.Instance30k.PassLengths);
+        Assert.Contains(73, ApiBlockOptions.Instance30kSlow.PassLengths);
+    }
+
+    [Fact]
+    public void The_7500_preset_passes_nothing()
+    {
+        // It survives about 87s unaided and no keepalive has been identified on it.
+        Assert.Empty(ApiBlockOptions.Api7500.PassLengths);
+    }
+
     // ---- delay line: 30k slow ----
 
     [Fact]
