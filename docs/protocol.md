@@ -2528,6 +2528,9 @@ Three slow runs, and the variable that predicts the outcome is not a setting.
 The only run that died was the one withholding four times as fast as the one that lasted four
 minutes. Survival tracks the withholding rate, not the configuration.
 
+**Withdrawn - see finding 56.** Four more holds put the two resets at opposite ends of the range,
+so the rate does not predict the outcome.
+
 That makes sense from finding 51: the pressure comes from unacknowledged data, so a port carrying
 more content produces more of it per second and exhausts the sender sooner. A hold on an idle port
 withholds nothing and survives indefinitely; a hold during heavy traffic is withholding constantly.
@@ -2557,6 +2560,47 @@ Any A/B on 30k has to report the withholding rate, and ideally be taken back to 
 game state. Several comparisons in this document do neither - findings 49 and 52 among them - and
 the variance they were attributing to settings is at least partly this.
 
+## Finding 56 - the withholding rate does not predict survival, and holding through a reconnect can
+
+Seven slow holds now, across two sessions:
+
+| Delay | Held | Withheld | Per second | Outcome |
+|---|---|---|---|---|
+| 8 s | 32.2 s | 1 | **0.03/s** | **peer reset** |
+| 6 s | 244.3 s | 58 | 0.24/s | survived |
+| 8 s | 45.0 s | 13 | 0.29/s | survived |
+| 8 s | 95.0 s | 28 | 0.29/s | survived |
+| 8 s | 45.0 s | 17 | 0.38/s | survived |
+| 6 s | 69.7 s | 30 | 0.43/s | survived |
+| 6 s | 54.1 s | 58 | **1.07/s** | **peer reset** |
+
+**The two resets are at the lowest rate and the highest.** Everything between survived. Finding 55
+read a correlation off three points and it does not survive four more - withdrawn.
+
+### The low-rate reset is a different failure
+
+That hold was started in the same second as a reconnect, and ran with `live 0` and one segment
+withheld for its whole 32 seconds. The connection it was holding had just been killed and was trying
+to re-establish; almost nothing flowed because there was almost nothing there.
+
+So it is not a hold that died under load, it is **a new connection that was prevented from
+establishing**. Withholding during setup leaves the exchange incomplete, and the peer gives up.
+
+Two later holds in the same session also began within a second of a reconnect and survived 45 s
+each, so it is not deterministic - presumably those connections got far enough along before anything
+was withheld. But it is a real hazard of using the two together, which is the combination this
+command exists for.
+
+### 8 seconds, reported as better
+
+The operator's reading is that slow works better at `--slow-s 8` than at 6. That is a judgement
+about the in-game effect, and nothing measured here speaks to it either way: the longest hold at 8 s
+was 95.6 s against 244.3 s at 6 s, but those were both ended by hand at different traffic levels, so
+the durations are not a comparison.
+
+Recorded as the operator's preference rather than as a result. The default stays 6 s, which is the
+reference limiter's stated figure.
+
 ## Open on 30k
 
 Not finished. The module works but has not been shown to match the reference, and the differences
@@ -2567,7 +2611,7 @@ below are the reason.
 | | d2vpn | Reference |
 |---|---|---|
 | Block, active | 20.53 s | 20.53 s on/off - **matches exactly**, finding 53 |
-| Slow | 244.3 s at 0.24 withheld/s; 54.1 s at 1.07/s | codes at ~125 s / ~70 s, rate unknown - **not comparable**, finding 55 |
+| Slow | survives 45-244 s, reset twice in seven holds | codes at ~125 s / ~70 s - **not comparable**, findings 55 and 56 |
 
 The first two lining up is what makes the third worth chasing: the delay line and the block are the
 same on both, so whatever its autoresync does under slow is a real mechanism this project does not
