@@ -2493,8 +2493,20 @@ The hold survived four minutes anyway. Under a delay line the connection stays f
 keeps delivering; the keepalive has nothing to add. That is consistent with the ordering argument
 and inconsistent with the keepalive being load-bearing either way.
 
-**The 73-byte figure does not generalise across servers.** It was measured on one and is already
-wrong on another.
+**The 73-byte figure has not generalised.** It was measured on one server during one idle period,
+and on two others the pass has matched 0-4 packets across runs lasting minutes. Two readings fit and
+they have not been separated:
+
+- **The size differs per server**, in which case 73 is wrong there and the right value has to be
+  found per connection.
+- **Or the heartbeat only appears when idle.** Those later runs were busy - 30 to 58 segments
+  withheld - and a keepalive may simply not be sent while there is real traffic to send. In that
+  case 73 may still be right and never had a chance to show.
+
+`watch 30k` settles it: it separates inbound from outbound and prints a payload-size histogram, so a
+minute of it on a quiet connection should show one size appearing about twenty times, once per three
+seconds. If that size is 73 the figure holds and the earlier runs were simply too busy; if it is
+something else, the pass list needs to be per server.
 
 ### What is not known
 
