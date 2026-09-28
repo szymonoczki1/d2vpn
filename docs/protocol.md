@@ -2834,6 +2834,51 @@ a size landing between 400 and 1185 would settle it.
 
 ---
 
+## Finding 60 - 27k runs clean in game, both directions
+
+First in-game run of `run 27k`, 143 s, 30 toggles in holds of 2-3 s each, ~40 s held in total.
+Then the same for `--downlink`. **Both ran without an error code or a dropped session.**
+
+### The block is near-total
+
+39 uplink packets crossed against **1694 dropped - 97.7%**. The buffer took all 1694 and replayed
+all 1694, nothing evicted and nothing expired; the largest drain was 208 packets in 5.2 ms.
+Downlink was untouched at 0 of 4630, as an uplink hold should leave it.
+
+### The threshold costs less than feared
+
+Finding 59 traded an exact list for "anything under 400 bytes", and the obvious risk was that it
+would gut the block. It did not: only **26 non-1300 packets** fit under the bound in 40 s of
+holding. 27k uplink is overwhelmingly large packets, so the open resync windows had very little to
+leak. 11 windows opened from 13 reconnect requests, and those are per peer, so roughly two each
+across several peers.
+
+### What this run cannot say
+
+**It does not confirm the 400 cut.** Nothing crossed between 400 and 1185 because that range was
+blocked by us - the reasoning is circular. The independent part remains findings 58 and 59, where
+the *reference* limiter also passed nothing in that gap.
+
+**397 bytes crossed, three below the cut.** Three runs now put the largest small size at 373, 396
+and 397, with nothing above. Either a real protocol boundary sits just under 400, or the top of the
+distribution is being clipped where it cannot be seen. Unresolved.
+
+**No ceiling was established.** Fifteen taps of 2-3 s is not a survival test; that needs one
+sustained hold. The `--timeout-s` advice stands until it exists.
+
+### Also fixed
+
+The size threshold had gone into the hold decision and into neither place that reports it, so the
+run listed all fourteen sizes it deliberately passed as `UNEXPECTED`. They now read
+`resync pass (size)`, and the startup banner states the bound.
+
+### Still uncharacterised
+
+What a 27k hold *does*. It is safe and it blocks, but the in-game effect has not been described,
+so there is nothing here to compare against the reference's stated purpose for the port.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

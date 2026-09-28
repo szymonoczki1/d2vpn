@@ -1,4 +1,4 @@
-using D2Vpn.Core.Network;
+﻿using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Modules;
 
@@ -508,9 +508,15 @@ public static class MeasuredDefaults
     /// source before this was measured. They fall straight out of the calibration.
     /// </para>
     /// <para>
-    /// Nothing passes outside a resync window. The reference lets <em>everything</em> through
-    /// during one; this passes only the six measured sizes, which is the 3074 approach and leaks
-    /// less. If a session fails to survive, that difference is the first thing to widen.
+    /// A second calibration shares only 1300 with the list above, so the six sizes were replaced
+    /// by <see cref="HoldModuleOptions.ResyncPassMaxLength"/> plus the two large ones. Nothing passes outside a
+    /// resync window either way.
+    /// </para>
+    /// <para>
+    /// Measured on the first in-game run: <b>97.7% of uplink blocked</b> while holding - 39
+    /// packets crossed against 1694 dropped in ~40 s - so the threshold costs little here. 27k
+    /// uplink is overwhelmingly large packets, and only 26 non-1300 packets fit under the bound
+    /// at all. Both directions ran without an error code or a dropped session.
     /// </para>
     /// <para>
     /// No safety timeout, matching 3074. The ~25 s figure recorded elsewhere for 27k belongs to a
