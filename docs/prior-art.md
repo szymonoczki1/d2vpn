@@ -110,6 +110,58 @@ design chosen for d2vpn. It also makes `dual.ahk` / `izivigi2700_20.ahk` redunda
 | `RawInput.Sharp` | 0.1.3 | Raw Input API for hotkeys rather than a low-level keyboard hook. More reliable alongside a fullscreen game. |
 | `SharpPcap` | 6.3.0 | Powers the built-in capture recording. |
 
+## HarryWatch's PVP - the 27k module, read from source
+
+`HarryWatch-1.2/Interception/Modules/PvpModule.cs`. **Read from its code, not measured here.**
+
+Provider map, which settles which module owns which port:
+
+| Module | Provider |
+|---|---|
+| PVE | Xbox (3074) |
+| **PVP** | **Players (27k)** |
+| Solo, Revive | Players (27k) |
+| Multishot | Players **and** Xbox |
+| API Block | 7500 |
+| З0K, Reconnect | 30000 |
+
+So PVP is the 27k counterpart of PVE, and its description is *"block players updates [27k] /
+teamkill / prevent fireteam joining"*. It exposes the same three switches wanted here: independent
+inbound and outbound toggles, `AutoResync`, and `Buffer`.
+
+### Its resync is a window, not a pass list
+
+3074's resync passes a list of handshake sizes and blocks everything else. PVP's does the opposite:
+it opens a short window in which **everything** passes, and closes it as soon as the exchange it was
+waiting for goes by.
+
+| | |
+|---|---|
+| Opens on | **outbound payload exactly 1300** |
+| Window | **5 seconds** maximum |
+| Closes early on | outbound **1176-1194**, or inbound **1101-1299** |
+| During the window | everything passes |
+| Buffer hold | **30 minutes** - effectively indefinite, against PVE's 35 s |
+
+Opening also clears that peer's delay queue, so a resync discards what was being held rather than
+delivering it late.
+
+### What that means for this project
+
+`HoldModule` can express most of it already: trigger on outbound 1300, a 5 s duration, and a null
+resync pass list, which it already treats as "everything passes".
+
+It cannot express **closing the window early**. Without that the window always runs its full five
+seconds, and since everything passes during one, that is five seconds of leak per resync rather than
+however long the exchange actually takes.
+
+### These numbers are not to be transcribed
+
+1300, 1185, 1100-1300 and 5 s are HarryWatch's constants. Every equivalent taken from prior art in
+this project has needed measuring: 3074's hardcoded signature was wrong twice over, 7500's capture
+window and 1460-byte limit were unreachable on this channel, and its 54 s ceiling was thirty seconds
+short. They are a prior for what to look for, not values to ship.
+
 ## HarryWatch's Reconnect, read from source
 
 `HarryWatch-1.2/Interception/Modules/ReconnectModule.cs`. **Read from its code, not measured here**,
