@@ -454,6 +454,93 @@ public static class MeasuredDefaults
     };
 
     /// <summary>
+    /// UDP 27015-27200 uplink. Peer traffic to other players.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Calibrated on this machine against a working limiter's 27k module. Six sizes crossed while
+    /// uplink was collapsed, five of them far out of proportion to ordinary traffic:
+    /// </para>
+    /// <code>
+    ///   373    2 in hold, never normally      only in hold
+    ///   306   15 in hold, 0.1% normally       112x
+    ///   303   13 in hold, 0.1% normally        97x
+    ///   305   22 in hold, 0.2% normally        82x
+    ///  1300   23 in hold, 0.5% normally        34x
+    ///  1185    2 in hold, 0.1% normally        15x
+    /// </code>
+    /// <para>
+    /// <b>1300 and 1185 are independent confirmation.</b> The reference implementation opens its
+    /// resync window on an outbound 1300 and closes it on an outbound 1176-1194, both read from its
+    /// source before this was measured. They fall straight out of the calibration.
+    /// </para>
+    /// <para>
+    /// Nothing passes outside a resync window. The reference lets <em>everything</em> through
+    /// during one; this passes only the six measured sizes, which is the 3074 approach and leaks
+    /// less. If a session fails to survive, that difference is the first thing to widen.
+    /// </para>
+    /// <para>
+    /// No safety timeout, matching 3074. The ~25 s figure recorded elsewhere for 27k belongs to a
+    /// kick module targeting another player and says nothing about holding your own traffic - but
+    /// 27k is where a BEAVER error is possible, so <c>--timeout-s</c> is worth using until a
+    /// ceiling is known.
+    /// </para>
+    /// </remarks>
+    public static HoldModuleOptions Players27k { get; } = new()
+    {
+        PassLengths = new HashSet<int>(),
+        ResyncPassLengths = new HashSet<int> { 303, 305, 306, 373, 1185, 1300 },
+        ResyncTriggerLengths = new HashSet<int> { 1300 },
+        ResyncDuration = TimeSpan.FromSeconds(5),
+        SafetyTimeout = null,
+        Direction = HoldDirection.Uplink
+    };
+
+    /// <summary>
+    /// UDP 27015-27200 downlink. Blocks outright, because nothing was found that needs passing.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Calibrating a downlink hold turned up exactly one size, 9 bytes, 52 of them - and the tool
+    /// called it <b>ordinary</b> at 2.8x, because 9-byte packets are 36% of normal inbound traffic.
+    /// A size that common is game state as much as handshake, and passing it on length alone would
+    /// pass both.
+    /// </para>
+    /// <para>
+    /// So nothing inbound is treated as load-bearing, which is the same answer 3074 downlink gave.
+    /// The resync window still opens on an <em>outbound</em> 1300, since it is this machine that
+    /// notices a peer has gone quiet whichever direction is held, and during one everything passes
+    /// - there being no measured list to narrow it to.
+    /// </para>
+    /// </remarks>
+    public static HoldModuleOptions Players27kDownlink { get; } = new()
+    {
+        PassLengths = new HashSet<int>(),
+        ResyncPassLengths = null,
+        ResyncTriggerLengths = new HashSet<int> { 1300 },
+        ResyncTriggerDirection = PacketDirection.Outbound,
+        ResyncDuration = TimeSpan.FromSeconds(5),
+        SafetyTimeout = null,
+        Direction = HoldDirection.Downlink
+    };
+
+    /// <summary>UDP 27015-27200, both directions at once.</summary>
+    /// <remarks>
+    /// The uplink pass list, since that is the one that was measured, applied to both directions.
+    /// Carries a safety timeout the single-direction holds do not: with nothing flowing either way
+    /// there is no traffic left to notice a problem in.
+    /// </remarks>
+    public static HoldModuleOptions Players27kFull { get; } = new()
+    {
+        PassLengths = new HashSet<int>(),
+        ResyncPassLengths = new HashSet<int> { 303, 305, 306, 373, 1185, 1300 },
+        ResyncTriggerLengths = new HashSet<int> { 1300 },
+        ResyncDuration = TimeSpan.FromSeconds(5),
+        SafetyTimeout = TimeSpan.FromSeconds(25),
+        Direction = HoldDirection.Both
+    };
+
+    /// <summary>
     /// The default options for a group and direction, or <see langword="null"/> if none are known.
     /// </summary>
     public static HoldModuleOptions? For(PortGroup group, HoldDirection direction = HoldDirection.Uplink)
@@ -465,6 +552,17 @@ public static class MeasuredDefaults
                 HoldDirection.Uplink => Peer3074,
                 HoldDirection.Downlink => Peer3074Downlink,
                 HoldDirection.Both => Peer3074Full,
+                _ => null
+            };
+        }
+
+        if (group == DestinyPorts.Players)
+        {
+            return direction switch
+            {
+                HoldDirection.Uplink => Players27k,
+                HoldDirection.Downlink => Players27kDownlink,
+                HoldDirection.Both => Players27kFull,
                 _ => null
             };
         }

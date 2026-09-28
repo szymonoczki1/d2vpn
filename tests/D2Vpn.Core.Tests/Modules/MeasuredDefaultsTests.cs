@@ -131,9 +131,58 @@ public class MeasuredDefaultsTests
     [Fact]
     public void Unmeasured_combinations_return_nothing_rather_than_a_guess()
     {
-        Assert.Null(MeasuredDefaults.For(DestinyPorts.Players));
+        // 7500 has no entry here at all because it is TCP and uses a different module; 30k has
+        // only an uplink one, and its TCP path supersedes it.
         Assert.Null(MeasuredDefaults.For(DestinyPorts.Api));
         Assert.Null(MeasuredDefaults.For(DestinyPorts.Instance, HoldDirection.Downlink));
         Assert.Null(MeasuredDefaults.For(DestinyPorts.Instance, HoldDirection.Both));
+    }
+
+    [Fact]
+    public void Every_27k_direction_has_a_measured_signature()
+    {
+        Assert.NotNull(MeasuredDefaults.For(DestinyPorts.Players));
+        Assert.NotNull(MeasuredDefaults.For(DestinyPorts.Players, HoldDirection.Downlink));
+        Assert.NotNull(MeasuredDefaults.For(DestinyPorts.Players, HoldDirection.Both));
+    }
+
+    [Fact]
+    public void The_27k_resync_triggers_on_the_size_the_reference_uses()
+    {
+        // 1300 was read out of the reference implementation's source before 27k was calibrated
+        // here, and then fell straight out of the calibration at 34x concentration. Independent
+        // confirmation rather than a transcription.
+        Assert.Equal([1300], MeasuredDefaults.Players27k.ResyncTriggerLengths.Order());
+        Assert.Equal([1300], MeasuredDefaults.Players27kDownlink.ResyncTriggerLengths.Order());
+    }
+
+    [Fact]
+    public void The_27k_uplink_pass_list_is_the_measured_signature()
+    {
+        Assert.Equal(
+            [303, 305, 306, 373, 1185, 1300],
+            MeasuredDefaults.Players27k.ResyncPassLengths!.Order());
+
+        // Nothing crosses outside a window, as on 3074.
+        Assert.Empty(MeasuredDefaults.Players27k.PassLengths);
+    }
+
+    [Fact]
+    public void The_27k_downlink_narrows_nothing_because_nothing_was_measured()
+    {
+        // Calibrating it turned up one size, 9 bytes, and the tool called it ordinary at 2.8x -
+        // 9-byte packets are 36% of normal inbound traffic, so passing them on length alone would
+        // pass game state too. A null resync list means everything passes during a window.
+        Assert.Null(MeasuredDefaults.Players27kDownlink.ResyncPassLengths);
+        Assert.Empty(MeasuredDefaults.Players27kDownlink.PassLengths);
+    }
+
+    [Fact]
+    public void Only_the_two_direction_27k_hold_carries_a_safety_timeout()
+    {
+        // With nothing flowing either way there is no traffic left to notice a problem in.
+        Assert.Null(MeasuredDefaults.Players27k.SafetyTimeout);
+        Assert.Null(MeasuredDefaults.Players27kDownlink.SafetyTimeout);
+        Assert.NotNull(MeasuredDefaults.Players27kFull.SafetyTimeout);
     }
 }

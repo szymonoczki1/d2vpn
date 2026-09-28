@@ -2686,6 +2686,67 @@ do neither and had to be withdrawn for it.
 
 ---
 
+## Finding 58 - 27k calibrated, and it confirms the prior art's constants independently
+
+`calibrate 27k` and `calibrate 27k --downlink`, sniffed while a working limiter held its 27k module.
+
+### Uplink
+
+| Size | In hold | Normally | Concentration | |
+|---|---|---|---|---|
+| 373 | 2 | **never** | only in hold | |
+| 306 | 15 | 0.1% | **112x** | |
+| 303 | 13 | 0.1% | **97x** | |
+| 305 | 22 | 0.2% | **82x** | |
+| **1300** | 23 | 0.5% | **34x** | reference's resync trigger |
+| **1185** | 2 | 0.1% | **15x** | reference's window-closer (1176-1194) |
+| 100 | 9 | 5.0% | 1.4x | ordinary - slipped through |
+
+**1300 and 1185 are independent confirmation.** Both were read out of the reference's source hours
+before this was measured, as the size that opens its resync window and the size that closes it. They
+fall straight out of the calibration at 34x and 15x concentration. Nothing about the measurement
+knew to look for them.
+
+That is the strongest prior-art corroboration in this project: every other constant taken from a
+reference has needed correcting, and these two came back exactly.
+
+### Downlink
+
+One size crossed, **9 bytes, 52 of them**, and the tool called it **ordinary** at 2.8x - 9-byte
+packets are 36% of normal inbound traffic. A size that common is game state as much as handshake,
+so nothing inbound is treated as load-bearing.
+
+The same answer 3074 downlink gave, and for the same reason.
+
+### Also measured
+
+- **41 peers**, of which **3 were held.** The reference holds connections individually rather than
+  blocking the port, which per-peer analysis surfaces and aggregate analysis would have hidden.
+- A held peer drops to **0/s** and returns to its normal rate within a second of release.
+- At release, one peer showed a **68-packet spike** in a single second against a 20/s baseline -
+  the reference's own buffer draining.
+
+### Built
+
+`Players27k`, `Players27kDownlink` and `Players27kFull`, wired into `MeasuredDefaults.For`. Uplink
+passes the six measured sizes during a resync window and nothing outside one; downlink passes
+everything during a window, there being no list to narrow to. The trigger is an outbound 1300 either
+way, since it is this machine that notices a peer has gone quiet whichever direction is held.
+
+Only the two-direction hold carries a safety timeout: with nothing flowing either way there is no
+traffic left to notice a problem in.
+
+### Where this differs from the reference deliberately
+
+It passes **everything** during a resync window; this passes only the six measured sizes on uplink.
+That is the 3074 approach and leaks less. If a session fails to survive a long hold, widening that
+is the first thing to try.
+
+It also closes its window early, on an outbound 1176-1194 or an inbound 1101-1299. `HoldModule` has
+no equivalent, so a window here always runs its full five seconds. Worth adding if the leak matters.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
