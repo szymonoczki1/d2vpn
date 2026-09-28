@@ -2347,6 +2347,48 @@ Untested on 30k.
 
 ---
 
+## Finding 52 - 30k slow desyncs longer on the reference, and the reason is not yet known
+
+Both tools slowing inbound 30k, time before the game resynchronises:
+
+| | Time to resync |
+|---|---|
+| d2vpn, `--slow` at 6 s | **~33 s** |
+| Reference limiter, its 30k slow | **~50 s** |
+
+So the mechanism works on both - a delay line does survive an active 30k hold where a block cannot
+(finding 51) - but the reference keeps the desync going about 17 s longer.
+
+### Two candidates
+
+**The delay is not 6 seconds.** The figure comes from the reference's own tooltip, "delays inbound
+30k updates by 6 seconds while active". Tooltips have been wrong before here: 3074's slow is
+described the same way and measured as a rate cap rather than an offset (finding 41).
+
+**It is a rate cap rather than a delay**, as 3074's is. HarryWatch's slow passes `addFromLatest` and
+schedules each packet after the previous one rather than after its own arrival, so the backlog grows
+and the effective delay climbs. Its 30k variant is not known to differ.
+
+Finding 7 weakly favours the second: it measured gaps of 3.91 s and 5.94 s during a 30k slow, where
+a fixed 6 s offset on a 3 s heartbeat should reproduce the input spacing of 3 s rather than produce
+two different larger gaps.
+
+### The test is cheap, because 30k is a metronome
+
+Inbound 30k is 73 bytes every 3.02 s (finding 50), so the outbound acknowledgement cadence reads the
+answer off directly:
+
+- **+73 every ~3 s** - output matches input, so it is a fixed offset and only the depth differs.
+- **+73 every ~6 s or slower** - output is capped below input, the backlog grows, and it is a
+  throttle.
+
+Filter `tcp.dstport >= 30000 && tcp.dstport <= 30009`, as in findings 50 and 51.
+
+A cheaper first check: raise `--slow-s` here. If time-to-resync scales with it, the difference is
+depth; if it does not, the difference is mechanism.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
