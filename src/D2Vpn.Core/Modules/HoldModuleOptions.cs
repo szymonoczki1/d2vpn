@@ -101,6 +101,39 @@ public sealed record HoldModuleOptions
     public IReadOnlySet<int>? ResyncPassLengths { get; init; }
 
     /// <summary>
+    /// During a resync window, also pass anything at or below this many payload bytes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two independent 27k calibrations produced almost disjoint signatures - 303, 305, 306, 373,
+    /// 1185, 1300 the first time and 6, 100, 237, 266, 337, 339, 349, 350, 396, 1300 the second.
+    /// Only 1300 appears in both, so the five other sizes shipped from the first run would have
+    /// passed nothing at all in the second. An exact-size list does not replicate.
+    /// </para>
+    /// <para>
+    /// The union does have a shape. Every size observed is either under 400 bytes or is one of two
+    /// large ones, 1185 and 1300, with nothing in between. The prior art agrees: the stopwatch
+    /// <c>KickModule</c> allowlists 9, 11 and 25, notes 100, 284 and 315 in a comment, and passes
+    /// 1300. Small control packets carry variable-length fields, so their exact sizes shuffle run
+    /// to run while the class stays put - which is what two runs sharing only 1300 looks like.
+    /// </para>
+    /// <para>
+    /// So the rule is a threshold plus the two large sizes named explicitly in
+    /// <see cref="ResyncPassLengths"/>. 400 sits just above the largest small size observed (396)
+    /// and far below 1185.
+    /// </para>
+    /// <para>
+    /// This leaks more than a list. Run 1 measured 100-byte packets at 5% of normal traffic, so a
+    /// threshold passes ordinary game data as well as handshake. What bounds it is the window:
+    /// this applies only while a resync is open, never during the block itself.
+    /// </para>
+    /// <para>
+    /// <see langword="null"/> disables it, which is every port but 27k.
+    /// </para>
+    /// </remarks>
+    public int? ResyncPassMaxLength { get; init; }
+
+    /// <summary>
     /// How long a peer must stay blocked before another resync may open.
     /// </summary>
     /// <remarks>
@@ -489,7 +522,8 @@ public static class MeasuredDefaults
     public static HoldModuleOptions Players27k { get; } = new()
     {
         PassLengths = new HashSet<int>(),
-        ResyncPassLengths = new HashSet<int> { 303, 305, 306, 373, 1185, 1300 },
+        ResyncPassLengths = new HashSet<int> { 1185, 1300 },
+        ResyncPassMaxLength = 400,
         ResyncTriggerLengths = new HashSet<int> { 1300 },
         ResyncDuration = TimeSpan.FromSeconds(5),
         SafetyTimeout = null,
@@ -533,7 +567,8 @@ public static class MeasuredDefaults
     public static HoldModuleOptions Players27kFull { get; } = new()
     {
         PassLengths = new HashSet<int>(),
-        ResyncPassLengths = new HashSet<int> { 303, 305, 306, 373, 1185, 1300 },
+        ResyncPassLengths = new HashSet<int> { 1185, 1300 },
+        ResyncPassMaxLength = 400,
         ResyncTriggerLengths = new HashSet<int> { 1300 },
         ResyncDuration = TimeSpan.FromSeconds(5),
         SafetyTimeout = TimeSpan.FromSeconds(25),

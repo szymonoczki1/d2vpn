@@ -2178,7 +2178,7 @@ instrumenting the local stack rather than the wire.
 ### The reset shape is unchanged in a fireteam
 
 40 bytes, no payload, `[RST]`, `Win=6145` - the same band as all six previous samples, on a
-different server (`172.97.57.76` rather than the `205.209.x` seen solo).
+different server, and in a different netblock from the one seen solo.
 
 ---
 
@@ -2742,8 +2742,95 @@ It passes **everything** during a resync window; this passes only the six measur
 That is the 3074 approach and leaks less. If a session fails to survive a long hold, widening that
 is the first thing to try.
 
+> **Superseded by finding 59.** A second calibration shares only one size with this one, and the
+> six-size list was replaced by a threshold. The 1185 and 1300 result below stands; the four
+> mid-sized values do not.
+
 It also closes its window early, on an outbound 1176-1194 or an inbound 1101-1299. `HoldModule` has
 no equivalent, so a window here always runs its full five seconds. Worth adding if the leak matters.
+
+---
+
+## Finding 59 - the 27k signature does not replicate, and the real rule is a threshold
+
+A second `calibrate 27k` uplink run against the same reference limiter, autoresync on. 25 peers,
+3 flagged held.
+
+### The two runs barely agree
+
+| | Uplink signature |
+|---|---|
+| Run 1 (finding 58) | 303, 305, 306, 373, **1185**, **1300** |
+| Run 2 | 6, 100, 237, 266, 337, 339, 349, 350, 396, **1300** |
+
+**One size in common out of fifteen.** The five others shipped in `Players27k` would have passed
+nothing at all in run 2. That list was fitted to a single 45-second sample.
+
+100 makes the point twice over: run 1 called it **ordinary** at 1.4x because it was 5.0% of normal
+traffic, and run 2 called it **only in hold** because it never appeared in normal traffic at all.
+The same size, opposite verdicts, two runs apart.
+
+### What does replicate is the shape
+
+The union, sorted: 6, 100, 237, 266, 303, 305, 306, 337, 339, 349, 350, 373, 396 — then a gap —
+1185, 1300. Everything is **under 400 or is one of two large sizes**, with nothing between 396
+and 1185.
+
+The prior art has the same shape. The stopwatch `KickModule` allowlists 9, 11 and 25, notes 100,
+284 and 315 in a comment, and passes 1300 in both directions. Every one of those is under 400 or
+is 1300.
+
+So the rule is a threshold plus two named sizes, not an allowlist. Small control packets carry
+variable-length fields, so their exact sizes shuffle between runs while the class stays put — which
+is precisely what two runs sharing only 1300 looks like.
+
+### A tiny keepalive, only during a hold
+
+**6 bytes, 28 packets, 58% of everything that crossed, and never seen in normal traffic.** Paired
+with a **10-byte downlink at 68%**.
+
+One peer ran at 76/s normally and then trickled at a steady ~2/s for the twenty seconds it
+was held. A 6-byte payload is far too small to be game state, and a steady trickle at 3% of normal
+rate is what a keepalive looks like — the same role 30k's 73-byte heartbeat plays.
+
+It falls under the 400-byte threshold, so it passes without being named.
+
+### One of the three "held" peers was not held
+
+The third flagged peer sat at 0-1/s before its window and ran at 14-38/s after it. That is a peer
+**joining**, not one being held.
+
+The tool already handles this: `HasUsableBaseline` requires 20 baseline packets and that peer had
+2, so it was dropped from `ReliablePeers` and never reached the signature. The printed numbers
+confirm it — the signature table totals 48 packets, the header says 90, and the peer's own timeline
+accounts for the 42-packet difference.
+
+Worth recording because the peer list still prints it as `HELD 12-21s (18% of normal)`, which reads
+as a weak hold rather than as noise. The per-peer timeline is what distinguishes them.
+
+The cleanest hold: a flat 99-106/s for seven seconds, then 17, 1, 0, 0, 0, 0, 0, 1,
+4, 0, 2. **1% of normal.**
+
+### Built
+
+`HoldModuleOptions.ResyncPassMaxLength`, an optional payload-size bound applied during a resync
+window alongside `ResyncPassLengths`. Set to 400 on `Players27k` and `Players27kFull` — just above
+the largest small size observed and far below 1185 — with the explicit list narrowed to the two
+sizes that survived both runs. Null everywhere else, asserted by test.
+
+### What this costs
+
+A threshold leaks more than a list: run 1 measured 100-byte packets at 5% of normal traffic, so
+ordinary game data crosses along with the handshake. What bounds it is that this applies **only
+while a resync window is open**, never during the block itself. If a hold turns out to block too
+little, the window duty cycle is the thing to tighten, not the threshold — narrowing it back to an
+exact list is what just failed.
+
+### Still unknown
+
+Whether 400 is anywhere near the real boundary. Nothing has been observed between 396 and 1185, so
+the cut could sit anywhere in that range; 400 is the conservative end. A third run would help, and
+a size landing between 400 and 1185 would settle it.
 
 ---
 

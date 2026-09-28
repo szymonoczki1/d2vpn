@@ -1,4 +1,4 @@
-using D2Vpn.Core.Modules;
+﻿using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Tests.Modules;
@@ -156,15 +156,64 @@ public class MeasuredDefaultsTests
         Assert.Equal([1300], MeasuredDefaults.Players27kDownlink.ResyncTriggerLengths.Order());
     }
 
+    /// <summary>Every uplink signature size from both 27k calibration runs.</summary>
+    /// <remarks>
+    /// The two runs share exactly one size, 1300. Listing them together is the point: a rule that
+    /// only passes one run's sizes is fitted to that run, and would have passed nothing in the
+    /// other.
+    /// </remarks>
+    private static readonly int[] Signature27k =
+    [
+        303, 305, 306, 373, 1185, 1300,                      // run 1
+        6, 100, 237, 266, 337, 339, 349, 350, 396, 1300      // run 2
+    ];
+
     [Fact]
-    public void The_27k_uplink_pass_list_is_the_measured_signature()
+    public void Every_measured_27k_size_crosses_a_resync_window()
     {
-        Assert.Equal(
-            [303, 305, 306, 373, 1185, 1300],
-            MeasuredDefaults.Players27k.ResyncPassLengths!.Order());
+        foreach (var options in new[] { MeasuredDefaults.Players27k, MeasuredDefaults.Players27kFull })
+        {
+            foreach (var length in Signature27k)
+            {
+                var crosses = options.ResyncPassLengths!.Contains(length)
+                    || length <= options.ResyncPassMaxLength
+                    || options.PassLengths.Contains(length);
+
+                Assert.True(crosses, $"{length} was measured crossing a 27k hold and must cross");
+            }
+        }
+    }
+
+    [Fact]
+    public void The_27k_rule_is_a_threshold_plus_the_two_large_sizes()
+    {
+        var options = MeasuredDefaults.Players27k;
+
+        // 396 is the largest small size observed and 1185 the smallest large one. The threshold
+        // sits in the gap, so nothing between them crosses on size alone.
+        Assert.Equal(400, options.ResyncPassMaxLength);
+        Assert.Equal([1185, 1300], options.ResyncPassLengths!.Order());
+
+        foreach (var ordinary in new[] { 401, 700, 1100, 1184, 1299, 1400 })
+        {
+            Assert.False(
+                ordinary <= options.ResyncPassMaxLength
+                    || options.ResyncPassLengths!.Contains(ordinary),
+                $"{ordinary} is in the gap and must not cross");
+        }
 
         // Nothing crosses outside a window, as on 3074.
-        Assert.Empty(MeasuredDefaults.Players27k.PassLengths);
+        Assert.Empty(options.PassLengths);
+    }
+
+    [Fact]
+    public void No_other_port_uses_the_27k_threshold()
+    {
+        // It leaks more than a list - run 1 measured 100-byte packets at 5% of normal traffic -
+        // and is justified only where an exact list was shown not to replicate.
+        Assert.Null(MeasuredDefaults.Peer3074.ResyncPassMaxLength);
+        Assert.Null(MeasuredDefaults.Peer3074Downlink.ResyncPassMaxLength);
+        Assert.Null(MeasuredDefaults.Instance30k.ResyncPassMaxLength);
     }
 
     [Fact]

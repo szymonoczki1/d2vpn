@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Network;
 
@@ -331,7 +331,12 @@ public sealed class HoldModule : ITrafficModule
                         return PacketVerdict.Pass;
                     }
 
+                    // The threshold is here because an exact-size list did not replicate across
+                    // two 27k calibrations: they shared one size out of fifteen. What did hold is
+                    // that every size passed is either small or one of two large ones, so the
+                    // small end is expressed as a bound rather than enumerated.
                     return allowed.Contains(packet.PayloadLength)
+                        || packet.PayloadLength <= options.ResyncPassMaxLength
                         || options.PassLengths.Contains(packet.PayloadLength)
                             ? PacketVerdict.Pass
                             : Blocked(packet, options);
