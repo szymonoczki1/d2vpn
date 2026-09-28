@@ -2424,6 +2424,44 @@ autoresync **on**, since that is the configuration that differs.
 
 ---
 
+## Finding 53 - the 30k block is identical on both tools, and autoresync does nothing for it
+
+Three captures of the same filter, one session, the connections chaining one to the next.
+
+| | Port | Acknowledgement frozen at | Frozen for | Ends |
+|---|---|---|---|---|
+| Reference, autoresync **off** | 51997 | 147 | **20.55 s** | FIN, reconnect |
+| **d2vpn** | 52056 | 99 | **20.53 s** | FIN, reconnect |
+| Reference, autoresync **on** | 52122 | 147 | **20.53 s** | FIN, reconnect |
+
+**A spread of 0.02 seconds across all three.** In each the acknowledgement stops dead while the
+outbound sequence keeps climbing - this machine keeps sending, and receives nothing it can use -
+until the game gives up and sends FIN.
+
+The order is checkable from the captures rather than from their labels: the d2vpn run ends by
+opening port 52122, which is the connection the third capture is of. So it genuinely sits between
+the two reference runs.
+
+### This project's 30k block matches the reference exactly
+
+No difference in behaviour, timing or failure mode. Nothing is missing.
+
+### And autoresync does nothing for a block once content is flowing
+
+The reference freezes for 20.53 s with autoresync **on** and 20.55 s with it **off**. Identical.
+
+That confirms the ordering argument in finding 51 by measurement rather than reasoning: a keepalive
+pass cannot help once a segment has been withheld, because everything behind the hole is
+undeliverable whatever is done with it.
+
+It also puts finding 50 in its place. That capture showed the acknowledgement climbing steadily with
+autoresync on, and it was taken while 30k was idle - only heartbeats, nothing to withhold. The
+caveat recorded there turns out to have been the whole story: with content actually flowing,
+autoresync-on and autoresync-off are the same thing.
+
+**~20.5 s is simply what a 30k block is.** Neither tool does better, and nothing found suggests
+better is available.
+
 ## Open on 30k
 
 Not finished. The module works but has not been shown to match the reference, and the differences
@@ -2433,7 +2471,7 @@ below are the reason.
 
 | | d2vpn | Reference |
 |---|---|---|
-| Block, active | ~18 s | ~18 s - **matches** |
+| Block, active | 20.53 s | 20.53 s on/off - **matches exactly**, finding 53 |
 | Slow, no keepalive | 55-62 s | ~33 s with its autoresync off - **matches** |
 | Slow, keepalive/autoresync on | ~33 s | ~50 s - **does not match** |
 
@@ -2456,9 +2494,9 @@ have.
    retransmission arriving later is treated as new, withheld again and delivered twice. If so, keep
    an entry until its delivery is acknowledged rather than for a fixed multiple of the delay.
 
-3. **Does the reference's block also die at ~18 s when content is actually flowing?** Its
-   three-minute hold was taken while 30k was idle, so nothing was being withheld. If it dies too,
-   ~18 s is simply what a 30k block is and nothing is missing here.
+3. ~~**Does the reference's block also die at ~18 s when content is actually flowing?**~~
+   **Answered - finding 53.** It does, at 20.53 s against this project's 20.53 s, and its autoresync
+   makes no difference to that. The block is finished.
 
 4. **Is `--slow` at 6 s the right depth?** The figure is the reference's tooltip, corroborated by
    finding 7's gaps but never measured directly here. `--slow-s` sweeps it cheaply.
