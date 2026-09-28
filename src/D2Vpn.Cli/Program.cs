@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using D2Vpn.Cli;
 using D2Vpn.Cli.Hotkeys;
 using D2Vpn.Core.Input;
@@ -31,6 +31,7 @@ try
         "hold" => await HoldAsync(args),
         "run" => await RunAsync(args),
         "reconnect" or "rc" => await ReconnectAsync(args),
+        "pause" => await PauseAsync(args),
         _ => Unknown(args[0])
     };
 }
@@ -266,6 +267,23 @@ static void PrintUsage()
     Console.WriteLine("      first. The live count on the status line says when a press will do");
     Console.WriteLine("      something. --idle-s (10) is how long a silent connection still");
     Console.WriteLine("      counts as live. Trigger defaults to f9.");
+    Console.WriteLine("");
+    Console.WriteLine("  d2vpn pause [--process NAME] [--key NAME] [--timeout-s N] [--log FILE]");
+    Console.WriteLine("      Freezes the game itself rather than its traffic. Suspends every");
+    Console.WriteLine("      thread in the process, so nothing is sent, received, drawn or");
+    Console.WriteLine("      simulated until you press the key again. To the peers it looks");
+    Console.WriteLine("      like an uplink and downlink hold at once.");
+    Console.WriteLine("");
+    Console.WriteLine("      This is the one command with a safety limit ON by default (30s).");
+    Console.WriteLine("      A traffic hold that goes wrong ends in an error code and the game");
+    Console.WriteLine("      reconnects itself; a suspend that goes wrong ends in a process");
+    Console.WriteLine("      that will never run again. Ctrl+C resumes on the way out, but a");
+    Console.WriteLine("      kill from Task Manager has no cleanup path - which is what the");
+    Console.WriteLine("      limit is for. --timeout-s 0 removes it, with a warning.");
+    Console.WriteLine("");
+    Console.WriteLine("      --process defaults to destiny2. Needs no WinDivert handle, so it");
+    Console.WriteLine("      does not conflict with another limiter, but the game's anti-cheat");
+    Console.WriteLine("      may refuse the handle outright - if it does, this cannot work.");
     Console.WriteLine("");
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
@@ -1246,6 +1264,31 @@ static async Task<int> RunAsync(string[] args)
         StringOption(args, "--log"),
         KeyName.Parse(StringOption(args, "--good-key") ?? "f7"),
         KeyName.Parse(StringOption(args, "--bad-key") ?? "f8"),
+        cts.Token);
+}
+
+static async Task<int> PauseAsync(string[] args)
+{
+    var processName = StringOption(args, "--process") ?? "destiny2";
+    var toggleKey = KeyName.Parse(StringOption(args, "--key") ?? "f10");
+
+    // Zero means no limit, so it has to be distinguishable from "not supplied".
+    var timeoutSeconds = IntOption(args, "--timeout-s", 30, allowZero: true);
+    var safetyTimeout = timeoutSeconds > 0
+        ? TimeSpan.FromSeconds(timeoutSeconds)
+        : (TimeSpan?)null;
+
+    // No WinDivert handle is opened, so no elevation is required for our sake. Opening the game
+    // for suspending may still need it, and NtProcessControl.Open says so if it fails.
+    using var cts = new CancellationTokenSource();
+    using var sigint = SetupInterrupt(cts);
+
+    return await PauseCommand.ExecuteAsync(
+        processName,
+        toggleKey,
+        IntOption(args, "--poll-ms", 1),
+        safetyTimeout,
+        StringOption(args, "--log"),
         cts.Token);
 }
 
