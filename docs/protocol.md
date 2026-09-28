@@ -2515,6 +2515,48 @@ Untested, in rough order of plausibility:
 - **Suppression is more complete here**, so the sender retransmits into a queue rather than around
   it - 259 suppressed across 58 segments, about 4.5 each.
 
+## Finding 55 - 30k slow survives in proportion to how little it is withholding
+
+Three slow runs, and the variable that predicts the outcome is not a setting.
+
+| Keepalive | Held | Withheld | Per second | Ended |
+|---|---|---|---|---|
+| on | 244.3 s | 58 | **0.24/s** | released by hand |
+| off | 69.7 s | 30 | **0.43/s** | released by hand |
+| on | 54.1 s | 58 | **1.07/s** | **peer reset** |
+
+The only run that died was the one withholding four times as fast as the one that lasted four
+minutes. Survival tracks the withholding rate, not the configuration.
+
+That makes sense from finding 51: the pressure comes from unacknowledged data, so a port carrying
+more content produces more of it per second and exhausts the sender sooner. A hold on an idle port
+withholds nothing and survives indefinitely; a hold during heavy traffic is withholding constantly.
+
+### The keepalive was inert in all three
+
+**Zero passes** in the two runs directly compared, four in the third. This server's heartbeat is not
+73 bytes, so `--no-keepalive` changed nothing about what was happening - the two runs differed only
+in what the game happened to be sending.
+
+Which means the pair establishes nothing about the keepalive, in either direction. It has now been
+inert in every slow run measured.
+
+### This weakens finding 54
+
+That finding reported d2vpn's 244.3 s against the reference's ~125 s and ~70 s, and read it as
+outlasting the reference by 2x. The 244.3 s run was withholding at 0.24/s. What the reference's runs
+were withholding at is unknown, and at 1.07/s this project's own hold died at 54 s - inside the
+range the reference was coding in.
+
+So the comparison may be measuring how busy the port was rather than which tool was running. It is
+not withdrawn, but it cannot stand on one run from each side with the traffic rate uncontrolled.
+
+### Consequence for how these are compared
+
+Any A/B on 30k has to report the withholding rate, and ideally be taken back to back in the same
+game state. Several comparisons in this document do neither - findings 49 and 52 among them - and
+the variance they were attributing to settings is at least partly this.
+
 ## Open on 30k
 
 Not finished. The module works but has not been shown to match the reference, and the differences
@@ -2525,7 +2567,7 @@ below are the reason.
 | | d2vpn | Reference |
 |---|---|---|
 | Block, active | 20.53 s | 20.53 s on/off - **matches exactly**, finding 53 |
-| Slow | **244.3 s, no code** | codes at ~125 s with autoresync, ~70 s without - **d2vpn outlasts it**, finding 54 |
+| Slow | 244.3 s at 0.24 withheld/s; 54.1 s at 1.07/s | codes at ~125 s / ~70 s, rate unknown - **not comparable**, finding 55 |
 
 The first two lining up is what makes the third worth chasing: the delay line and the block are the
 same on both, so whatever its autoresync does under slow is a real mechanism this project does not
