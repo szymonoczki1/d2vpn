@@ -162,6 +162,12 @@ static void PrintUsage()
     Console.WriteLine("      that happen; --pass A,B,C overrides the size if this machine's");
     Console.WriteLine("      heartbeat differs. Watch the keepalive count: zero while holding 30k");
     Console.WriteLine("      means the list is wrong and the connection has ~20s left.");
+    Console.WriteLine("      Under --slow the pass is likely counterproductive: a passed packet");
+    Console.WriteLine("      cannot move ahead of a hole already in front of it, so it waits for");
+    Console.WriteLine("      the withheld content anyway and turns a smooth delay into a sawtooth");
+    Console.WriteLine("      of gaps. Try --slow --no-keepalive to delay everything uniformly.");
+    Console.WriteLine("      --no-keepalive and --no-resync are the same flag; the second matches");
+    Console.WriteLine("      what it is called on 3074 and has nothing to do with --rc.");
     Console.WriteLine("");
     Console.WriteLine("      --slow delays inbound instead of stopping it: every segment is still");
     Console.WriteLine("      withheld and its retransmissions still suppressed, but each goes out");
@@ -1015,7 +1021,10 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
 
         // The keepalive. --no-resync clears it, which on 30k means the hold dies in about twenty
         // seconds; --pass overrides it for a machine whose heartbeat is a different size.
-        PassLengths = HasFlag(args, "--no-resync")
+        // --no-keepalive is the clearer name, since --rc on this command is a reconnect and
+        // "resync" reads like it would disable that. --no-resync stays because it means the same
+        // thing on 3074, where it clears what keeps a hold alive.
+        PassLengths = HasFlag(args, "--no-keepalive") || HasFlag(args, "--no-resync")
             ? new HashSet<int>()
             : LengthSetOption(args, "--pass") ?? defaults.PassLengths,
         ReleaseAfter = slow
