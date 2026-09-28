@@ -262,6 +262,7 @@ internal static class ApiRunCommand
         if (sampler is not null)
         {
             Console.WriteLine($"resets injected         : {controller.ResetsInjected}");
+            Console.WriteLine($"  held, thrown on reset : {controller.DiscardedOnReset}");
         }
         Console.WriteLine($"capture limit reached   : {module.CapacityReached}");
         Console.WriteLine($"peer resets             : {module.ResetsSeen}");

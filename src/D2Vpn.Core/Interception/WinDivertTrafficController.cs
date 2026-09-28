@@ -71,6 +71,13 @@ public sealed class WinDivertTrafficController : IDisposable
     /// <summary>Resets injected since the controller started.</summary>
     public long ResetsInjected { get; private set; }
 
+    /// <summary>Held packets thrown away because the connection they belonged to was reset.</summary>
+    /// <remarks>
+    /// Expected rather than alarming when a hold and a reconnect are used together: everything
+    /// queued at the moment of a reset belonged to the connection being killed.
+    /// </remarks>
+    public long DiscardedOnReset { get; private set; }
+
     /// <summary>Connections reset by the most recent request.</summary>
     public int LastResetConnections { get; private set; }
 
@@ -432,6 +439,16 @@ public sealed class WinDivertTrafficController : IDisposable
             {
                 reset.Dispose();
             }
+        }
+
+        // Whatever was held belonged to the connections just killed. Their sequence numbers
+        // mean nothing now, so delivering them would inject packets for a connection that no
+        // longer exists - which the stack answers with resets of its own. Discarded rather than
+        // replayed, for the same reason disposal discards rather than flushing.
+        if (sent > 0 && _buffer is not null)
+        {
+            DiscardedOnReset += _buffer.Count;
+            _buffer.DiscardAll();
         }
 
         LastResetConnections = connections;

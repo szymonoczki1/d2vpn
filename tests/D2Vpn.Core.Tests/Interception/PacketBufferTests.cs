@@ -484,6 +484,26 @@ public class PacketBufferTests
     }
 
     [Fact]
+    public void Discarding_frees_a_scheduled_queue_too()
+    {
+        // What a reset does to the buffer. Everything queued belonged to the connection just
+        // killed, so its sequence numbers mean nothing and delivering it would inject packets for
+        // a connection that no longer exists.
+        using var buffer = Fixed(TimeSpan.FromSeconds(6));
+
+        for (var i = 0; i < 5; i++)
+        {
+            Hold(buffer, T0.AddSeconds(i));
+        }
+
+        buffer.DiscardAll();
+
+        Assert.Equal(0, buffer.Count);
+        Assert.Equal(0, buffer.Replayed);
+        Assert.Empty(buffer.TakeDue(T0.AddSeconds(60)));
+    }
+
+    [Fact]
     public void Holding_after_disposal_is_ignored_rather_than_throwing()
     {
         // Teardown races the receive loop, and a packet arriving during it must not take the
