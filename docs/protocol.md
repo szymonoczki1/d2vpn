@@ -2205,17 +2205,36 @@ Reported: the reference limiter offers an autoresync option on 30k that allows a
 mechanism is unknown here. It cannot be the 3074 one, which answers a UDP reconnect exchange that
 does not exist on a TCP port.
 
-Two candidates, neither tested:
+It holds **over three minutes** with the reference's resync on, so whatever it does is effectively
+indefinite rather than a longer bounded window.
 
-- **Hold a slice rather than everything.** The two-phase capture already built for 7500 withholds
-  until the sender goes quiet, then keeps only that slice and passes later data. The connection
-  keeps carrying traffic and the sender keeps being acknowledged, which may be what survives. This
-  is `--capture-slice` and costs nothing to try.
-- **Release periodically.** Drain the queue every few seconds and resume blocking, so the game
-  receives an update and its timer resets - the block / resync / block shape that works on 3074,
-  rebuilt for a stream.
+**Holding a slice is not it.** `--capture-slice` - the two-phase capture built for 7500, which
+withholds until the sender goes quiet and then keeps only that slice while later data passes -
+changed nothing. Still ~18 s. Ruled out.
 
-Until one of them is measured, `--safe` on 30k caps at 14 s rather than the 60 s used for 7500.
+Remaining candidates:
+
+- **Release periodically.** Drain the queue every few seconds and resume, so the game receives an
+  update and its timer resets - the block / resync / block shape that works on 3074, rebuilt for a
+  stream. Would show as the outbound acknowledgement jumping forward in steps.
+- **Acknowledge on the game's behalf.** Inject outbound acknowledgements covering data that was
+  withheld, so the sender never times out while the game still receives nothing. This would keep a
+  connection alive indefinitely, which matches three minutes better than a periodic release does.
+
+### The outbound acknowledgement is the only honest diagnostic
+
+npcap sits below the filter, so an inbound capture shows every segment that reached the adapter
+whether or not it was dropped afterwards - it cannot say what the game received.
+
+Outbound can. This machine's stack only acknowledges data it actually took, so the acknowledgement
+number in outbound packets is a direct readout of what got through. A hold that is working keeps it
+**stuck**; anything that advances it is data reaching the game.
+
+And if acknowledgements are being injected rather than earned, the local stack will still be asking
+for the segment it never got - so the two would interleave, and outbound acknowledgement numbers
+would jump about rather than climb. That is the fingerprint to look for.
+
+Until one candidate is measured, `--safe` on 30k caps at 14 s rather than the 60 s used for 7500.
 
 ---
 
