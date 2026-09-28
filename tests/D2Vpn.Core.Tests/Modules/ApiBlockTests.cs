@@ -28,6 +28,14 @@ public class ApiBlockTests
     private static ApiBlockModule Capped(bool holdEverything = false) =>
         Module(ApiBlockOptions.Reference with { HoldEverything = holdEverything });
 
+    /// <summary>A module on the 30k group, which is a different port range from 7500.</summary>
+    private static ApiBlockModule Instance(ApiBlockOptions? options = null)
+    {
+        var module = new ApiBlockModule("30k", DestinyPorts.Instance, options);
+        module.IsActive = true;
+        return module;
+    }
+
     /// <summary>The reference implementation's two-phase capture, which is no longer the default.</summary>
     private static ApiBlockModule Slicing() =>
         Module(ApiBlockOptions.Api7500 with { HoldEverything = false });
@@ -566,6 +574,89 @@ public class ApiBlockTests
         module.Decide(TestPackets.TcpOutbound(Port, 10, atSeconds: 100));
 
         Assert.True(module.IsActive);
+    }
+
+    // ---- delay line: 30k slow ----
+
+    [Fact]
+    public void A_delay_line_still_withholds_and_still_suppresses_retransmissions()
+    {
+        // Without suppression the sender would simply deliver the segment early and there would be
+        // no delay at all - the queue would hold a copy of something the receiver already had.
+        var module = Instance(ApiBlockOptions.Instance30kSlow);
+
+        var first = module.Decide(TestPackets.TcpData(30000, 500, sequence: 1000, atSeconds: 0));
+        var again = module.Decide(TestPackets.TcpData(30000, 500, sequence: 1000, atSeconds: 1));
+
+        Assert.Equal(PacketVerdict.Buffer, first);
+        Assert.Equal(PacketVerdict.Drop, again);
+        Assert.Equal(1, module.RetransmitsSuppressed);
+    }
+
+    [Fact]
+    public void A_delay_line_forgets_segments_well_past_their_release()
+    {
+        // A hold forgets everything on untick, so its set cannot grow. A delay line never has that
+        // release, so without ageing them out the set would grow for as long as the module is on.
+        var module = Instance(ApiBlockOptions.Instance30kSlow);
+
+        for (var t = 0; t < 40; t++)
+        {
+            module.Decide(TestPackets.TcpData(30000, 100, sequence: (uint)(1000 + t * 100), atSeconds: t));
+        }
+
+        // Every segment is withheld, but only the recent ones are still remembered.
+        Assert.Equal(40, module.SegmentsWithheld);
+
+        // An old sequence is no longer recognised as a retransmission, so it counts as new.
+        module.Decide(TestPackets.TcpData(30000, 100, sequence: 1000, atSeconds: 40));
+
+        Assert.Equal(41, module.SegmentsWithheld);
+        Assert.Equal(0, module.RetransmitsSuppressed);
+    }
+
+    [Fact]
+    public void A_recent_segment_is_still_recognised_under_a_delay_line()
+    {
+        // The pruning must not be so eager that it forgets a segment still inside its delay, which
+        // would let the sender's retransmission through and defeat the whole thing.
+        var module = Instance(ApiBlockOptions.Instance30kSlow);
+
+        module.Decide(TestPackets.TcpData(30000, 500, sequence: 1000, atSeconds: 0));
+        var again = module.Decide(TestPackets.TcpData(30000, 500, sequence: 1000, atSeconds: 5));
+
+        Assert.Equal(PacketVerdict.Drop, again);
+        Assert.Equal(1, module.RetransmitsSuppressed);
+    }
+
+    [Fact]
+    public void The_30k_slow_preset_delays_by_six_seconds()
+    {
+        // The reference limiter's own tooltip: "delays inbound 30k updates by 6 seconds while
+        // active". Finding 7 measured gaps of 3.91 s and 5.94 s while it ran.
+        Assert.Equal(TimeSpan.FromSeconds(6), ApiBlockOptions.Instance30kSlow.ReleaseAfter);
+    }
+
+    [Fact]
+    public void The_30k_block_preset_holds_until_untick()
+    {
+        // "blocks inbound 30k updates until deactivated" - no release of its own.
+        Assert.Null(ApiBlockOptions.Instance30k.ReleaseAfter);
+        Assert.True(ApiBlockOptions.Instance30k.HoldEverything);
+    }
+
+    [Fact]
+    public void A_block_never_forgets_a_segment_while_the_hold_runs()
+    {
+        // The contrast with a delay line. A hold has to keep suppressing the same segment for as
+        // long as it runs, however long that is.
+        var module = Instance(ApiBlockOptions.Instance30k);
+
+        module.Decide(TestPackets.TcpData(30000, 500, sequence: 1000, atSeconds: 0));
+        var muchLater = module.Decide(TestPackets.TcpData(30000, 500, sequence: 1000, atSeconds: 300));
+
+        Assert.Equal(PacketVerdict.Drop, muchLater);
+        Assert.Equal(1, module.RetransmitsSuppressed);
     }
 
     /// <summary>Withholds enough to span the capture limit and establishes the hold.</summary>

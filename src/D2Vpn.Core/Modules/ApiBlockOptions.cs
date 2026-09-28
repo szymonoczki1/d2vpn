@@ -139,9 +139,46 @@ public sealed record ApiBlockOptions
     public bool Buffering { get; init; } = true;
 
     /// <summary>
+    /// Release each withheld segment this long after it arrived, instead of holding until untick.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Turns the hold into a delay line. Every inbound segment is still withheld and its
+    /// retransmissions still suppressed - without that the sender would deliver it early and there
+    /// would be no delay - but each goes out once it has waited this long, so the stream runs
+    /// permanently behind rather than stopping.
+    /// </para>
+    /// <para>
+    /// The reference limiter describes its 30k variant as delaying inbound updates by <b>6
+    /// seconds</b>, and finding 7 measured gaps of 3.91 s and 5.94 s while it ran, which is
+    /// consistent with that.
+    /// </para>
+    /// <para>
+    /// <see langword="null"/> holds until untick, which is the block.
+    /// </para>
+    /// </remarks>
+    public TimeSpan? ReleaseAfter { get; init; }
+
+    /// <summary>
     /// Defaults for TCP 7500: hold until the peer resets, and nothing else.
     /// </summary>
     public static ApiBlockOptions Api7500 { get; } = new();
+
+    /// <summary>
+    /// Defaults for TCP 30000-30009, inbound, as the reference limiter describes them.
+    /// </summary>
+    /// <remarks>
+    /// Its tooltips: 30k "blocks inbound 30k updates until deactivated", 30k slow "delays inbound
+    /// 30k updates by 6 seconds while active". The same mechanism at two depths, so only
+    /// <see cref="ReleaseAfter"/> separates them here.
+    /// </remarks>
+    public static ApiBlockOptions Instance30k { get; } = new();
+
+    /// <summary>The 30k delay line, at the 6 seconds the reference limiter states.</summary>
+    public static ApiBlockOptions Instance30kSlow { get; } = new()
+    {
+        ReleaseAfter = TimeSpan.FromSeconds(6)
+    };
 
     /// <summary>
     /// The reference implementation's ceilings, for comparison and for anyone who wants them.

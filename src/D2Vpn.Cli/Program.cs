@@ -145,14 +145,26 @@ static void PrintUsage()
     Console.WriteLine("      attempt failed with it on. Kept because the result is informative,");
     Console.WriteLine("      not because it is worth using.");
     Console.WriteLine();
-    Console.WriteLine("  d2vpn run 7500 [--key NAME] [--log FILE] [--no-buffer] [--capture-slice]");
-    Console.WriteLine("                 [--safe | --max-hold-s N] [--quiet-hold-s N]");
-    Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N]");
-    Console.WriteLine("      A different mechanism from the other groups, because 7500 is TCP.");
+    Console.WriteLine("  d2vpn run 7500|30k [--key NAME] [--log FILE] [--slow] [--slow-s N]");
+    Console.WriteLine("                 [--no-buffer] [--capture-slice] [--safe | --max-hold-s N]");
+    Console.WriteLine("                 [--quiet-hold-s N] [--capture-quiet-ms N] [--capture-bytes N]");
+    Console.WriteLine("      A different mechanism from the UDP groups, because these are TCP.");
     Console.WriteLine("      Dropping a TCP segment does not destroy it - the sender re-sends the");
     Console.WriteLine("      same data under the same sequence number - so a block that only drops");
     Console.WriteLine("      leaks about 200 ms later. This withholds inbound data segments and");
     Console.WriteLine("      keeps suppressing their retransmissions for as long as the hold runs.");
+    Console.WriteLine("");
+    Console.WriteLine("      --slow delays inbound instead of stopping it: every segment is still");
+    Console.WriteLine("      withheld and its retransmissions still suppressed, but each goes out");
+    Console.WriteLine("      once it has waited --slow-s, so the stream runs permanently behind");
+    Console.WriteLine("      rather than halting. 6s on 30k, which is what the reference limiter");
+    Console.WriteLine("      states for its own 30k slow and is consistent with gaps of 3.91s and");
+    Console.WriteLine("      5.94s measured while it ran.");
+    Console.WriteLine("");
+    Console.WriteLine("      30k without --slow blocks inbound until you untick, matching that");
+    Console.WriteLine("      tool's 30k. It used to route to the UDP-style hold, which suppresses");
+    Console.WriteLine("      nothing and so leaked at the first retransmission about 200 ms in,");
+    Console.WriteLine("      and it blocked the wrong direction. Neither was ever tested.");
     Console.WriteLine("");
     Console.WriteLine("      Inbound only. --downlink and --full are refused: blocking outbound");
     Console.WriteLine("      stops the acknowledgements this machine owes, which makes the peer");
@@ -954,12 +966,22 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
     if (HasFlag(args, "--downlink") || HasFlag(args, "--full"))
     {
         throw new ArgumentException(
-            "7500 blocks inbound only, so --downlink and --full do not apply. Blocking outbound "
+            $"{group.Name} blocks inbound only, so --downlink and --full do not apply. Blocking "
+            + "outbound "
             + "would stop the acknowledgements this machine owes, which makes the peer retransmit "
             + "harder and reset sooner.");
     }
 
-    var options = ApiBlockOptions.Api7500 with
+    // Per group, because the two differ in what they are for rather than in tuning. 7500 holds
+    // until told otherwise; 30k has a stated delay-line variant at six seconds.
+    var slowSeconds = IntOption(args, "--slow-s", 0);
+    var slow = HasFlag(args, "--slow") || slowSeconds > 0;
+
+    var defaults = group == DestinyPorts.Instance
+        ? slow ? ApiBlockOptions.Instance30kSlow : ApiBlockOptions.Instance30k
+        : ApiBlockOptions.Api7500;
+
+    var options = defaults with
     {
         // Both measured and both on. --buffer and --hold-all are still accepted, and now say
         // what is already happening rather than changing it.
@@ -967,7 +989,11 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
         HoldEverything = !HasFlag(args, "--capture-slice"),
         CaptureQuiet = TimeSpan.FromMilliseconds(
             IntOption(args, "--capture-quiet-ms", (int)ApiBlockOptions.Api7500.CaptureQuiet.TotalMilliseconds)),
-        CaptureBytes = IntOption(args, "--capture-bytes", ApiBlockOptions.Api7500.CaptureBytes),
+        CaptureBytes = IntOption(args, "--capture-bytes", defaults.CaptureBytes),
+        ReleaseAfter = slow
+            ? TimeSpan.FromSeconds(
+                slowSeconds > 0 ? slowSeconds : (defaults.ReleaseAfter ?? TimeSpan.FromSeconds(6)).TotalSeconds)
+            : null,
         // Uncapped unless asked otherwise. The effect lasts as long as the hold does, so how
         // long to hold is the operator's call - the only automatic exit is a reset, which is the
         // connection already being gone rather than a precaution.
@@ -1115,10 +1141,11 @@ static async Task<int> RunAsync(string[] args)
 {
     var group = ResolveGroup(args);
 
-    // 7500 is TCP, and a TCP hold is a different mechanism rather than a differently configured
-    // one: it works by suppressing retransmissions, has no resync, and ends in a reset. It gets
-    // its own module and its own command.
-    if (group == DestinyPorts.Api)
+    // Every TCP group, not just 7500. A TCP hold is a different mechanism rather than a
+    // differently configured one - it works by suppressing retransmissions, has no resync, and
+    // ends in a reset - so it gets its own module and its own command. 30k used to route to the
+    // UDP-style hold, which leaks at the first retransmission, roughly 200 ms in.
+    if (group.Protocol == PortProtocol.Tcp)
     {
         return await RunApiAsync(args, group).ConfigureAwait(false);
     }

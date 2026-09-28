@@ -58,8 +58,14 @@ internal static class ApiRunCommand
         // or two segments against 2048 - so it is a guard against a case that has never arisen
         // rather than a working limit. See PacketBuffer.NeverExpires for why an ordered stream
         // does not want an age limit at all.
+        // A delay line schedules each segment out once it has waited; a hold keeps everything
+        // until untick. Same queue either way.
+        var schedule = options.ReleaseAfter is { } after
+            ? new PacketBuffer.SlowSchedule(after)
+            : null;
+
         using var buffer = options.Buffering
-            ? new PacketBuffer(2048, PacketBuffer.NeverExpires)
+            ? new PacketBuffer(2048, PacketBuffer.NeverExpires, schedule)
             : null;
 
         // Only when replaying. A segment held for seconds acknowledges a position the connection
@@ -119,6 +125,10 @@ internal static class ApiRunCommand
         var keyLabel = KeyName.Describe(toggleKey);
         Console.WriteLine($"running {group} inbound");
         Console.WriteLine($"  toggle       : {keyLabel}  (polled every {pollMs} ms)");
+        Console.WriteLine($"  mode         : "
+            + (options.ReleaseAfter is { } release
+                ? $"SLOW - inbound is delayed by {release.TotalSeconds:F0}s and keeps flowing"
+                : "BLOCK - inbound is withheld until you untick"));
         Console.WriteLine($"  capture      : "
             + (options.HoldEverything
                 ? "everything inbound, for the whole hold"

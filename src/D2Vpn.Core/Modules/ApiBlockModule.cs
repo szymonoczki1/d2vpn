@@ -167,6 +167,14 @@ public sealed class ApiBlockModule : ITrafficModule
 
         var state = StateFor(packet);
 
+        if (Options.ReleaseAfter is { } releaseAfter)
+        {
+            // Long enough past release that the sender has been acknowledged and stopped
+            // retransmitting. Without this the set grows for as long as the module is on, since a
+            // delay line never has the release that clears it.
+            Forget(state, packet.Timestamp - releaseAfter - releaseAfter);
+        }
+
         // The sender has stopped producing new data and is only repeating itself. From here only
         // what is already withheld stays withheld - unless the hold is meant to cover everything,
         // in which case there is no such transition and new data keeps being taken.
@@ -211,7 +219,7 @@ public sealed class ApiBlockModule : ITrafficModule
         }
 
         state.HoldStartedAt ??= packet.Timestamp;
-        state.Withheld[sequence] = packet.PayloadLength;
+        state.Withheld[sequence] = new Segment(packet.PayloadLength, packet.Timestamp);
         state.LastWithheldAt = packet.Timestamp;
 
         // Until something is suppressed there is nothing to be quiet about, so the quiet path
@@ -283,6 +291,35 @@ public sealed class ApiBlockModule : ITrafficModule
         return null;
     }
 
+    /// <summary>Drops withheld segments that arrived before a cutoff.</summary>
+    private static void Forget(ConnectionState state, DateTimeOffset before)
+    {
+        if (state.Withheld.Count == 0)
+        {
+            return;
+        }
+
+        List<uint>? stale = null;
+
+        foreach (var (sequence, segment) in state.Withheld)
+        {
+            if (segment.At < before)
+            {
+                (stale ??= []).Add(sequence);
+            }
+        }
+
+        if (stale is null)
+        {
+            return;
+        }
+
+        foreach (var sequence in stale)
+        {
+            state.Withheld.Remove(sequence);
+        }
+    }
+
     private ConnectionState StateFor(PacketInfo packet)
     {
         var key = new Connection(packet.RemoteAddress, packet.LocalPort);
@@ -339,11 +376,19 @@ public sealed class ApiBlockModule : ITrafficModule
     /// <summary>One TCP connection, which is a peer and the local port talking to it.</summary>
     private readonly record struct Connection(IPAddress Address, int LocalPort);
 
+    /// <summary>One withheld segment: how much it carried, and when it arrived.</summary>
+    /// <remarks>
+    /// The timestamp is only needed by a delay line. A plain hold forgets everything on release, so
+    /// the set cannot grow; a delay line releases each segment and keeps running, so without a way
+    /// to age entries out the set would grow for as long as the module is on.
+    /// </remarks>
+    private readonly record struct Segment(int Length, DateTimeOffset At);
+
     /// <summary>What has been withheld from one connection.</summary>
     private sealed class ConnectionState
     {
-        /// <summary>Sequence number to payload length, for everything withheld.</summary>
-        public Dictionary<uint, int> Withheld { get; } = [];
+        /// <summary>Everything withheld, by sequence number.</summary>
+        public Dictionary<uint, Segment> Withheld { get; } = [];
 
         /// <summary>When something was last withheld for the first time.</summary>
         public DateTimeOffset LastWithheldAt { get; set; }
@@ -384,14 +429,14 @@ public sealed class ApiBlockModule : ITrafficModule
                 var lowest = uint.MaxValue;
                 var highest = 0u;
 
-                foreach (var (sequence, length) in Withheld)
+                foreach (var (sequence, segment) in Withheld)
                 {
                     if (sequence < lowest)
                     {
                         lowest = sequence;
                     }
 
-                    var end = sequence + (uint)length;
+                    var end = sequence + (uint)segment.Length;
                     if (end > highest)
                     {
                         highest = end;
