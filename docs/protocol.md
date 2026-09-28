@@ -2635,49 +2635,54 @@ conditions are the same condition.
 plus 90, 1360, 1027, 84, 123, 140. This machine keeps talking on 30k while the server only ticks.
 Not pursued, but worth knowing that "idle" is one-sided.
 
-## Open on 30k
+## 30k - where it was left
 
-Not finished. The module works but has not been shown to match the reference, and the differences
-below are the reason.
+Working and closed for now. The block matches the reference exactly; slow works and outlasts it in
+the runs taken, though the comparison is not controlled well enough to claim that.
 
-### Known differences from the reference
+### Against the reference
 
 | | d2vpn | Reference |
 |---|---|---|
-| Block, active | 20.53 s | 20.53 s on/off - **matches exactly**, finding 53 |
-| Slow | survives 45-244 s, reset twice in seven holds | codes at ~125 s / ~70 s - **not comparable**, findings 55 and 56 |
+| Block, active | 20.53 s | 20.53 s with autoresync on or off - **matches exactly** (finding 53) |
+| Block, idle | indefinite with the keepalive | same mechanism (findings 50, 57) |
+| Slow | 45-244 s, reset in 2 of 7 holds | codes at ~125 s / ~70 s (findings 54-56) |
+| Reconnect | identical on the wire (findings 46, 47) | |
 
-The first two lining up is what makes the third worth chasing: the delay line and the block are the
-same on both, so whatever its autoresync does under slow is a real mechanism this project does not
-have.
+### Settled
 
-### Questions to settle, in the order they are worth answering
+- The block is a total hold, ~20.5 s once anything is being withheld, and **neither tool does
+  better**. That is the game's tolerance, not a limitation of either.
+- The keepalive is the reference's autoresync: a 73-byte heartbeat every 3 s, sent **only while the
+  connection is idle**, which is exactly when a hold would otherwise die for nothing. It fires when
+  useful and never otherwise, and needs no per-server tuning (finding 57).
+- Retransmission suppression, buffering with acknowledgement rewriting, the delay line, and the
+  reconnect sharing one handle.
 
-1. **What does the reference's autoresync do under slow?** Finding 50 established it passes the
-   73-byte heartbeat under a *block*. Finding 52 showed a pass cannot help under a *delay line*, and
-   dropping ours made the hold longer - so under slow it must be doing something else, or the
-   heartbeat pass helps there for a reason not yet understood.
-   Capture: `tcp.dstport >= 30000 && tcp.dstport <= 30009`, autoresync **on**, slow **on**. Because
-   inbound is a metronome at 73 bytes every 3.02 s, the acknowledgement cadence reads directly -
-   steady means a smooth delay, bursts with gaps mean a sawtooth.
+### Left open
 
-2. **Where do the duplicate acknowledgement floods come from?** Dozens inside 30 ms, repeatedly,
-   during `--slow`. Candidate: the module forgets a withheld segment at `2 x ReleaseAfter`, so a
-   retransmission arriving later is treated as new, withheld again and delivered twice. If so, keep
-   an entry until its delivery is acknowledged rather than for a fixed multiple of the delay.
+1. **Duplicate acknowledgement floods under `--slow`** - dozens inside 30 ms, repeatedly. Candidate:
+   the module forgets a withheld segment at `2 x ReleaseAfter`, so a retransmission arriving after
+   that is treated as new, withheld again and delivered twice. The fix would be keeping an entry
+   until its delivery is acknowledged rather than for a fixed multiple of the delay.
 
-3. ~~**Does the reference's block also die at ~18 s when content is actually flowing?**~~
-   **Answered - finding 53.** It does, at 20.53 s against this project's 20.53 s, and its autoresync
-   makes no difference to that. The block is finished.
+2. **Whether the effect is working during a long slow hold.** Every slow measurement here is
+   survival, not effect. A four-minute hold that desynchronises nothing would look identical in the
+   counters. Only in-game observation can tell them apart, and this is the gap that made finding 52
+   wrong.
 
-4. **Is `--slow` at 6 s the right depth?** The figure is the reference's tooltip, corroborated by
-   finding 7's gaps but never measured directly here. `--slow-s` sweeps it cheaply.
+3. **What the reference's autoresync does under slow.** Findings 50 and 57 explain it under a block.
+   Under a delay line a keepalive has nothing to rescue, so either it does something else there or
+   the extra time seen was traffic rather than mechanism.
 
-### What is settled
+4. **The right delay.** 6 s is the reference's stated figure; 8 s is preferred in play but on
+   judgement rather than measurement. Any sweep needs the runs back to back in the same game state -
+   the traffic varies more than the setting does (finding 56).
 
-The block, the delay line, retransmission suppression, buffering with acknowledgement rewriting, the
-reconnect on the same handle, and the ~18 s ceiling. None of those are in question - only whether
-the hold can be made to last as long as the reference's.
+### How to compare anything here
+
+Back to back, same game state, and report the withholding rate. Several comparisons in this document
+do neither and had to be withdrawn for it.
 
 ---
 
