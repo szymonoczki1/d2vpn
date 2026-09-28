@@ -2238,6 +2238,49 @@ Until one candidate is measured, `--safe` on 30k caps at 14 s rather than the 60
 
 ---
 
+## Finding 50 - 30k runs on a 73-byte heartbeat every 3 seconds
+
+Outbound capture of the reference limiter holding 30k **with its autoresync on**, filtered to
+`tcp.dstport >= 30000 && tcp.dstport <= 30009` so the acknowledgement numbers read out what the
+game's own stack actually accepted.
+
+Across 54 seconds, the acknowledgement advanced **eighteen times, by exactly 73 bytes, every
+3.02 s** - range 2.90 to 3.30. Not once did it stall.
+
+| | |
+|---|---|
+| Step size | 73 bytes, every time |
+| Interval | 3.02 s mean, 2.90-3.30 s |
+| Total acknowledged | 1314 bytes in 54 s |
+
+So inbound 30k is a **heartbeat**: a fixed 73-byte message on a three-second timer. That is the
+rhythm the whole port runs on, and it explains the ~18 s ceiling measured in finding 49 - roughly
+six missed beats and the game gives up.
+
+### Nothing was withheld during this hold
+
+TCP cannot acknowledge past a gap. Had any inbound segment been dropped, the acknowledgement would
+have frozen at the hole until it arrived, and every later segment would have sat unacknowledged
+behind it. It never froze - not at the toggle, not anywhere, not by a single beat.
+
+**With autoresync on, the reference is not withholding inbound 30k at all.** Whatever lets it hold
+for three minutes, it is not a cleverer way of blocking.
+
+Only one connection is involved - a single local port for the whole capture - so this is not a
+second connection carrying the traffic.
+
+### What this leaves open
+
+Either autoresync suppresses the block entirely, in which case holding indefinitely is trivial and
+the module is doing nothing while it is on, or the effect it produces is not visible in the TCP
+stream at all.
+
+Distinguishing them needs the same capture with autoresync **off**: if the acknowledgement stalls
+there, the block works without it and autoresync is what stops it working. That capture has not
+been taken yet.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
