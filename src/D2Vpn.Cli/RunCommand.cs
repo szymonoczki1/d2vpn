@@ -1,4 +1,4 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 using D2Vpn.Cli.Hotkeys;
 using D2Vpn.Core.Diagnostics;
 using D2Vpn.Core.Input;
@@ -194,7 +194,10 @@ internal static class RunCommand
         Console.WriteLine($"  untick delay : "
             + $"{(untickDelayMs > 0 ? $"{untickDelayMs} ms" : "none")}");
         Console.WriteLine($"  pass sizes   : {Format(options.PassLengths)}");
-        Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}");
+        Console.WriteLine($"  resync passes: {Format(options.ResyncPassLengths)}"
+            + (options.ResyncPassMaxLength is { } max
+                ? $", and anything <= {max} bytes"
+                : string.Empty));
         Console.WriteLine($"  mode         : "
             + (options.SlowMode
                 ? options.SlowThrottle
@@ -314,6 +317,7 @@ internal static class RunCommand
             {
                 var role = options.PassLengths.Contains(length) ? "standing pass"
                     : handshake.Contains(length) ? "resync pass"
+                    : length <= options.ResyncPassMaxLength ? "resync pass (size)"
                     : "UNEXPECTED";
 
                 Console.WriteLine($"  {length,6} bytes  x{count,-5}  {role}");
