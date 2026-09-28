@@ -1016,10 +1016,17 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
             + "Without it this blocks rather than delays. Drop --no-buffer.");
     }
 
-    // A ceiling below where a reset was measured, for anyone who would rather not find out.
+    // A ceiling below where the error code was measured, for anyone who would rather not find
+    // out. Per group, because the two are nowhere near each other: 7500 survived 75 s and was
+    // reset at 86.5 s, while 30k error codes at around 18 s.
     if (HasFlag(args, "--safe") && options.MaxHold <= TimeSpan.Zero)
     {
-        options = options with { MaxHold = TimeSpan.FromSeconds(60) };
+        options = options with
+        {
+            MaxHold = group == DestinyPorts.Instance
+                ? TimeSpan.FromSeconds(14)
+                : TimeSpan.FromSeconds(60)
+        };
     }
 
     var toggleKey = KeyName.Parse(StringOption(args, "--key") ?? "capslock");

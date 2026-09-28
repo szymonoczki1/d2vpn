@@ -2182,6 +2182,43 @@ different server (`172.97.57.76` rather than the `205.209.x` seen solo).
 
 ---
 
+## Finding 49 - 30k error codes at ~18 s, and the reference has a resync for it
+
+`run 30k` blocking inbound reaches an error code at around **18 seconds**. The reference limiter
+behaves the same way at the same point, so this is the game's tolerance rather than an artefact of
+either implementation.
+
+| Port | Ceiling | What ends it |
+|---|---|---|
+| 3074 uplink | none known | nothing - 451 s measured, resync keeps the peer alive |
+| **30k inbound** | **~18 s** | error code |
+| 7500 inbound | ~87 s | peer resets the connection |
+
+Three TCP-or-not distinctions that do not line up with each other: 3074 survives indefinitely
+because its resync answers the peer, 7500 lasts a minute and a half because nothing depends on it
+urgently, and 30k gives up in under twenty seconds because it carries the world state the game
+cannot proceed without.
+
+### The reference has an autoresync for 30k and this project does not
+
+Reported: the reference limiter offers an autoresync option on 30k that allows a longer hold. That
+mechanism is unknown here. It cannot be the 3074 one, which answers a UDP reconnect exchange that
+does not exist on a TCP port.
+
+Two candidates, neither tested:
+
+- **Hold a slice rather than everything.** The two-phase capture already built for 7500 withholds
+  until the sender goes quiet, then keeps only that slice and passes later data. The connection
+  keeps carrying traffic and the sender keeps being acknowledged, which may be what survives. This
+  is `--capture-slice` and costs nothing to try.
+- **Release periodically.** Drain the queue every few seconds and resume blocking, so the game
+  receives an update and its timer resets - the block / resync / block shape that works on 3074,
+  rebuilt for a stream.
+
+Until one of them is measured, `--safe` on 30k caps at 14 s rather than the 60 s used for 7500.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
