@@ -2386,14 +2386,17 @@ WITH the pass                        WITHOUT it
 Passing a packet cannot move it ahead of a hole already in front of it. So under `--slow` the pass
 buys nothing and converts a smooth delay into a sawtooth of gaps up to `ReleaseAfter + 1`.
 
-**Tested, and it does cost.** With `--no-keepalive` the same hold ran **55 s and 61.6 s** against
-the ~33 s measured with the pass on, across two holds in one session - no peer reset, all 134
-withheld segments replayed, none expired or evicted. So passing the heartbeat under a delay line was
-actively shortening the hold, for the ordering reason above.
+**Tested, and the test was invalid.** With `--no-keepalive` two holds ran 55 s and 61.6 s - but
+**both were released by hand**, not ended by anything. Neither was a ceiling. Comparing them against
+the ~33 s, which was an in-game resync observation, compared a length the operator chose against a
+length the game imposed. Those are not the same measurement and the comparison establishes nothing.
 
-The in-game reading was less clear than the packet counts - reported as longer than before but
-resynchronising and desynchronising again rather than holding cleanly - so how much of the
-reference's extra time this closes is not settled.
+Finding 54 settles it the other way: with the keepalive **on**, a hold ran **244.3 s** and was also
+released by hand. Four times the number that was supposed to show the keepalive hurting.
+
+So there is no evidence the pass costs anything under a delay line. The ordering argument still says
+it cannot *help* - a passed packet does not move ahead of a hole already in front of it - which
+makes it a no-op rather than a mistake, and it stays.
 
 ### An open problem: duplicate acknowledgement floods
 
@@ -2462,6 +2465,56 @@ autoresync-on and autoresync-off are the same thing.
 **~20.5 s is simply what a 30k block is.** Neither tool does better, and nothing found suggests
 better is available.
 
+## Finding 54 - d2vpn's 30k slow outlasts the reference by 2x
+
+Three runs of the same thing, one session:
+
+| | Outcome |
+|---|---|
+| Reference, slow + autoresync | **error code at ~125 s** |
+| Reference, slow, no autoresync | **error code at ~70 s** |
+| **d2vpn, slow** | **244.3 s, no error code** - released by hand |
+
+d2vpn did not hit a ceiling at all. The run ended because the operator unticked, with `peer resets
+0` and nothing expired or evicted.
+
+```
+withheld 58   resent 259   replayed 58   ack brought forward 58/58
+keepalives passed 4        capture limit reached 1
+```
+
+### The keepalive barely fired, and it did not matter
+
+**Four** keepalives in 244 seconds, where a 73-byte heartbeat every 3 s would give around eighty. So
+on this connection - a different server from the one findings 50 and 53 measured - the heartbeat is
+not 73 bytes, and the pass was very nearly inert.
+
+The hold survived four minutes anyway. Under a delay line the connection stays fed because the queue
+keeps delivering; the keepalive has nothing to add. That is consistent with the ordering argument
+and inconsistent with the keepalive being load-bearing either way.
+
+**The 73-byte figure does not generalise across servers.** It was measured on one and is already
+wrong on another.
+
+### What is not known
+
+Whether the effect was working for those 244 seconds. Surviving and desynchronising are different
+things, and this run only establishes the first - the same gap that made finding 52's comparison
+invalid. The reference's runs ended in error codes, which is at least evidence they were doing
+something; d2vpn's ended because the key was pressed.
+
+### What might explain outlasting it
+
+Untested, in rough order of plausibility:
+
+- **The reference's delay grows and this one does not.** Its 3074 slow is a rate cap rather than an
+  offset (finding 41), and a growing backlog would eventually exceed what the game tolerates -
+  giving exactly the pattern of coding at 70 s or 125 s where a fixed 6 s offset never does.
+- **The acknowledgement rewriting.** All 58 replayed segments here needed it. A tool replaying them
+  unrewritten would deliver stale acknowledgements, and three duplicates trigger fast retransmit.
+- **Suppression is more complete here**, so the sender retransmits into a queue rather than around
+  it - 259 suppressed across 58 segments, about 4.5 each.
+
 ## Open on 30k
 
 Not finished. The module works but has not been shown to match the reference, and the differences
@@ -2472,8 +2525,7 @@ below are the reason.
 | | d2vpn | Reference |
 |---|---|---|
 | Block, active | 20.53 s | 20.53 s on/off - **matches exactly**, finding 53 |
-| Slow, no keepalive | 55-62 s | ~33 s with its autoresync off - **matches** |
-| Slow, keepalive/autoresync on | ~33 s | ~50 s - **does not match** |
+| Slow | **244.3 s, no code** | codes at ~125 s with autoresync, ~70 s without - **d2vpn outlasts it**, finding 54 |
 
 The first two lining up is what makes the third worth chasing: the delay line and the block are the
 same on both, so whatever its autoresync does under slow is a real mechanism this project does not

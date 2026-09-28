@@ -1,0 +1,6 @@
+wall_clock	offset_s	event	detail
+17:36:49.651	0.002	start	2026-09-28T17:36:49.6495553+00:00
+17:36:49.659	0.010	config	group=30k captureQuietMs=100 captureBytes=1460 maxHoldS=0 quietHoldS=0 quietRetransmitS=24 buffering=True priority=-1000
+17:37:17.910	28.261	hold	
+17:41:22.260	272.611	release	heldFor=244.35s
+17:42:12.833	323.184	end	
