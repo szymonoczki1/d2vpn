@@ -2386,8 +2386,34 @@ WITH the pass                        WITHOUT it
 Passing a packet cannot move it ahead of a hole already in front of it. So under `--slow` the pass
 buys nothing and converts a smooth delay into a sawtooth of gaps up to `ReleaseAfter + 1`.
 
-Whether that costs the 17 s is untested - `--slow --no-resync` would say - but it is the first
-concrete difference found between the two, and it is on this project's side.
+**Tested, and it does cost.** With `--no-keepalive` the same hold ran **55 s and 61.6 s** against
+the ~33 s measured with the pass on, across two holds in one session - no peer reset, all 134
+withheld segments replayed, none expired or evicted. So passing the heartbeat under a delay line was
+actively shortening the hold, for the ordering reason above.
+
+The in-game reading was less clear than the packet counts - reported as longer than before but
+resynchronising and desynchronising again rather than holding cleanly - so how much of the
+reference's extra time this closes is not settled.
+
+### An open problem: duplicate acknowledgement floods
+
+The same run shows this machine emitting **dozens of duplicate acknowledgements inside 30 ms**,
+repeatedly - `Dup ACK #30` through `#74` on one packet, all carrying the same `Seq` and `Ack`.
+
+A 6 s delay means the sender goes six seconds unacknowledged, so its retransmission timer fires
+repeatedly: 293 suppressed across 134 withheld segments, about 2.2 each. That much is expected.
+
+Dozens of duplicate acknowledgements are not. They mean the receiver is being handed data it cannot
+use - either beyond a hole, or data it already has.
+
+One candidate, unconfirmed. `ApiBlockModule` forgets a withheld segment once it is well past release
+- `2 x ReleaseAfter`, so 12 s at a 6 s delay - to stop the set growing for as long as a delay line
+runs. A sender retransmission arriving after that window is no longer recognised, so it is withheld
+again and delivered a second time. The receiver already has that data, and answers with duplicate
+acknowledgements.
+
+If that is the cause, the fix is to keep an entry until its delivery is acknowledged rather than for
+a fixed multiple of the delay. Not yet investigated.
 
 ### If that is not it, the capture that would settle it
 
