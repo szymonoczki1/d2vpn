@@ -2297,6 +2297,54 @@ One caveat on the evidence: every inbound segment in the autoresync capture was 
 the game was idle. So that capture shows the heartbeat passing but cannot show non-heartbeat traffic
 being withheld - the block half is inferred from the module having an effect at all, not observed.
 
+**That caveat turned out to matter - see finding 51.**
+
+---
+
+## Finding 51 - a keepalive pass cannot save an ordered stream
+
+Running `run 30k` with the 73-byte pass on: **71 seconds held, 17 keepalives passed, 2 segments
+withheld**, ended by the peer resetting.
+
+Reported alongside it: the hold runs indefinitely while nothing is being blocked, and codes about
+**18 seconds after it starts actually withholding**.
+
+### Why the pass does not help
+
+TCP delivers in order. Withhold one segment and everything after it - **including every keepalive
+that follows** - still reaches this machine's stack but cannot be handed to the application, because
+there is a hole in front of it. The stack acknowledges them selectively; the game never sees them.
+
+So passing the heartbeat only keeps a hold alive while nothing else is withheld. From the first
+segment actually blocked, the game is starved regardless, and the same ~18 s applies.
+
+Which is exactly what the run shows: two segments withheld across 71 seconds, the rest of the time
+nothing to block and the keepalives genuinely arriving.
+
+### This corrects finding 50
+
+Finding 50 concluded that autoresync "passes the heartbeat and withholds everything else", and built
+that as `PassLengths`. The first half is observed and correct. The second half was inferred, and it
+cannot work as described on an ordered stream.
+
+The likeliest reading now is that **the reference's autoresync has the same limitation** and its
+three-minute hold was taken while 30k was idle - nothing to block, so nothing starved. That is
+testable: hold it with autoresync on while something is actually happening on 30k, and see whether
+it too codes at ~18 s.
+
+The keepalive pass is kept because it does do something real - it stops an idle hold from dying at
+twenty seconds - but it is not what makes a *blocking* hold survive, and nothing found so far is.
+
+### What could survive an active block
+
+Not a pass list, because the problem is the hole rather than the traffic around it. The hole has to
+be filled before the game gives up, which means releasing what was withheld rather than passing
+something else.
+
+That is `--slow`: hold each segment a fixed time and let it go. At a delay below the ~18 s tolerance
+the stream never starves, the game runs that far behind, and the connection survives indefinitely.
+Untested on 30k.
+
 ---
 
 ## Signatures claimed by prior art — NOT verified here
