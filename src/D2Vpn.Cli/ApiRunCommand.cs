@@ -147,7 +147,10 @@ internal static class ApiRunCommand
         Console.WriteLine($"                 there does not mean they reached the game");
         Console.WriteLine($"  buffering    : "
             + (options.Buffering
-                ? "on - withheld segments are replayed on untick, ack numbers brought forward"
+                ? options.ReleaseAfter is { } every
+                    ? $"on - required here; segments go out {every.TotalSeconds:F0}s after they "
+                      + "arrive, ack numbers brought forward"
+                    : "on - withheld segments are replayed on untick, ack numbers brought forward"
                 : "off - dropped, so on untick you wait for the peer's next retransmission"));
         Console.WriteLine();
         Console.WriteLine("This is TCP, so the failure mode is a RESET and an error code, not a");

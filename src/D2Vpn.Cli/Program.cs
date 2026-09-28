@@ -187,14 +187,17 @@ static void PrintUsage()
     Console.WriteLine("      spacing between updates, the capture fires after the first segment,");
     Console.WriteLine("      and seven consecutive holds each withheld exactly one.");
     Console.WriteLine("");
-    Console.WriteLine("      Withheld segments are replayed on untick. --no-buffer destroys them");
-    Console.WriteLine("      instead, in which case the data only arrives when the peer next");
-    Console.WriteLine("      retransmits - and every suppression doubles that wait, so after a few");
-    Console.WriteLine("      seconds of holding the peer is backed off to around a second, felt as");
-    Console.WriteLine("      a delay before anything changes in game. Replayed segments have their");
-    Console.WriteLine("      ack numbers brought forward and checksums recalculated, since one held");
-    Console.WriteLine("      for a minute acknowledges a position long since passed; measured, all");
-    Console.WriteLine("      three replayed segments in a 61s hold needed it.");
+    Console.WriteLine("      Withheld segments are buffered and replayed - on untick for a block,");
+    Console.WriteLine("      on schedule for --slow. --no-buffer destroys them instead, in which");
+    Console.WriteLine("      case the data only arrives when the peer next retransmits, and every");
+    Console.WriteLine("      suppression doubles that wait - so after a few seconds of holding the");
+    Console.WriteLine("      peer is backed off to around a second, felt as a delay before anything");
+    Console.WriteLine("      changes in game. It is refused with --slow, where dropping the queue");
+    Console.WriteLine("      would leave a block rather than a delay.");
+    Console.WriteLine("      Replayed segments have their ack numbers brought forward and checksums");
+    Console.WriteLine("      recalculated, since one held for a minute acknowledges a position long");
+    Console.WriteLine("      since passed; measured, all three replayed segments in a 61s hold");
+    Console.WriteLine("      needed it.");
     Console.WriteLine("");
     Console.WriteLine("      The hold is UNCAPPED by default and ends only when you untick or the");
     Console.WriteLine("      peer resets. The effect lasts as long as the hold does - the game is");
@@ -1003,6 +1006,15 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
             IntOption(args, "--quiet-resent-s",
                 (int)ApiBlockOptions.Api7500.QuietRetransmit.TotalSeconds)),
     };
+
+    // Without the queue there is nothing to release late, so this would quietly be a block rather
+    // than a delay - the opposite of what --slow was asked for.
+    if (slow && !options.Buffering)
+    {
+        throw new ArgumentException(
+            "--slow needs the buffer: a segment cannot be delivered late unless it is kept. "
+            + "Without it this blocks rather than delays. Drop --no-buffer.");
+    }
 
     // A ceiling below where a reset was measured, for anyone who would rather not find out.
     if (HasFlag(args, "--safe") && options.MaxHold <= TimeSpan.Zero)
