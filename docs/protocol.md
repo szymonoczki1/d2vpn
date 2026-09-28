@@ -2359,33 +2359,42 @@ Both tools slowing inbound 30k, time before the game resynchronises:
 So the mechanism works on both - a delay line does survive an active 30k hold where a block cannot
 (finding 51) - but the reference keeps the desync going about 17 s longer.
 
-### Two candidates
+### With the reference's autoresync off, the two match
 
-**The delay is not 6 seconds.** The figure comes from the reference's own tooltip, "delays inbound
-30k updates by 6 seconds while active". Tooltips have been wrong before here: 3074's slow is
-described the same way and measured as a rate cap rather than an offset (finding 41).
+**~33 s either way.** So the delay mechanism is the same on both tools, and the whole 17 s
+difference comes from autoresync.
 
-**It is a rate cap rather than a delay**, as 3074's is. HarryWatch's slow passes `addFromLatest` and
-schedules each packet after the previous one rather than after its own arrival, so the backlog grows
-and the effective delay climbs. Its 30k variant is not known to differ.
+That rules out the two explanations first recorded here - that the delay is not really 6 seconds, or
+that it is a rate cap like 3074's. Either would have shown up with autoresync off. Both were
+proposed before this comparison existed and neither survives it.
 
-Finding 7 weakly favours the second: it measured gaps of 3.91 s and 5.94 s during a 30k slow, where
-a fixed 6 s offset on a 3 s heartbeat should reproduce the input spacing of 3 s rather than produce
-two different larger gaps.
+### And it exposes a problem with this project's own keepalive pass
 
-### The test is cheap, because 30k is a metronome
+`Instance30kSlow` passes the 73-byte heartbeat, inherited from the block preset. Under a delay line
+that cannot help, and makes things worse:
 
-Inbound 30k is 73 bytes every 3.02 s (finding 50), so the outbound acknowledgement cadence reads the
-answer off directly:
+```
+WITH the pass                        WITHOUT it
+ t=0 heartbeat passed  -> delivered   t=0 heartbeat held -> delivered at 6
+ t=1 content   held    -> due at 7    t=1 content   held -> delivered at 7
+ t=3 heartbeat passed  -> stuck       t=3 heartbeat held -> delivered at 9
+ t=6 heartbeat passed  -> stuck
+ t=7 content released  -> all deliver
+ nothing between 0 and 7: a 7s gap    a smooth stream, uniformly 6s late
+```
 
-- **+73 every ~3 s** - output matches input, so it is a fixed offset and only the depth differs.
-- **+73 every ~6 s or slower** - output is capped below input, the backlog grows, and it is a
-  throttle.
+Passing a packet cannot move it ahead of a hole already in front of it. So under `--slow` the pass
+buys nothing and converts a smooth delay into a sawtooth of gaps up to `ReleaseAfter + 1`.
 
-Filter `tcp.dstport >= 30000 && tcp.dstport <= 30009`, as in findings 50 and 51.
+Whether that costs the 17 s is untested - `--slow --no-resync` would say - but it is the first
+concrete difference found between the two, and it is on this project's side.
 
-A cheaper first check: raise `--slow-s` here. If time-to-resync scales with it, the difference is
-depth; if it does not, the difference is mechanism.
+### If that is not it, the capture that would settle it
+
+Inbound 30k is 73 bytes every 3.02 s (finding 50), so the outbound acknowledgement cadence under the
+reference's slow reads directly: steady +73 every ~3 s is a smooth delay, bursts with gaps between
+are a sawtooth like the one above. Filter `tcp.dstport >= 30000 && tcp.dstport <= 30009`, taken with
+autoresync **on**, since that is the configuration that differs.
 
 ---
 
