@@ -2493,20 +2493,9 @@ The hold survived four minutes anyway. Under a delay line the connection stays f
 keeps delivering; the keepalive has nothing to add. That is consistent with the ordering argument
 and inconsistent with the keepalive being load-bearing either way.
 
-**The 73-byte figure has not generalised.** It was measured on one server during one idle period,
-and on two others the pass has matched 0-4 packets across runs lasting minutes. Two readings fit and
-they have not been separated:
-
-- **The size differs per server**, in which case 73 is wrong there and the right value has to be
-  found per connection.
-- **Or the heartbeat only appears when idle.** Those later runs were busy - 30 to 58 segments
-  withheld - and a keepalive may simply not be sent while there is real traffic to send. In that
-  case 73 may still be right and never had a chance to show.
-
-`watch 30k` settles it: it separates inbound from outbound and prints a payload-size histogram, so a
-minute of it on a quiet connection should show one size appearing about twenty times, once per three
-seconds. If that size is 73 the figure holds and the earlier runs were simply too busy; if it is
-something else, the pass list needs to be per server.
+**The 73-byte figure holds - see finding 57.** It looked wrong because the pass matched 0-4 packets
+across busy runs, but a heartbeat is not sent while there is real content to send. Measured idle on
+a third server, inbound is 73 bytes twenty times a minute and nothing else.
 
 ### What is not known
 
@@ -2612,6 +2601,39 @@ the durations are not a comparison.
 
 Recorded as the operator's preference rather than as a result. The default stays 6 s, which is the
 reference limiter's stated figure.
+
+## Finding 57 - an idle 30k connection is heartbeats and acknowledgements, nothing else
+
+`watch 30k --seconds 60`, standing still, sniff mode. A third server, different from the two the
+heartbeat was measured and then doubted on.
+
+```
+inbound (DL): 68 packets, 2 distinct sizes
+      0 bytes  x48        bare acknowledgements
+     73 bytes  x20        one every 3.0 s
+```
+
+**Twenty 73-byte segments in sixty seconds.** That is 3.0 s apart, against the 3.02 s measured in
+finding 50 on a different server. The figure holds, and inbound carries *nothing else* while idle -
+two distinct sizes, one of which is empty.
+
+### Which explains the runs where the pass never fired
+
+Those reported `alive 0` with 30 to 58 segments withheld, and it looked like 73 was wrong for those
+servers. It was the other reading: **a heartbeat is not sent while there is real content to send.**
+The server says "nothing to report" only when it has nothing to report.
+
+So zero keepalives during a busy hold is correct behaviour rather than a mismatched pass list.
+
+And it means the keepalive fires exactly when it is useful and never otherwise: its whole job is to
+stop an idle hold dying, and the heartbeat exists precisely when the hold is idle. The two
+conditions are the same condition.
+
+### Outbound is busier than inbound when idle
+
+67 outbound against 68 inbound, but eight distinct sizes against two - 52 bytes twenty-seven times,
+plus 90, 1360, 1027, 84, 123, 140. This machine keeps talking on 30k while the server only ticks.
+Not pursued, but worth knowing that "idle" is one-sided.
 
 ## Open on 30k
 

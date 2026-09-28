@@ -324,11 +324,12 @@ internal static class ApiRunCommand
             && toggleCount > 0
             && options.ReleaseAfter is null)
         {
-            Console.WriteLine("No keepalives passed, so the pass list does not match this server's");
-            Console.WriteLine("heartbeat. That only costs you while nothing is being withheld - it");
-            Console.WriteLine("is what lets a block sit armed for free until content arrives, and");
-            Console.WriteLine("without it an idle hold dies in about twenty seconds. Check what");
-            Console.WriteLine("size arrives every few seconds inbound and set --pass to it.");
+            Console.WriteLine("No keepalives passed. Usually that just means the connection was");
+            Console.WriteLine("never idle - a heartbeat is only sent when the server has nothing");
+            Console.WriteLine("else to send, so a busy hold sees none and needs none.");
+            Console.WriteLine("If an IDLE hold still passes none, the size is wrong for this");
+            Console.WriteLine("server: run 'watch 30k --seconds 60' standing still and set --pass");
+            Console.WriteLine("to whatever inbound size appears about twenty times.");
             Console.WriteLine();
         }
 
