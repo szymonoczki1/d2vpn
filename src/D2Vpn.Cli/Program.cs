@@ -146,8 +146,9 @@ static void PrintUsage()
     Console.WriteLine("      not because it is worth using.");
     Console.WriteLine();
     Console.WriteLine("  d2vpn run 7500|30k [--key NAME] [--log FILE] [--slow] [--slow-s N]");
-    Console.WriteLine("                 [--no-buffer] [--capture-slice] [--safe | --max-hold-s N]");
-    Console.WriteLine("                 [--quiet-hold-s N] [--capture-quiet-ms N] [--capture-bytes N]");
+    Console.WriteLine("                 [--rc | --rc-key NAME] [--no-buffer] [--capture-slice]");
+    Console.WriteLine("                 [--safe | --max-hold-s N] [--quiet-hold-s N]");
+    Console.WriteLine("                 [--capture-quiet-ms N] [--capture-bytes N] [--no-resync]");
     Console.WriteLine("      A different mechanism from the UDP groups, because these are TCP.");
     Console.WriteLine("      Dropping a TCP segment does not destroy it - the sender re-sends the");
     Console.WriteLine("      same data under the same sequence number - so a block that only drops");
@@ -218,6 +219,16 @@ static void PrintUsage()
     Console.WriteLine("      the peer has stopped retransmitting for --quiet-resent-s (24); that");
     Console.WriteLine("      happens about 25s in, and it stops the counters moving rather than");
     Console.WriteLine("      stopping the effect, so it is off unless you ask for it.");
+    Console.WriteLine("");
+    Console.WriteLine("      --rc adds a second keybind, f9 by default, that injects a reset into");
+    Console.WriteLine("      every live connection on this group - the same thing 'd2vpn rc' does,");
+    Console.WriteLine("      on the same handle. They stay independent: the hold is still on");
+    Console.WriteLine("      capslock and either can be used without the other. 30k and a");
+    Console.WriteLine("      reconnect go together, since resetting and then holding the new");
+    Console.WriteLine("      connection delays the world state coming back, and running them as");
+    Console.WriteLine("      two processes would mean two diverting handles on one filter.");
+    Console.WriteLine("      --rc-key sets the key, --idle-s (10) how long a silent connection");
+    Console.WriteLine("      still counts as resettable.");
     Console.WriteLine("");
     Console.WriteLine("      An inbound RST always disables the module. That is not a precaution,");
     Console.WriteLine("      it is the connection already being gone.");
@@ -1045,6 +1056,15 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
 
     var toggleKey = KeyName.Parse(StringOption(args, "--key") ?? "capslock");
 
+    // Optional second keybind on the same handle. 30k and a reconnect are used together - reset
+    // the connection, then hold the new one to delay the world state coming back - and running
+    // them as two processes would mean two diverting handles on the same filter, which is exactly
+    // what this tool warns against.
+    var wantsReconnect = HasFlag(args, "--rc") || StringOption(args, "--rc-key") is not null;
+    int? reconnectKey = wantsReconnect
+        ? KeyName.Parse(StringOption(args, "--rc-key") ?? "f9")
+        : null;
+
     // Inbound, so the same priority a 3074 downlink hold needs to see its traffic at all.
     var priority = PriorityOption(args, (short)-1000);
 
@@ -1064,6 +1084,8 @@ static async Task<int> RunApiAsync(string[] args, PortGroup group)
         group, options, toggleKey, priority,
         IntOption(args, "--poll-ms", 1),
         StringOption(args, "--log"),
+        reconnectKey,
+        IntOption(args, "--idle-s", 10),
         cts.Token).ConfigureAwait(false);
 }
 

@@ -37,6 +37,8 @@ internal static class ApiRunCommand
         short priority,
         int pollMs,
         string? logPath,
+        int? reconnectKey,
+        int reconnectIdleSeconds,
         CancellationToken cancellationToken)
     {
         var module = new ApiBlockModule(group.Name, group, options);
@@ -72,8 +74,15 @@ internal static class ApiRunCommand
         // has long since passed, and delivering that as-is is a duplicate acknowledgement.
         var rewriter = options.Buffering ? new TcpAckRewriter() : null;
 
+        // Both act on the same port group, so one handle serves both. The sampler observes
+        // every packet before the module rules on it, so resets can still be built from a
+        // connection whose traffic is currently being withheld.
+        using var sampler = reconnectKey is null
+            ? null
+            : new ConnectionSampler(TimeSpan.FromSeconds(reconnectIdleSeconds));
+
         using var controller =
-            new WinDivertTrafficController(module, priority, buffer, rewriter);
+            new WinDivertTrafficController(module, priority, buffer, rewriter, sampler);
         using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(pollMs));
 
         var toggleCount = 0;
@@ -120,11 +129,38 @@ internal static class ApiRunCommand
                 + $"  ({toggleCount} toggle{(toggleCount == 1 ? string.Empty : "s")})");
         });
 
+        if (reconnectKey is { } rcKey)
+        {
+            controller.ResetsSent += (connections, packets) =>
+            {
+                session?.Write("reset", $"connections={connections} packets={packets}");
+
+                Console.WriteLine(connections == 0
+                    ? $"\n[{DateTime.UtcNow:HH:mm:ss}] nothing to reset - no live connection had a "
+                      + "sample in both directions yet"
+                    : $"\n[{DateTime.UtcNow:HH:mm:ss}] reset {connections} connection"
+                      + $"{(connections == 1 ? string.Empty : "s")} with {packets} packets");
+            };
+
+            hotkeys.Bind(rcKey, () =>
+            {
+                session?.Write("reconnect-requested");
+                controller.RequestReset();
+            });
+        }
+
         hotkeys.Start();
 
         var keyLabel = KeyName.Describe(toggleKey);
         Console.WriteLine($"running {group} inbound");
         Console.WriteLine($"  toggle       : {keyLabel}  (polled every {pollMs} ms)");
+
+        if (reconnectKey is { } shown)
+        {
+            Console.WriteLine($"  reconnect    : {KeyName.Describe(shown)}  - injects a reset into "
+                + "every live connection");
+            Console.WriteLine($"                 independent of the hold; either can be used alone");
+        }
         Console.WriteLine($"  keepalive    : "
             + (options.PassLengths.Count > 0
                 ? $"{string.Join(", ", options.PassLengths.Order())} bytes pass, so the hold can "
@@ -198,6 +234,10 @@ internal static class ApiRunCommand
                 + $"withheld {module.SegmentsWithheld}  "
                 + $"resent {module.RetransmitsSuppressed}  "
                 + $"alive {module.KeepalivesPassed}  "
+                + (sampler is null
+                    ? string.Empty
+                    : $"live {sampler.LiveConnections(DateTimeOffset.UtcNow).Count}  "
+                      + $"reset {controller.ResetsInjected}  ")
                 + $"{(module.IsActive ? "HOLDING " : "idle    ")}   ");
         }
 
@@ -218,6 +258,11 @@ internal static class ApiRunCommand
         Console.WriteLine($"segments withheld       : {module.SegmentsWithheld}");
         Console.WriteLine($"retransmits suppressed  : {module.RetransmitsSuppressed}");
         Console.WriteLine($"keepalives passed       : {module.KeepalivesPassed}");
+
+        if (sampler is not null)
+        {
+            Console.WriteLine($"resets injected         : {controller.ResetsInjected}");
+        }
         Console.WriteLine($"capture limit reached   : {module.CapacityReached}");
         Console.WriteLine($"peer resets             : {module.ResetsSeen}");
         Console.WriteLine($"longest hold            : {longestHold.TotalSeconds:F1}s");
