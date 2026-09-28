@@ -2424,6 +2424,53 @@ autoresync **on**, since that is the configuration that differs.
 
 ---
 
+## Open on 30k
+
+Not finished. The module works but has not been shown to match the reference, and the differences
+below are the reason.
+
+### Known differences from the reference
+
+| | d2vpn | Reference |
+|---|---|---|
+| Block, active | ~18 s | ~18 s - **matches** |
+| Slow, no keepalive | 55-62 s | ~33 s with its autoresync off - **matches** |
+| Slow, keepalive/autoresync on | ~33 s | ~50 s - **does not match** |
+
+The first two lining up is what makes the third worth chasing: the delay line and the block are the
+same on both, so whatever its autoresync does under slow is a real mechanism this project does not
+have.
+
+### Questions to settle, in the order they are worth answering
+
+1. **What does the reference's autoresync do under slow?** Finding 50 established it passes the
+   73-byte heartbeat under a *block*. Finding 52 showed a pass cannot help under a *delay line*, and
+   dropping ours made the hold longer - so under slow it must be doing something else, or the
+   heartbeat pass helps there for a reason not yet understood.
+   Capture: `tcp.dstport >= 30000 && tcp.dstport <= 30009`, autoresync **on**, slow **on**. Because
+   inbound is a metronome at 73 bytes every 3.02 s, the acknowledgement cadence reads directly -
+   steady means a smooth delay, bursts with gaps mean a sawtooth.
+
+2. **Where do the duplicate acknowledgement floods come from?** Dozens inside 30 ms, repeatedly,
+   during `--slow`. Candidate: the module forgets a withheld segment at `2 x ReleaseAfter`, so a
+   retransmission arriving later is treated as new, withheld again and delivered twice. If so, keep
+   an entry until its delivery is acknowledged rather than for a fixed multiple of the delay.
+
+3. **Does the reference's block also die at ~18 s when content is actually flowing?** Its
+   three-minute hold was taken while 30k was idle, so nothing was being withheld. If it dies too,
+   ~18 s is simply what a 30k block is and nothing is missing here.
+
+4. **Is `--slow` at 6 s the right depth?** The figure is the reference's tooltip, corroborated by
+   finding 7's gaps but never measured directly here. `--slow-s` sweeps it cheaply.
+
+### What is settled
+
+The block, the delay line, retransmission suppression, buffering with acknowledgement rewriting, the
+reconnect on the same handle, and the ~18 s ceiling. None of those are in question - only whether
+the hold can be made to last as long as the reference's.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out
