@@ -45,7 +45,19 @@ public sealed class HoldModule : ITrafficModule
     public string Name { get; }
 
     /// <summary>The settings this module runs with.</summary>
-    public HoldModuleOptions Options { get; }
+    /// <remarks>
+    /// Settable so autoresync and buffering can be toggled while a session runs. The record itself
+    /// stays immutable - a change swaps the whole thing, and <see cref="Decide"/> reads the field
+    /// per packet, so a swap takes effect on the next one. Volatile because the write comes from a
+    /// control connection and the read from the receive loop.
+    /// </remarks>
+    public HoldModuleOptions Options
+    {
+        get => _options;
+        set => _options = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    private volatile HoldModuleOptions _options = null!;
 
     /// <summary>
     /// Raised when the module disables itself because <see cref="HoldModuleOptions.SafetyTimeout"/>

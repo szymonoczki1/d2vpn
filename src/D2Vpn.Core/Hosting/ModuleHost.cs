@@ -36,7 +36,8 @@
 /// </remarks>
 public sealed class ModuleHost : IDisposable
 {
-    private readonly Dictionary<string, IModuleRunner> _runners;
+    private readonly IReadOnlyList<IModuleRunner> _runners;
+    private readonly Dictionary<string, IControllable> _controls;
     private readonly Lock _gate = new();
     private bool _disposed;
 
@@ -46,19 +47,20 @@ public sealed class ModuleHost : IDisposable
     /// </exception>
     public ModuleHost(IEnumerable<IModuleRunner> runners)
     {
-        _runners = [];
+        _runners = [.. runners];
+        _controls = [];
 
-        foreach (var runner in runners)
+        foreach (var control in _runners.SelectMany(r => r.Controls))
         {
-            if (!_runners.TryAdd(runner.Name, runner))
+            if (!_controls.TryAdd(control.Name, control))
             {
                 throw new ArgumentException(
-                    $"two modules are both called '{runner.Name}' - names are how the control "
+                    $"two modules are both called '{control.Name}' - names are how the control "
                     + "surface addresses them, so they have to be unique");
             }
         }
 
-        if (_runners.Count == 0)
+        if (_controls.Count == 0)
         {
             throw new ArgumentException("a host needs at least one module");
         }
@@ -66,7 +68,7 @@ public sealed class ModuleHost : IDisposable
         // Overlapping handles are the failure that has no symptom. See IModuleRunner.HandleKey:
         // a WinDivert filter is keyed on the port group alone, so two modules on one group match
         // the same packets and the lower-priority one only ever sees what the other reinjected.
-        var claims = _runners.Values
+        var claims = _runners
             .Where(r => r.HandleKey is not null)
             .GroupBy(r => r.HandleKey!)
             .FirstOrDefault(g => g.Count() > 1);
@@ -84,7 +86,7 @@ public sealed class ModuleHost : IDisposable
     }
 
     /// <summary>The module names, in the order they were given.</summary>
-    public IReadOnlyList<string> Names => [.. _runners.Keys];
+    public IReadOnlyList<string> Names => [.. _controls.Keys];
 
     /// <summary>How many modules are holding.</summary>
     public int ActiveCount
@@ -93,7 +95,7 @@ public sealed class ModuleHost : IDisposable
         {
             lock (_gate)
             {
-                return _runners.Values.Count(r => r.IsActive);
+                return _controls.Values.Count(c => c.IsActive);
             }
         }
     }
@@ -106,19 +108,19 @@ public sealed class ModuleHost : IDisposable
     public event Action<string, bool>? StateChanged;
 
     /// <summary>True if a module of this name is hosted.</summary>
-    public bool Has(string name) => _runners.ContainsKey(name);
+    public bool Has(string name) => _controls.ContainsKey(name);
 
     /// <summary>Flips one module, returning its new state.</summary>
     /// <exception cref="KeyNotFoundException">No such module.</exception>
     public bool Toggle(string name)
     {
-        var runner = Find(name);
+        var control = Find(name);
         bool now;
 
         lock (_gate)
         {
-            now = !runner.IsActive;
-            runner.IsActive = now;
+            now = !control.IsActive;
+            control.IsActive = now;
         }
 
         StateChanged?.Invoke(name, now);
@@ -129,16 +131,16 @@ public sealed class ModuleHost : IDisposable
     /// <exception cref="KeyNotFoundException">No such module.</exception>
     public bool Set(string name, bool active)
     {
-        var runner = Find(name);
+        var control = Find(name);
 
         lock (_gate)
         {
-            if (runner.IsActive == active)
+            if (control.IsActive == active)
             {
                 return false;
             }
 
-            runner.IsActive = active;
+            control.IsActive = active;
         }
 
         StateChanged?.Invoke(name, active);
@@ -158,10 +160,10 @@ public sealed class ModuleHost : IDisposable
 
         lock (_gate)
         {
-            foreach (var runner in _runners.Values.Where(r => r.IsActive))
+            foreach (var control in _controls.Values.Where(c => c.IsActive))
             {
-                runner.IsActive = false;
-                released.Add(runner.Name);
+                control.IsActive = false;
+                released.Add(control.Name);
             }
         }
 
@@ -178,23 +180,29 @@ public sealed class ModuleHost : IDisposable
     /// <exception cref="InvalidOperationException">That module cannot reset.</exception>
     public void RequestReset(string name)
     {
-        var runner = Find(name);
+        var control = Find(name);
 
-        if (!runner.SupportsReset)
+        if (!control.SupportsReset)
         {
             throw new InvalidOperationException(
                 $"'{name}' is a hold, not a reconnect - it has nothing to reset");
         }
 
-        runner.RequestReset();
+        control.RequestReset();
     }
+
+    /// <summary>
+    /// The runtime switches for one module, or null if it has none.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No such module.</exception>
+    public IModuleOptions? OptionsFor(string name) => Find(name).Options;
 
     /// <summary>A reading of every module, in name order.</summary>
     public IReadOnlyList<ModuleStatus> Snapshot()
     {
         lock (_gate)
         {
-            return [.. _runners.Values.Select(r => r.Status)];
+            return [.. _controls.Values.Select(c => c.Status)];
         }
     }
 
@@ -215,7 +223,7 @@ public sealed class ModuleHost : IDisposable
         // every module to finish, which means a dead handle leaves the host sitting on the healthy
         // ones while the status line still claims a working session.
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var tasks = _runners.Values.Select(r => r.RunAsync(linked.Token)).ToArray();
+        var tasks = _runners.Select(r => r.RunAsync(linked.Token)).ToArray();
 
         try
         {
@@ -262,11 +270,11 @@ public sealed class ModuleHost : IDisposable
         }
     }
 
-    private IModuleRunner Find(string name) =>
-        _runners.TryGetValue(name, out var runner)
-            ? runner
+    private IControllable Find(string name) =>
+        _controls.TryGetValue(name, out var control)
+            ? control
             : throw new KeyNotFoundException(
-                $"no module called '{name}'. Hosted: {string.Join(", ", _runners.Keys)}");
+                $"no module called '{name}'. Hosted: {string.Join(", ", _controls.Keys)}");
 
     /// <inheritdoc/>
     public void Dispose()
@@ -283,7 +291,7 @@ public sealed class ModuleHost : IDisposable
         // snapshot on the way out.
         ReleaseAll();
 
-        foreach (var runner in _runners.Values)
+        foreach (var runner in _runners)
         {
             runner.Dispose();
         }

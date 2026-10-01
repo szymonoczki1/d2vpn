@@ -1,7 +1,8 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Diagnostics;
 using D2Vpn.Core.Hosting;
+using D2Vpn.Core.Processes;
 
 namespace D2Vpn.Cli;
 
@@ -26,17 +27,22 @@ internal static class HostCommand
         IReadOnlyList<ModuleSpec> specs,
         string pipeName,
         string? logPath,
+        string? pauseProcess,
+        TimeSpan? pauseTimeout,
         CancellationToken cancellationToken)
     {
-        List<WinDivertModuleRunner> runners = [];
+        List<IModuleRunner> runners = [];
 
-        // Built one at a time so a failure names the module that could not open, and so the ones
-        // already open are disposed rather than leaked.
         try
         {
-            foreach (var spec in specs)
+            // One handle per port group, with every module on that group as a slot behind it.
+            runners.AddRange(ModuleRunnerFactory.CreateAll(specs));
+
+            if (pauseProcess is not null)
             {
-                runners.Add(ModuleRunnerFactory.Create(spec));
+                var process = NtProcessControl.Open(pauseProcess);
+                runners.Add(new GamePauseRunner(
+                    new GamePauseSession(process, pauseTimeout), "pause"));
             }
         }
         catch (Exception ex)
@@ -69,11 +75,15 @@ internal static class HostCommand
         Console.WriteLine("DIVERT MODE - packets really are dropped while a module is holding.");
         Console.WriteLine("Any other limiter must be fully EXITED, not just idle.");
         Console.WriteLine();
-        Console.WriteLine($"hosting {runners.Count} module{(runners.Count == 1 ? "" : "s")}");
+        var toggles = host.Names.Count;
+        Console.WriteLine(
+            $"hosting {toggles} toggle{(toggles == 1 ? "" : "s")} "
+            + $"across {runners.Count} handle{(runners.Count == 1 ? "" : "s")}");
 
         foreach (var runner in runners)
         {
-            Console.WriteLine($"  {runner.Name,-14} {runner.FilterExpression}");
+            var names = string.Join(" ", runner.Controls.Select(c => c.Name));
+            Console.WriteLine($"  {names,-34} {runner.HandleKey ?? "no packet handle"}");
         }
 
         Console.WriteLine();
@@ -94,6 +104,7 @@ internal static class HostCommand
         Console.WriteLine("  $w.WriteLine('status'); $r.ReadLine()");
         Console.WriteLine();
         Console.WriteLine("Commands: ping list status stat <m> toggle <m> on <m> off <m>");
+        Console.WriteLine("          opts <m> set <m> resync|buffer on|off");
         Console.WriteLine("          release reset <m> quit");
         Console.WriteLine();
         Console.WriteLine("Ctrl+C releases every module and closes every handle.");

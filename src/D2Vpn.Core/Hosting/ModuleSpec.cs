@@ -122,46 +122,35 @@ public readonly record struct ModuleSpec(
     }
 
     /// <summary>
-    /// Throws if two specs want the same packet handle.
+    /// Throws if the same module is named twice.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The same rule <see cref="ModuleHost"/> enforces, checked a step earlier. The host can only
-    /// see it once every runner has opened a handle, which needs administrator rights - so
-    /// without this, naming two modules on one group costs an elevation prompt before reporting a
-    /// mistake that was visible from the command line.
+    /// Several modules on one port group are fine and expected - they share a handle, as slots
+    /// behind it, which is what lets uplink, downlink and their slow variants be separate toggles.
+    /// What is not fine is the same name twice, because a name is how the control surface addresses
+    /// a module.
     /// </para>
     /// <para>
-    /// A port group is the unit, because a WinDivert filter is built from nothing else. Direction
-    /// and slow do not appear in it.
+    /// This used to reject any two specs on one group, which was right when each one opened its own
+    /// handle and wrong as soon as they shared.
     /// </para>
     /// </remarks>
-    /// <exception cref="ArgumentException">Two specs share a port group.</exception>
+    /// <exception cref="ArgumentException">A module is named more than once.</exception>
     public static void EnsureNoConflicts(IReadOnlyList<ModuleSpec> specs)
     {
         ArgumentNullException.ThrowIfNull(specs);
 
-        var clash = specs
-            .GroupBy(s => s.Group.Name)
+        var duplicate = specs
+            .GroupBy(s => s.Name)
             .FirstOrDefault(g => g.Count() > 1);
 
-        if (clash is null)
+        if (duplicate is not null)
         {
-            return;
+            throw new ArgumentException(
+                $"'{duplicate.Key}' is named more than once, and a name is how the control surface "
+                + "addresses a module");
         }
-
-        var names = clash.Select(s => s.Name).ToArray();
-
-        // Only a UDP group has a combined form; a TCP hold is inbound-only and has no direction,
-        // so suggesting one would send the operator after a module that does not exist.
-        var alternative = clash.First().Group.Protocol == PortProtocol.Udp
-            ? $" For both directions at once use '{clash.Key}-full'."
-            : string.Empty;
-
-        throw new ArgumentException(
-            $"{string.Join(" and ", names)} both act on {clash.Key}, and modules on one port "
-            + "group need the same packet handle - the second would only see what the first let "
-            + $"through. Host one of them per session.{alternative}");
     }
 
     private static string Canonical(PortGroup group, HoldDirection? direction, bool slow)

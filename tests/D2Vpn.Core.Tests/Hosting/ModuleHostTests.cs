@@ -207,7 +207,7 @@ public class ModuleHostTests
         string? handleKey = null) =>
         new(name, supportsReset, fails) { HandleKey = handleKey };
 
-    private sealed class FakeRunner(string name, bool supportsReset, bool fails) : IModuleRunner
+    private sealed class FakeRunner(string name, bool supportsReset, bool fails) : IModuleRunner, IControllable
     {
         public string Name => name;
 
@@ -216,6 +216,10 @@ public class ModuleHostTests
         public bool SupportsReset => supportsReset;
 
         public string? HandleKey { get; init; }
+
+        public IReadOnlyList<IControllable> Controls => [this];
+
+        public IModuleOptions? Options { get; init; }
 
         public int Resets { get; private set; }
 

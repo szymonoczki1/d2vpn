@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Network;
 
@@ -55,7 +55,17 @@ public sealed class ApiBlockModule : ITrafficModule
     public string Name { get; }
 
     /// <summary>How the module behaves.</summary>
-    public ApiBlockOptions Options { get; }
+    /// <remarks>
+    /// Settable so the keepalive and buffering can be toggled while a session runs. See
+    /// <see cref="HoldModule.Options"/> for why a swap is safe.
+    /// </remarks>
+    public ApiBlockOptions Options
+    {
+        get => _options;
+        set => _options = value ?? throw new ArgumentNullException(nameof(value));
+    }
+
+    private volatile ApiBlockOptions _options = null!;
 
     /// <summary>Segments withheld since the module was created.</summary>
     public long SegmentsWithheld { get; private set; }

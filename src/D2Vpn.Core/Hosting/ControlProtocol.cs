@@ -31,6 +31,9 @@ public readonly record struct ControlResult(string Response, bool Shutdown);
 ///   on &lt;name&gt;       -> ok &lt;name&gt;=1
 ///   off &lt;name&gt;      -> ok &lt;name&gt;=0
 ///   release              -> ok released=2
+///   opts &lt;name&gt;     -> ok 3074-ul resync=on buffer=on
+///   set &lt;name&gt; resync off  -> ok 3074-ul resync=off buffer=on
+///   set &lt;name&gt; buffer on   -> ok 3074-ul resync=off buffer=on
 ///   reset &lt;name&gt;    -> ok reset=&lt;name&gt;
 ///   quit                 -> ok bye
 /// </code>
@@ -76,6 +79,8 @@ public static class ControlProtocol
                 "on" => WithName(argument, name => SetTo(host, name, true)),
                 "off" => WithName(argument, name => SetTo(host, name, false)),
                 "release" => Ok($"released={host.ReleaseAll()}"),
+                "opts" => WithName(argument, name => Ok(Opts(host, name))),
+                "set" => Set(host, parts),
                 "reset" => WithName(argument, name => Reset(host, name)),
                 "quit" or "exit" => new ControlResult("ok bye", true),
                 _ => new ControlResult($"err unknown command '{parts[0]}'", false)
@@ -105,6 +110,63 @@ public static class ControlProtocol
         // The state, not whether this call changed it. A macro that sends "on" twice wants to know
         // the module is holding, not that it was already holding.
         return Ok($"{resolved}={Flag(active)}");
+    }
+
+    /// <summary>
+    /// <c>set &lt;name&gt; resync|buffer on|off</c>, the switches that change while running.
+    /// </summary>
+    private static ControlResult Set(ModuleHost host, string[] parts)
+    {
+        if (parts.Length < 4)
+        {
+            return new ControlResult(
+                "err set needs a module, a switch and a state: set 3074-ul resync off", false);
+        }
+
+        var resolved = Resolve(host, parts[1]);
+        var options = host.OptionsFor(resolved)
+            ?? throw new InvalidOperationException(
+                $"'{resolved}' has nothing to set");
+
+        var state = parts[3].ToLowerInvariant() switch
+        {
+            "on" or "1" or "true" => true,
+            "off" or "0" or "false" => false,
+            _ => throw new InvalidOperationException(
+                $"'{parts[3]}' is not a state - use on or off")
+        };
+
+        switch (parts[2].ToLowerInvariant())
+        {
+            case "resync" or "autoresync" or "keepalive":
+                if (!options.SupportsResync)
+                {
+                    throw new InvalidOperationException(
+                        $"'{resolved}' has no resync or keepalive to switch");
+                }
+
+                options.ResyncEnabled = state;
+                break;
+
+            case "buffer" or "buffering":
+                options.BufferEnabled = state;
+                break;
+
+            default:
+                throw new InvalidOperationException(
+                    $"'{parts[2]}' is not a switch - use resync or buffer");
+        }
+
+        return Ok($"{resolved} {options.ToLine()}");
+    }
+
+    private static string Opts(ModuleHost host, string name)
+    {
+        var resolved = Resolve(host, name);
+
+        return host.OptionsFor(resolved) is { } options
+            ? $"{resolved} {options.ToLine()}"
+            : $"{resolved} resync=n/a buffer=n/a";
     }
 
     private static ControlResult Reset(ModuleHost host, string name)

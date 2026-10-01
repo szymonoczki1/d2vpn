@@ -198,7 +198,7 @@ public class ControlProtocolTests
     private static ModuleHost Host(params string[] names) =>
         new([.. names.Select(n => new FakeRunner(n))]);
 
-    private sealed class FakeRunner(string name, bool supportsReset = false) : IModuleRunner
+    private sealed class FakeRunner(string name, bool supportsReset = false) : IModuleRunner, IControllable
     {
         public string Name => name;
 
@@ -207,6 +207,10 @@ public class ControlProtocolTests
         public bool SupportsReset => supportsReset;
 
         public string? HandleKey { get; init; }
+
+        public IReadOnlyList<IControllable> Controls => [this];
+
+        public IModuleOptions? Options { get; init; }
 
         public ModuleStatus Status => new(name, IsActive, 10, 4, 3, 2, 0);
 

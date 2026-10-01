@@ -270,7 +270,7 @@ static void PrintUsage()
     Console.WriteLine("      something. --idle-s (10) is how long a silent connection still");
     Console.WriteLine("      counts as live. Trigger defaults to f9.");
     Console.WriteLine("");
-    Console.WriteLine("  d2vpn host <module> [<module> ...] [--pipe NAME] [--log FILE]");
+    Console.WriteLine("  d2vpn host <module> ... [--pause] [--pipe NAME] [--log FILE]");
     Console.WriteLine("      Runs several modules at once, controlled over a named pipe instead");
     Console.WriteLine("      of by hotkeys. This is what the AutoHotkey manager and the UI are");
     Console.WriteLine("      built on: a macro toggles a module directly rather than faking a");
@@ -281,19 +281,33 @@ static void PrintUsage()
     Console.WriteLine("        27k-ul   27k-dl   27k-full    (+ -slow)");
     Console.WriteLine("        30k      30k-slow  7500       (TCP, no direction)");
     Console.WriteLine("");
+    Console.WriteLine("      Several modules on one group are fine - they share that group's");
+    Console.WriteLine("      packet handle as slots behind it, each with its own buffer and its");
+    Console.WriteLine("      own release, so all nine below can be hosted and toggled at once.");
+    Console.WriteLine("");
     Console.WriteLine("      One line in, one line out, replies starting ok or err:");
     Console.WriteLine("        ping list status stat <m> toggle <m> on <m> off <m>");
+    Console.WriteLine("        opts <m> set <m> resync|buffer on|off");
     Console.WriteLine("        release reset <m> quit");
+    Console.WriteLine("");
+    Console.WriteLine("      'set' changes a switch while running. resync is the resync window");
+    Console.WriteLine("      on 3074/27k and the keepalive on 30k; buffer is whether withheld");
+    Console.WriteLine("      packets are kept or destroyed. A slow module refuses to give up its");
+    Console.WriteLine("      buffer, since a packet cannot arrive late unless it was kept.");
+    Console.WriteLine("      'opts' reads them back; n/a means the module has no such switch.");
     Console.WriteLine("");
     Console.WriteLine("      'reset' is the reconnect: TCP modules carry a sampler on the same");
     Console.WriteLine("      handle, so it is a capability of 30k and 7500 rather than a module");
-    Console.WriteLine("      of its own. A second handle on an overlapping filter would never");
-    Console.WriteLine("      see a packet the hold had already withheld.");
+    Console.WriteLine("      of its own. A sampler has to see packets the hold withheld.");
+    Console.WriteLine("");
+    Console.WriteLine("      --pause hosts GamePause as a toggle too, suspending destiny2. It");
+    Console.WriteLine("      opens no packet handle. --pause-timeout-s (30) is its safety limit,");
+    Console.WriteLine("      0 for none; 'release' unfreezes it along with everything else.");
     Console.WriteLine("");
     Console.WriteLine("      The pipe is created by an elevated process, so a client must be");
     Console.WriteLine("      elevated too - a normally-started AHK script cannot open it.");
     Console.WriteLine("");
-    Console.WriteLine("      Per-module flags that 'run' exposes (buffer size, resync cooldown,");
+    Console.WriteLine("      Numeric flags that 'run' exposes (buffer size, resync cooldown,");
     Console.WriteLine("      slow depth) are not reachable through a name. Use 'run' for those.");
     Console.WriteLine("");
     Console.WriteLine("  d2vpn pause [--process NAME] [--key NAME] [--timeout-s N] [--log FILE]");
@@ -1304,8 +1318,13 @@ static async Task<int> HostAsync(string[] args)
     {
         if (args[i].StartsWith("--", StringComparison.Ordinal))
         {
-            // --pipe and --log take a value; skip it so it is not read as a module.
-            i++;
+            // Most flags here take a value, which must not be read as a module name. --pause is
+            // the exception: it is a bare switch.
+            if (!args[i].Equals("--pause", StringComparison.OrdinalIgnoreCase))
+            {
+                i++;
+            }
+
             continue;
         }
 
@@ -1329,10 +1348,17 @@ static async Task<int> HostAsync(string[] args)
     using var cts = new CancellationTokenSource();
     using var sigint = SetupInterrupt(cts);
 
+    // Game pause is hosted when asked for, as a toggle beside the traffic modules. It opens no
+    // packet handle, so it never collides with one.
+    var wantsPause = HasFlag(args, "--pause");
+    var pauseTimeoutSeconds = IntOption(args, "--pause-timeout-s", 30, allowZero: true);
+
     return await HostCommand.ExecuteAsync(
         specs,
         StringOption(args, "--pipe") ?? "d2vpn",
         StringOption(args, "--log"),
+        wantsPause ? StringOption(args, "--process") ?? "destiny2" : null,
+        pauseTimeoutSeconds > 0 ? TimeSpan.FromSeconds(pauseTimeoutSeconds) : null,
         cts.Token);
 }
 

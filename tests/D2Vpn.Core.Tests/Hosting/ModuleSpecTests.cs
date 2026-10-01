@@ -110,26 +110,64 @@ public class ModuleSpecTests
     }
 
     [Fact]
-    public void Two_modules_on_one_group_conflict()
+    public void Several_modules_on_one_group_are_allowed()
     {
-        var specs = new[] { ModuleSpec.Parse("3074-ul"), ModuleSpec.Parse("3074-dl") };
+        // They share a handle as slots behind it, which is what lets uplink, downlink and their
+        // slow variants be separate toggles. An earlier version rejected this, correctly for when
+        // each module opened its own handle and wrongly as soon as they shared one.
+        var specs = new[]
+        {
+            ModuleSpec.Parse("3074-ul"),
+            ModuleSpec.Parse("3074-dl"),
+            ModuleSpec.Parse("3074-ul-slow"),
+            ModuleSpec.Parse("3074-dl-slow")
+        };
+
+        ModuleSpec.EnsureNoConflicts(specs);
+
+        Assert.Equal(4, specs.Select(s => s.Name).Distinct().Count());
+    }
+
+    [Fact]
+    public void The_block_and_its_slow_variant_can_coexist()
+    {
+        var specs = new[] { ModuleSpec.Parse("30k"), ModuleSpec.Parse("30k-slow") };
+
+        ModuleSpec.EnsureNoConflicts(specs);
+    }
+
+    [Fact]
+    public void The_same_module_named_twice_is_rejected()
+    {
+        // A name is how the control surface addresses a module, so two of one name is ambiguous.
+        var specs = new[] { ModuleSpec.Parse("3074-ul"), ModuleSpec.Parse("3074") };
 
         var ex = Assert.Throws<ArgumentException>(() => ModuleSpec.EnsureNoConflicts(specs));
 
         Assert.Contains("3074-ul", ex.Message);
-        Assert.Contains("3074-full", ex.Message);
     }
 
     [Fact]
-    public void A_tcp_conflict_does_not_suggest_a_full_variant()
+    public void The_eleven_toggles_the_project_needs_all_parse()
     {
-        // 30k is inbound-only and has no combined form, so pointing at one would send the operator
-        // after a module that does not exist.
-        var specs = new[] { ModuleSpec.Parse("30k"), ModuleSpec.Parse("30k-slow") };
+        // The full set asked for, as one assertion that the naming covers it.
+        string[] wanted =
+        [
+            "3074-ul", "3074-dl", "3074-ul-slow", "3074-dl-slow",
+            "7500",
+            "27k-ul", "27k-dl",
+            "30k", "30k-slow"
+        ];
 
-        var ex = Assert.Throws<ArgumentException>(() => ModuleSpec.EnsureNoConflicts(specs));
+        var specs = wanted.Select(ModuleSpec.Parse).ToArray();
 
-        Assert.DoesNotContain("-full", ex.Message);
+        ModuleSpec.EnsureNoConflicts(specs);
+        Assert.Equal(wanted, specs.Select(s => s.Name));
+
+        // Reconnect and pause are the remaining two, and neither is a spec: reset is a capability
+        // of the TCP modules and pause is hosted with --pause.
+        Assert.Throws<ArgumentException>(() => ModuleSpec.Parse("rc"));
+        Assert.Throws<ArgumentException>(() => ModuleSpec.Parse("pause"));
     }
 
     [Fact]

@@ -164,7 +164,7 @@ public class NamedPipeControlServerTests
         }
     }
 
-    private sealed class FakeRunner(string name) : IModuleRunner
+    private sealed class FakeRunner(string name) : IModuleRunner, IControllable
     {
         public string Name => name;
 
@@ -173,6 +173,10 @@ public class NamedPipeControlServerTests
         public bool SupportsReset => false;
 
         public string? HandleKey { get; init; }
+
+        public IReadOnlyList<IControllable> Controls => [this];
+
+        public IModuleOptions? Options { get; init; }
 
         public ModuleStatus Status => new(name, IsActive, 0, 0, 0, 0, 0);
 

@@ -18,19 +18,22 @@
 public interface IModuleRunner : IDisposable
 {
     /// <summary>
-    /// The name the control surface addresses this by, such as <c>27k-ul</c>.
+    /// A label for this runner, used in errors and on the status line.
     /// </summary>
     /// <remarks>
-    /// Unique within a host, and stable: an AHK script or a UI binds to this string, so it is part
-    /// of the contract rather than a label.
+    /// Not the control-surface address. A runner sharing one handle between four modules has four
+    /// addresses, which are the names on its <see cref="Controls"/>.
     /// </remarks>
     string Name { get; }
 
-    /// <summary>Whether the module is holding.</summary>
-    bool IsActive { get; set; }
-
-    /// <summary>True if this runner can inject resets, as the reconnect module does.</summary>
-    bool SupportsReset { get; }
+    /// <summary>
+    /// What this runner exposes to the control surface, in declared order.
+    /// </summary>
+    /// <remarks>
+    /// One entry for a runner holding a single module, several for one sharing a handle between
+    /// modules on the same port group. Names must be unique across the whole host.
+    /// </remarks>
+    IReadOnlyList<IControllable> Controls { get; }
 
     /// <summary>
     /// What this runner's packet handle claims, or <see langword="null"/> if it opens none.
@@ -53,10 +56,4 @@ public interface IModuleRunner : IDisposable
 
     /// <summary>Runs until cancelled. Normal traffic is restored on the way out.</summary>
     Task RunAsync(CancellationToken cancellationToken);
-
-    /// <summary>Asks for a reset on the next pass, if this runner supports one.</summary>
-    void RequestReset();
-
-    /// <summary>A point-in-time reading, for the control surface and the status line.</summary>
-    ModuleStatus Status { get; }
 }
