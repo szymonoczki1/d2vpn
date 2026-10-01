@@ -35,6 +35,7 @@ try
         "pause" => await PauseAsync(args),
         "host" => await HostAsync(args),
         "config" => ConfigCommand(args),
+        "ctl" => await ControlAsync(args),
         _ => Unknown(args[0])
     };
 }
@@ -270,6 +271,21 @@ static void PrintUsage()
     Console.WriteLine("      first. The live count on the status line says when a press will do");
     Console.WriteLine("      something. --idle-s (10) is how long a silent connection still");
     Console.WriteLine("      counts as live. Trigger defaults to f9.");
+    Console.WriteLine("");
+    Console.WriteLine("  d2vpn ctl <command ...> [--pipe NAME]");
+    Console.WriteLine("      Sends one command to a running host and prints the reply. The same");
+    Console.WriteLine("      exchange the host shows a PowerShell snippet for, as one command:");
+    Console.WriteLine("");
+    Console.WriteLine("        d2vpn ctl status");
+    Console.WriteLine("        d2vpn ctl on 3074-ul");
+    Console.WriteLine("        d2vpn ctl set 3074-ul resync off");
+    Console.WriteLine("        d2vpn ctl opts 30k");
+    Console.WriteLine("        d2vpn ctl release");
+    Console.WriteLine("");
+    Console.WriteLine("      Exit code is 0 for ok and 1 for err, so a script can branch on it");
+    Console.WriteLine("      without parsing the reply. Must run elevated: the host creates its");
+    Console.WriteLine("      pipe as administrator and Windows will not let a normal process");
+    Console.WriteLine("      open it.");
     Console.WriteLine("");
     Console.WriteLine("  d2vpn config init [PATH] [--force]   |   d2vpn config check [PATH]");
     Console.WriteLine("      Writes a commented config holding every module and its bind, or");
@@ -1321,6 +1337,33 @@ static async Task<int> RunAsync(string[] args)
         cts.Token);
 }
 
+static async Task<int> ControlAsync(string[] args)
+{
+    // Everything after 'ctl' is the command line to send, minus our own flags and their values.
+    List<string> words = [];
+
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i].StartsWith("--", StringComparison.Ordinal))
+        {
+            i++;
+            continue;
+        }
+
+        words.Add(args[i]);
+    }
+
+    using var cts = new CancellationTokenSource();
+    using var sigint = SetupInterrupt(cts);
+
+    // Deliberately no elevation check. This opens no driver of its own, and the access error it
+    // gets instead names the actual problem - the host's pipe being high-integrity.
+    return await ControlClientCommand.ExecuteAsync(
+        StringOption(args, "--pipe") ?? "d2vpn",
+        string.Join(' ', words),
+        cts.Token);
+}
+
 static int ConfigCommand(string[] args)
 {
     var action = args.Length > 1 ? args[1].ToLowerInvariant() : "init";
@@ -1374,7 +1417,10 @@ static async Task<int> HostAsync(string[] args)
     {
         var fromFile = HostConfig.Load(configPath);
 
-        if (!Elevation.RequireElevated())
+        // Only WinDivert needs elevation. A config hosting pause alone opens no driver, and
+        // demanding administrator rights for it would be asking for something we do not use -
+        // NtProcessControl reports its own problem if the game refuses the handle.
+        if (fromFile.Modules.Count > 0 && !Elevation.RequireElevated())
         {
             return 1;
         }

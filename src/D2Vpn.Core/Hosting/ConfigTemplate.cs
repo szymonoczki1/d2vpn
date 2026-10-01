@@ -36,8 +36,19 @@ public static class ConfigTemplate
       //          since a packet cannot arrive late unless it was kept.
       // bind   - leave it out, or set it to "" or null, for a module with no key. It is still
       //          hosted and still reachable over the pipe. Delete the whole entry to not host it.
+      //
+      // resyncBind / bufferBind flip those switches while running. Both optional - without them,
+      // use the pipe:  d2vpn ctl set 3074-ul resync off
       "modules": [
-        { "name": "3074-ul",      "bind": "capslock", "resync": true, "buffer": true },
+        {
+          "name": "3074-ul",
+          "bind": "capslock",
+          "resync": true,
+          "buffer": true,
+          // Example switch binds. Delete them if you would rather use the pipe for this.
+          "resyncBind": "numpad1",
+          "bufferBind": "numpad2"
+        },
         { "name": "3074-dl",      "bind": "mouse4",   "resync": true, "buffer": true },
 
         // Slow is a rate cap on UDP: one packet per peer per slowMs.

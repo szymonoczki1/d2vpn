@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace D2Vpn.Core.Hosting;
@@ -19,6 +19,19 @@ public sealed record ModuleConfig
 
     /// <summary>Whether withheld packets start being kept.</summary>
     public bool Buffer { get; init; } = true;
+
+    /// <summary>
+    /// A key that flips <see cref="Resync"/> while running, or null for none.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Bind"/> because these are different questions: one asks whether the
+    /// module is holding, the other how it holds. Most setups bind the hold and leave the switches
+    /// to the pipe, which is why both are optional.
+    /// </remarks>
+    public string? ResyncBind { get; init; }
+
+    /// <summary>A key that flips <see cref="Buffer"/> while running, or null for none.</summary>
+    public string? BufferBind { get; init; }
 
     /// <inheritdoc cref="ModuleTuning.SlowMs"/>
     public int? SlowMs { get; init; }
@@ -226,6 +239,12 @@ public sealed record HostConfig
         var keys = Modules
             .Where(m => !string.IsNullOrWhiteSpace(m.Bind))
             .Select(m => (Key: m.Bind!, What: m.Name))
+            .Concat(Modules
+                .Where(m => !string.IsNullOrWhiteSpace(m.ResyncBind))
+                .Select(m => (Key: m.ResyncBind!, What: $"{m.Name} resync")))
+            .Concat(Modules
+                .Where(m => !string.IsNullOrWhiteSpace(m.BufferBind))
+                .Select(m => (Key: m.BufferBind!, What: $"{m.Name} buffer")))
             .Concat(ResetBinds
                 .Where(r => !string.IsNullOrWhiteSpace(r.Bind))
                 .Select(r => (Key: r.Bind, What: $"reset {r.Module}")))

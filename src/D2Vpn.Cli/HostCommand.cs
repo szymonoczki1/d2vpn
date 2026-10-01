@@ -249,6 +249,12 @@ internal static class HostCommand
         {
             var name = ModuleSpec.Parse(module.Name).Name;
             Bind(module.Bind, $"toggle {name}", () => host.Toggle(name));
+
+            Bind(module.ResyncBind, $"{name} resync on/off",
+                () => FlipSwitch(host, name, resync: true));
+
+            Bind(module.BufferBind, $"{name} buffer on/off",
+                () => FlipSwitch(host, name, resync: false));
         }
 
         if (config.Pause.Enabled)
@@ -279,5 +285,47 @@ internal static class HostCommand
 
         log?.Write("binds", string.Join(" ", bound.Select(b => $"{b.Item1}={b.Item2}")));
         return bound;
+    }
+
+    /// <summary>
+    /// Flips one of a module's switches and says what it became.
+    /// </summary>
+    /// <remarks>
+    /// Printed rather than silent: a switch has no visible effect until the next packet is
+    /// withheld, so a key that reported nothing would be indistinguishable from one that was not
+    /// bound.
+    /// </remarks>
+    private static void FlipSwitch(ModuleHost host, string name, bool resync)
+    {
+        if (host.OptionsFor(name) is not { } options)
+        {
+            Console.Error.WriteLine($"\n{name} has no switches");
+            return;
+        }
+
+        try
+        {
+            if (resync)
+            {
+                if (!options.SupportsResync)
+                {
+                    Console.Error.WriteLine($"\n{name} has no resync or keepalive to switch");
+                    return;
+                }
+
+                options.ResyncEnabled = !options.ResyncEnabled;
+            }
+            else
+            {
+                options.BufferEnabled = !options.BufferEnabled;
+            }
+
+            Console.WriteLine($"\n[{DateTime.Now:HH:mm:ss}] {name} {options.ToLine()}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            // A delay line refusing to give up its buffer is the expected case here.
+            Console.Error.WriteLine($"\n{ex.Message}");
+        }
     }
 }

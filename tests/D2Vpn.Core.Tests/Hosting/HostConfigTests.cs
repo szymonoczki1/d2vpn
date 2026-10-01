@@ -173,6 +173,61 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void Switch_binds_are_read_and_counted_in_the_clash_check()
+    {
+        // The whole reason this test exists: a switch bind is a key like any other, so leaving it
+        // out of the clash check would let it silently replace a hold binding.
+        var config = HostConfig.Parse("""
+        {
+          "modules": [
+            {
+              "name": "3074-ul", "bind": "capslock",
+              "resyncBind": "numpad1", "bufferBind": "numpad2"
+            }
+          ]
+        }
+        """);
+
+        Assert.Equal("numpad1", config.Modules[0].ResyncBind);
+        Assert.Equal("numpad2", config.Modules[0].BufferBind);
+
+        var ex = Assert.Throws<ArgumentException>(() => HostConfig.Parse("""
+        {
+          "modules": [
+            { "name": "3074-ul", "bind": "f1", "resyncBind": "f1" }
+          ]
+        }
+        """));
+
+        Assert.Contains("f1", ex.Message);
+        Assert.Contains("resync", ex.Message);
+    }
+
+    [Fact]
+    public void A_switch_bind_clashing_across_modules_is_rejected()
+    {
+        Assert.Throws<ArgumentException>(() => HostConfig.Parse("""
+        {
+          "modules": [
+            { "name": "3074-ul", "bufferBind": "f3" },
+            { "name": "30k", "resyncBind": "f3" }
+          ]
+        }
+        """));
+    }
+
+    [Fact]
+    public void Switch_binds_are_optional()
+    {
+        var config = HostConfig.Parse("""
+        { "modules": [ { "name": "3074-ul", "bind": "capslock" } ] }
+        """);
+
+        Assert.Null(config.Modules[0].ResyncBind);
+        Assert.Null(config.Modules[0].BufferBind);
+    }
+
+    [Fact]
     public void A_key_clashing_with_release_or_pause_is_rejected()
     {
         Assert.Throws<ArgumentException>(() => HostConfig.Parse("""
