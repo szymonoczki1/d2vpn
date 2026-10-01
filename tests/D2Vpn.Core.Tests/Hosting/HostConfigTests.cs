@@ -373,6 +373,134 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void A_duplicate_key_is_repaired_rather_than_fatal()
+    {
+        // The window is the tool for fixing a config, so it must not be stopped from opening by
+        // the config needing fixing - a duplicate key once left the only thing that could resolve
+        // it unable to start. The first use keeps the key; later ones are cleared.
+        var path = Write("""
+        {
+          "modules": [
+            { "name": "3074-ul-slow", "bind": "f2" },
+            { "name": "3074-dl-slow", "bind": "f2" },
+            { "name": "30k", "bind": "f6" }
+          ]
+        }
+        """);
+
+        try
+        {
+            Assert.Throws<ArgumentException>(() => HostConfig.Load(path));
+
+            var config = HostConfig.LoadForgiving(path, out var warnings);
+
+            Assert.Equal(3, config.Modules.Count);
+            Assert.Equal("f2", config.Modules[0].Bind);
+            Assert.Null(config.Modules[1].Bind);
+            Assert.Equal("f6", config.Modules[2].Bind);
+
+            Assert.Single(warnings);
+            Assert.Contains("f2", warnings[0]);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void An_unparseable_module_is_dropped_and_the_rest_are_kept()
+    {
+        var path = Write("""
+        {
+          "modules": [
+            { "name": "3074-sideways", "bind": "f1" },
+            { "name": "30k", "bind": "f6" }
+          ]
+        }
+        """);
+
+        try
+        {
+            var config = HostConfig.LoadForgiving(path, out var warnings);
+
+            Assert.Single(config.Modules);
+            Assert.Equal("30k", config.Modules[0].Name);
+            Assert.Contains(warnings, w => w.Contains("3074-sideways"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void A_reconnect_key_for_an_unhosted_module_is_dropped()
+    {
+        var path = Write("""
+        {
+          "modules": [ { "name": "3074-ul" } ],
+          "resetBinds": [ { "module": "30k", "bind": "f9" } ]
+        }
+        """);
+
+        try
+        {
+            var config = HostConfig.LoadForgiving(path, out var warnings);
+
+            Assert.Empty(config.ResetBinds);
+            Assert.Contains(warnings, w => w.Contains("30k"));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void Repair_still_refuses_a_config_with_nothing_left()
+    {
+        // Removing things is all repair does, so a config whose every module was unparseable has
+        // nothing to host and is a real failure rather than something to carry on from.
+        var path = Write("""{ "modules": [ { "name": "nonsense" } ] }""");
+
+        try
+        {
+            Assert.Throws<ArgumentException>(
+                () => HostConfig.LoadForgiving(path, out _));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void A_clean_config_is_repaired_to_itself_with_no_warnings()
+    {
+        var path = Write(ConfigTemplate.Text);
+
+        try
+        {
+            var config = HostConfig.LoadForgiving(path, out var warnings);
+
+            Assert.Empty(warnings);
+            Assert.Equal(9, config.Modules.Count);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    private static string Write(string json)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"d2vpn-{Guid.NewGuid():N}.json");
+        File.WriteAllText(path, json);
+        return path;
+    }
+
+    [Fact]
     public void The_config_lives_in_appdata_unless_a_path_is_given()
     {
         // Both front ends used to pick their own: the window wrote beside its executable and the

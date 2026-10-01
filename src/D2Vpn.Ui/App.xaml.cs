@@ -34,13 +34,17 @@ public partial class App : Application
             e.Args.FirstOrDefault(a => a.EndsWith(".json", StringComparison.OrdinalIgnoreCase)));
 
         HostConfig config;
+        IReadOnlyList<string> warnings;
 
         try
         {
             // First run writes the template rather than demanding the CLI be used first. The window
             // has to be able to stand alone, since that is the whole point of shipping one.
             ConfigLocation.EnsureExists(path);
-            config = HostConfig.Load(path);
+            // Forgiving, because this window is the tool for fixing a config and must not be
+            // stopped from opening by the config needing fixing. A duplicate key used to be fatal,
+            // which left the only thing that could resolve it unable to start.
+            config = HostConfig.LoadForgiving(path, out warnings);
         }
         catch (Exception ex)
         {
@@ -58,6 +62,18 @@ public partial class App : Application
         // cause - belongs in the status bar where it can be read, not in a dialog that closes the
         // application.
         model.Start();
+
+        // After Start so it is not immediately replaced by the hosting summary, and in the footer
+        // rather than a dialog: these are things already dealt with, not decisions to make.
+        //
+        // Skipped when startup failed, because the footer is then showing why nothing is hosted -
+        // which matters more than a key that was unbound, and which has nowhere else to appear.
+        if (warnings.Count > 0 && !model.Failed)
+        {
+            model.Flash(warnings.Count == 1
+                ? warnings[0]
+                : $"fixed {warnings.Count} config problems: {string.Join("; ", warnings)}");
+        }
 
         MainWindow = new MainWindow(model);
         MainWindow.Show();

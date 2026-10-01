@@ -191,6 +191,156 @@ public sealed record HostConfig
     public static HostConfig Load(string path) => Parse(File.ReadAllText(path));
 
     /// <summary>
+    /// Reads a config, fixing what can be fixed rather than refusing to load.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For the window. A front end whose job is editing this file must not be stopped from opening
+    /// by the file needing editing - a duplicate key would otherwise leave the only tool that can
+    /// resolve it unable to start, and the operator in a text editor, which is what the window
+    /// exists to avoid.
+    /// </para>
+    /// <para>
+    /// So a repairable problem drops the smallest thing that resolves it - one bind, one module -
+    /// and reports what it dropped. Only a config with nothing left to host, or one that is not
+    /// JSON at all, still throws. The CLI keeps the strict <see cref="Load(string)"/>, where a
+    /// person is reading the output and can fix it before anything runs.
+    /// </para>
+    /// </remarks>
+    /// <param name="path">The file to read.</param>
+    /// <param name="warnings">What had to be changed to make it usable.</param>
+    public static HostConfig LoadForgiving(string path, out IReadOnlyList<string> warnings)
+    {
+        HostConfig? parsed;
+
+        try
+        {
+            parsed = JsonSerializer.Deserialize<HostConfig>(File.ReadAllText(path), ReadOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new ArgumentException($"config is not valid JSON: {ex.Message}", ex);
+        }
+
+        if (parsed is null)
+        {
+            throw new ArgumentException("config is empty");
+        }
+
+        var repaired = parsed.Repair(out warnings);
+
+        // Whatever is left still has to be hostable; repair only removes things.
+        repaired.Validate();
+        return repaired;
+    }
+
+    /// <summary>
+    /// Returns a version of this config that will validate, and says what it had to change.
+    /// </summary>
+    private HostConfig Repair(out IReadOnlyList<string> warnings)
+    {
+        List<string> found = [];
+        List<ModuleConfig> modules = [];
+        HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var module in Modules)
+        {
+            string canonical;
+
+            try
+            {
+                canonical = ModuleSpec.Parse(module.Name).Name;
+            }
+            catch (ArgumentException ex)
+            {
+                found.Add($"dropped '{module.Name}': {ex.Message}");
+                continue;
+            }
+
+            if (!names.Add(canonical))
+            {
+                found.Add($"dropped a second '{canonical}'");
+                continue;
+            }
+
+            modules.Add(module with
+            {
+                SlowMs = module.SlowMs is { } slow && slow < 1 ? null : module.SlowMs,
+                BufferPackets = module.BufferPackets is { } packets && packets < 1
+                    ? null
+                    : module.BufferPackets
+            });
+        }
+
+        // One key doing two things is the common one, and it is why this exists: the first use
+        // keeps the key and every later one is cleared, so the file still loads and the window can
+        // be used to sort it out.
+        HashSet<string> taken = new(StringComparer.OrdinalIgnoreCase);
+
+        string? Claim(string? key, string what)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return null;
+            }
+
+            if (taken.Add(key))
+            {
+                return key;
+            }
+
+            found.Add($"unbound {what}: '{key}' was already in use");
+            return null;
+        }
+
+        for (var i = 0; i < modules.Count; i++)
+        {
+            var module = modules[i];
+
+            modules[i] = module with
+            {
+                Bind = Claim(module.Bind, module.Name),
+                ResyncBind = Claim(module.ResyncBind, $"{module.Name} resync"),
+                BufferBind = Claim(module.BufferBind, $"{module.Name} buffer")
+            };
+        }
+
+        var pause = Pause with
+        {
+            Bind = Pause.Enabled ? Claim(Pause.Bind, "pause") : Pause.Bind
+        };
+
+        var release = Claim(ReleaseBind, "release");
+
+        List<ResetBind> resets = [];
+
+        foreach (var reset in ResetBinds)
+        {
+            if (!names.Contains(reset.Module))
+            {
+                found.Add($"dropped a reconnect key for '{reset.Module}', which is not hosted");
+                continue;
+            }
+
+            if (Claim(reset.Bind, $"reconnect on {reset.Module}") is { } kept)
+            {
+                resets.Add(reset with { Bind = kept });
+            }
+        }
+
+        warnings = found;
+
+        return this with
+        {
+            PollMs = PollMs is < 1 or > 1000 ? 1 : PollMs,
+            Modules = modules,
+            Pause = pause,
+            ReleaseBind = release,
+            ResetBinds = resets
+        };
+    }
+
+    /// <summary>
     /// Serialises this config.
     /// </summary>
     /// <remarks>
