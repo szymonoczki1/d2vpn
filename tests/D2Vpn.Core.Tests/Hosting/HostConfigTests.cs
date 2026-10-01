@@ -112,6 +112,49 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void A_module_can_be_hosted_with_no_bind_at_all()
+    {
+        // Four ways of saying "no key": omitted, null, empty, whitespace. A module without one is
+        // still hosted and still reachable over the pipe - it just has no key, which is what a
+        // macro-driven setup wants.
+        var config = HostConfig.Parse("""
+        {
+          "modules": [
+            { "name": "3074-ul", "bind": "capslock" },
+            { "name": "3074-dl" },
+            { "name": "27k-ul", "bind": null },
+            { "name": "27k-dl", "bind": "" },
+            { "name": "30k", "bind": "   " }
+          ],
+          "releaseBind": ""
+        }
+        """);
+
+        Assert.Equal(5, config.Resolve().Count);
+        Assert.Equal("capslock", config.Modules[0].Bind);
+        Assert.Null(config.Modules[1].Bind);
+    }
+
+    [Fact]
+    public void Several_unbound_modules_do_not_collide_with_each_other()
+    {
+        // The clash check keys on the bind, so without filtering the blanks out first, two unbound
+        // modules would read as two things on the same key.
+        HostConfig.Parse("""
+        {
+          "modules": [
+            { "name": "3074-ul", "bind": "" },
+            { "name": "3074-dl", "bind": "" },
+            { "name": "30k" },
+            { "name": "7500" }
+          ],
+          "releaseBind": "",
+          "pause": { "enabled": true, "bind": "" }
+        }
+        """);
+    }
+
+    [Fact]
     public void One_key_bound_to_two_things_is_rejected()
     {
         // The silent failure this check exists for: whichever binding registered second would

@@ -19,3 +19,8 @@ captures/
 # Session logs from individual runs. The ones worth keeping as evidence live at the
 # repo root; this folder is scratch for the current run.
 logs/
+
+# The working config. It is personal - your keybinds, and possibly a process name or a
+# path - and it is regenerated any time with `d2vpn config init`. The template that
+# produces it is ConfigTemplate in the Core project, which is what belongs in the repo.
+d2vpn.json

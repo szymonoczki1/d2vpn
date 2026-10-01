@@ -34,6 +34,8 @@ public static class ConfigTemplate
       // resync - the resync window on 3074/27k, the keepalive on 30k. Changeable while running.
       // buffer - whether withheld packets are kept for replay. A slow module cannot turn it off,
       //          since a packet cannot arrive late unless it was kept.
+      // bind   - leave it out, or set it to "" or null, for a module with no key. It is still
+      //          hosted and still reachable over the pipe. Delete the whole entry to not host it.
       "modules": [
         { "name": "3074-ul",      "bind": "capslock", "resync": true, "buffer": true },
         { "name": "3074-dl",      "bind": "mouse4",   "resync": true, "buffer": true },
