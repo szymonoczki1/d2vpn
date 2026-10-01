@@ -3,6 +3,7 @@ using D2Vpn.Cli;
 using D2Vpn.Cli.Hotkeys;
 using D2Vpn.Core.Input;
 using D2Vpn.Core.Calibration;
+using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
@@ -32,6 +33,7 @@ try
         "run" => await RunAsync(args),
         "reconnect" or "rc" => await ReconnectAsync(args),
         "pause" => await PauseAsync(args),
+        "host" => await HostAsync(args),
         _ => Unknown(args[0])
     };
 }
@@ -267,6 +269,32 @@ static void PrintUsage()
     Console.WriteLine("      first. The live count on the status line says when a press will do");
     Console.WriteLine("      something. --idle-s (10) is how long a silent connection still");
     Console.WriteLine("      counts as live. Trigger defaults to f9.");
+    Console.WriteLine("");
+    Console.WriteLine("  d2vpn host <module> [<module> ...] [--pipe NAME] [--log FILE]");
+    Console.WriteLine("      Runs several modules at once, controlled over a named pipe instead");
+    Console.WriteLine("      of by hotkeys. This is what the AutoHotkey manager and the UI are");
+    Console.WriteLine("      built on: a macro toggles a module directly rather than faking a");
+    Console.WriteLine("      keypress for a listener to notice.");
+    Console.WriteLine("");
+    Console.WriteLine("      Modules are named group[-direction][-slow]:");
+    Console.WriteLine("        3074-ul  3074-dl  3074-full   (+ -slow)");
+    Console.WriteLine("        27k-ul   27k-dl   27k-full    (+ -slow)");
+    Console.WriteLine("        30k      30k-slow  7500       (TCP, no direction)");
+    Console.WriteLine("");
+    Console.WriteLine("      One line in, one line out, replies starting ok or err:");
+    Console.WriteLine("        ping list status stat <m> toggle <m> on <m> off <m>");
+    Console.WriteLine("        release reset <m> quit");
+    Console.WriteLine("");
+    Console.WriteLine("      'reset' is the reconnect: TCP modules carry a sampler on the same");
+    Console.WriteLine("      handle, so it is a capability of 30k and 7500 rather than a module");
+    Console.WriteLine("      of its own. A second handle on an overlapping filter would never");
+    Console.WriteLine("      see a packet the hold had already withheld.");
+    Console.WriteLine("");
+    Console.WriteLine("      The pipe is created by an elevated process, so a client must be");
+    Console.WriteLine("      elevated too - a normally-started AHK script cannot open it.");
+    Console.WriteLine("");
+    Console.WriteLine("      Per-module flags that 'run' exposes (buffer size, resync cooldown,");
+    Console.WriteLine("      slow depth) are not reachable through a name. Use 'run' for those.");
     Console.WriteLine("");
     Console.WriteLine("  d2vpn pause [--process NAME] [--key NAME] [--timeout-s N] [--log FILE]");
     Console.WriteLine("      Freezes the game itself rather than its traffic. Suspends every");
@@ -1264,6 +1292,44 @@ static async Task<int> RunAsync(string[] args)
         StringOption(args, "--log"),
         KeyName.Parse(StringOption(args, "--good-key") ?? "f7"),
         KeyName.Parse(StringOption(args, "--bad-key") ?? "f8"),
+        cts.Token);
+}
+
+static async Task<int> HostAsync(string[] args)
+{
+    // Everything that is not a flag or a flag's value is a module name.
+    List<ModuleSpec> specs = [];
+
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i].StartsWith("--", StringComparison.Ordinal))
+        {
+            // --pipe and --log take a value; skip it so it is not read as a module.
+            i++;
+            continue;
+        }
+
+        specs.Add(ModuleSpec.Parse(args[i]));
+    }
+
+    if (specs.Count == 0)
+    {
+        throw new ArgumentException(
+            "name at least one module, such as: d2vpn host 3074-ul 30k");
+    }
+
+    if (!Elevation.RequireElevated())
+    {
+        return 1;
+    }
+
+    using var cts = new CancellationTokenSource();
+    using var sigint = SetupInterrupt(cts);
+
+    return await HostCommand.ExecuteAsync(
+        specs,
+        StringOption(args, "--pipe") ?? "d2vpn",
+        StringOption(args, "--log"),
         cts.Token);
 }
 
