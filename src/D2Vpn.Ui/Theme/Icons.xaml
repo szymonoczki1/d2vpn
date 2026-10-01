@@ -1,0 +1,26 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Rail icons, as geometry rather than a font. A font would be another dependency to ship and
+        another thing to go missing on a machine that does not have it; these are a dozen points
+        each and scale with the window.
+
+        Each is drawn inside a 20x20 box so the rail does not have to special-case any of them.
+    -->
+
+    <!-- Traffic: packets moving both ways. -->
+    <PathGeometry x:Key="IconTraffic"
+                  Figures="M 2,6 H 13 M 10,3 L 13,6 L 10,9 M 18,14 H 7 M 10,11 L 7,14 L 10,17" />
+
+    <!-- System: a processor, for the module that acts on the game itself rather than its traffic. -->
+    <PathGeometry x:Key="IconSystem"
+                  Figures="M 5,5 H 15 V 15 H 5 Z M 8,2 V 5 M 12,2 V 5 M 8,15 V 18 M 12,15 V 18
+                           M 2,8 H 5 M 2,12 H 5 M 15,8 H 18 M 15,12 H 18" />
+
+    <!-- Macros: a keyboard. Not used yet - it is here as the next category's icon. -->
+    <PathGeometry x:Key="IconMacros"
+                  Figures="M 2,5 H 18 V 15 H 2 Z M 5,8 H 6 M 9,8 H 10 M 13,8 H 14
+                           M 6,12 H 14" />
+
+</ResourceDictionary>

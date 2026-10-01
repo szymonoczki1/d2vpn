@@ -36,7 +36,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private List<IModuleRunner> _runners = [];
     private HostConfig _config;
     private ModuleViewModel? _selected;
-    private string _status = "starting";
+    private CategoryViewModel? _category;
+    private string _status = string.Empty;
     private bool _failed;
 
     /// <summary>Loads a config and prepares to host it.</summary>
@@ -46,8 +47,37 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _config = config;
     }
 
-    /// <summary>The modules, in config order, for the sidebar.</summary>
+    /// <summary>Every hosted module, across all categories.</summary>
     public ObservableCollection<ModuleViewModel> Modules { get; } = [];
+
+    /// <summary>The rail: the sections a module can belong to.</summary>
+    public ObservableCollection<CategoryViewModel> Categories { get; } = [];
+
+    /// <summary>The section the sidebar is listing.</summary>
+    /// <remarks>
+    /// Switching remembers where you were in each one, so moving to game pause and back does not
+    /// drop you at the top of a list of eleven.
+    /// </remarks>
+    public CategoryViewModel? Category
+    {
+        get => _category;
+        set
+        {
+            if (_category is { } previous)
+            {
+                previous.Selected = Selected;
+            }
+
+            if (!Set(ref _category, value) || value is null)
+            {
+                return;
+            }
+
+            Selected = value.Selected is { } remembered && value.Modules.Contains(remembered)
+                ? remembered
+                : value.Modules.FirstOrDefault();
+        }
+    }
 
     /// <summary>The module the detail panel is showing.</summary>
     public ModuleViewModel? Selected
@@ -130,7 +160,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Modules.Add(module);
         }
 
-        Selected = Modules.FirstOrDefault();
+        BuildCategories();
+
+        Category = Categories.FirstOrDefault(c => !c.IsEmpty) ?? Categories.FirstOrDefault();
 
         _host.StateChanged += (_, _) => Refresh();
 
@@ -140,8 +172,42 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         BindKeys();
 
-        Status = $"hosting {Modules.Count} modules across {_runners.Count} handles";
+        Status = $"hosting {Modules.Count} module{(Modules.Count == 1 ? "" : "s")} "
+            + $"across {_runners.Count} handle{(_runners.Count == 1 ? "" : "s")}";
         return true;
+    }
+
+    /// <summary>
+    /// Sorts the hosted modules into the rail's sections.
+    /// </summary>
+    /// <remarks>
+    /// The extension point. A macro manager becomes another category here and another geometry in
+    /// <c>Theme/Icons.xaml</c>; nothing else in the window has to know about it. Empty categories
+    /// are left out rather than shown as a section with nothing in it, which reads as broken
+    /// rather than as planned.
+    /// </remarks>
+    private void BuildCategories()
+    {
+        var traffic = new CategoryViewModel(
+            "Traffic", "IconTraffic",
+            "No traffic module could be started.");
+
+        var system = new CategoryViewModel(
+            "System", "IconSystem",
+            "Game pause is not enabled in the config.");
+
+        foreach (var module in Modules)
+        {
+            (module.Kind == ModuleKind.Process ? system : traffic).Modules.Add(module);
+        }
+
+        foreach (var category in new[] { traffic, system })
+        {
+            if (!category.IsEmpty)
+            {
+                Categories.Add(category);
+            }
+        }
     }
 
     /// <summary>Flips one module.</summary>
@@ -166,7 +232,32 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             module.Refresh();
         }
 
+        foreach (var category in Categories)
+        {
+            category.Refresh();
+        }
+
         Raise(nameof(ActiveCount));
+    }
+
+    /// <summary>
+    /// Shows a message in the footer for a few seconds, then clears it.
+    /// </summary>
+    /// <remarks>
+    /// Transient, because these are confirmations rather than state - "saved" is worth seeing once
+    /// and is clutter from then on. A failure stays, since it is not something to glance past.
+    /// </remarks>
+    public async void Flash(string message)
+    {
+        Status = message;
+
+        var shown = message;
+        await Task.Delay(TimeSpan.FromSeconds(4)).ConfigureAwait(true);
+
+        if (!Failed && Status == shown)
+        {
+            Status = string.Empty;
+        }
     }
 
     /// <summary>
@@ -253,7 +344,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             };
 
             File.WriteAllText(_configPath, _config.ToJson());
-            Status = $"saved {Path.GetFileName(_configPath)}";
+            Flash($"saved {Path.GetFileName(_configPath)}");
         }
         catch (Exception ex)
         {

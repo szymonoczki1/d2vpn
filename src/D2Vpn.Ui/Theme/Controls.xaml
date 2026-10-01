@@ -237,6 +237,77 @@
         </Style.Triggers>
     </Style>
 
+    <!--
+        A rail entry: icon over a small label, with an accent bar when selected. The dot appears
+        when anything inside that category is on, so a hold is visible from a section you are not
+        currently looking at.
+    -->
+    <Style x:Key="RailItem" TargetType="ListBoxItem">
+        <Setter Property="Foreground" Value="{StaticResource TextFaintBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid x:Name="Shell" Background="Transparent" Height="60">
+                        <Border x:Name="Marker" Width="3" HorizontalAlignment="Left"
+                                Background="Transparent" />
+                        <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource TextDimBrush}" />
+                            <Setter TargetName="Shell" Property="Background"
+                                    Value="{StaticResource SidebarBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Shell" Property="Background"
+                                    Value="{StaticResource SidebarBrush}" />
+                            <Setter TargetName="Marker" Property="Background"
+                                    Value="{StaticResource AccentBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        A quiet button: text only until hovered. For actions that have to be reachable without
+        asking to be noticed - releasing everything matters, but a large red slab at the bottom of
+        the window draws the eye permanently for something pressed once a session.
+    -->
+    <Style x:Key="QuietButton" TargetType="Button">
+        <Setter Property="Foreground" Value="{StaticResource TextDimBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="10,4" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Shell" Background="{TemplateBinding Background}"
+                            CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Shell" Property="Background"
+                                    Value="{StaticResource HoverBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource HoldingBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="Card" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource PanelBrush}" />
         <Setter Property="CornerRadius" Value="8" />

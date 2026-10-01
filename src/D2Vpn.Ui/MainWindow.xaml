@@ -30,13 +30,14 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="248" />
+                <ColumnDefinition Width="64" />
+                <ColumnDefinition Width="212" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
             <!-- ============ Title bar ============ -->
-            <Border Grid.Row="0" Grid.ColumnSpan="2"
-                    Background="{StaticResource SidebarBrush}"
+            <Border Grid.Row="0" Grid.ColumnSpan="3"
+                    Background="{StaticResource RailBrush}"
                     MouseLeftButtonDown="OnTitleBarDrag">
                 <Grid>
                     <Grid.ColumnDefinitions>
@@ -50,10 +51,6 @@
                                    Fill="{StaticResource AccentBrush}" />
                         <TextBlock Text="d2vpn" Margin="10,0,0,0" FontWeight="SemiBold"
                                    VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Status}" Margin="16,0,0,0"
-                                   Style="{StaticResource Mono}" FontSize="11"
-                                   VerticalAlignment="Center"
-                                   TextTrimming="CharacterEllipsis" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -76,20 +73,70 @@
                 </Grid>
             </Border>
 
-            <!-- ============ Sidebar ============ -->
+            <!-- ============ Rail ============ -->
             <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="0"
-                    Background="{StaticResource SidebarBrush}">
+                    Background="{StaticResource RailBrush}">
+                <ListBox Background="Transparent" BorderThickness="0"
+                         ItemContainerStyle="{StaticResource RailItem}"
+                         ItemsSource="{Binding Categories}"
+                         SelectedItem="{Binding Category, Mode=TwoWay}"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Width="64">
+                                <StackPanel HorizontalAlignment="Center">
+                                    <Path Data="{Binding Icon, Converter={StaticResource KeyToGeometry}}"
+                                          Stroke="{Binding RelativeSource={RelativeSource
+                                             AncestorType=ListBoxItem}, Path=Foreground}"
+                                          StrokeThickness="1.4"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          Width="20" Height="20"
+                                          Stretch="Uniform"
+                                          HorizontalAlignment="Center" />
+                                    <TextBlock Text="{Binding Name}" FontSize="10"
+                                               Margin="0,6,0,0" HorizontalAlignment="Center"
+                                               Foreground="{Binding RelativeSource={RelativeSource
+                                                  AncestorType=ListBoxItem}, Path=Foreground}" />
+                                </StackPanel>
+
+                                <!-- Something in this section is on, even though you are looking
+                                     at another one. -->
+                                <Ellipse Width="6" Height="6" Margin="0,8,12,0"
+                                         HorizontalAlignment="Right" VerticalAlignment="Top"
+                                         Fill="{StaticResource HoldingBrush}"
+                                         Visibility="{Binding HasActive,
+                                            Converter={StaticResource BoolToVisibility}}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- ============ Sidebar ============ -->
+            <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="1"
+                    Background="{StaticResource SidebarBrush}"
+                    BorderBrush="{StaticResource LineBrush}"
+                    BorderThickness="0,0,1,0">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <ListBox x:Name="ModuleList"
+                    <TextBlock Text="{Binding Category.Name}"
+                               Style="{StaticResource SectionLabel}"
+                               Margin="18,18,18,6" />
+
+                    <TextBlock Grid.Row="1" Style="{StaticResource Subtle}"
+                               Margin="18,8,18,0"
+                               Text="{Binding Category.EmptyMessage}"
+                               Visibility="{Binding Category.IsEmpty,
+                                  Converter={StaticResource BoolToVisibility}}" />
+
+                    <ListBox x:Name="ModuleList" Grid.Row="1"
                              Background="Transparent" BorderThickness="0"
-                             Margin="0,10,0,0"
                              ItemContainerStyle="{StaticResource SidebarItem}"
-                             ItemsSource="{Binding Modules}"
+                             ItemsSource="{Binding Category.Modules}"
                              SelectedItem="{Binding Selected, Mode=TwoWay}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
@@ -121,28 +168,24 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <Button Grid.Row="1" Content="Release everything"
-                            Style="{StaticResource DangerButton}"
-                            Margin="14,10,14,16"
-                            Click="OnReleaseAll" />
                 </Grid>
             </Border>
 
             <!-- ============ Empty state ============ -->
-            <StackPanel Grid.Row="1" Grid.Column="1"
+            <StackPanel Grid.Row="1" Grid.Column="2"
                         VerticalAlignment="Center" HorizontalAlignment="Center"
                         MaxWidth="440"
                         Visibility="{Binding Selected, Converter={StaticResource NullToVisibility}}">
                 <TextBlock Text="Nothing is hosted" Style="{StaticResource Heading}"
                            HorizontalAlignment="Center" />
                 <TextBlock Style="{StaticResource Subtle}" TextAlignment="Center" Margin="0,10,0,0"
-                           Text="No module could be started. The title bar says why - the usual causes are another limiter still running, or this process not being elevated." />
+                           Text="No module could be started. The footer says why - the usual causes are another limiter still running, or this process not being elevated." />
                 <TextBlock Style="{StaticResource Subtle}" TextAlignment="Center" Margin="0,14,0,0"
                            Text="{Binding ConfigPath, StringFormat=config: {0}}" />
             </StackPanel>
 
             <!-- ============ Detail ============ -->
-            <ScrollViewer Grid.Row="1" Grid.Column="1"
+            <ScrollViewer Grid.Row="1" Grid.Column="2"
                           VerticalScrollBarVisibility="Auto"
                           Padding="26,20,26,8"
                           Visibility="{Binding Selected,
@@ -324,22 +367,30 @@
             </ScrollViewer>
 
             <!-- ============ Status bar ============ -->
-            <Border Grid.Row="2" Grid.Column="1"
+            <Border Grid.Row="2" Grid.Column="2"
                     Background="{StaticResource SidebarBrush}"
                     BorderBrush="{StaticResource LineBrush}"
                     BorderThickness="0,1,0,0"
-                    Padding="26,9">
+                    Padding="20,6">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Text="{Binding PipePath}" Style="{StaticResource Mono}"
-                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <!-- Confirmations and failures land here rather than beside the title, where
+                         "saved" sat permanently next to the name of the application. -->
+                    <TextBlock Text="{Binding Status}" Style="{StaticResource Mono}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               Margin="6,0,12,0" />
 
-                    <TextBlock Grid.Column="1" Style="{StaticResource Mono}"
-                               VerticalAlignment="Center">
+                    <Button Grid.Column="1" Content="Release all"
+                            Style="{StaticResource QuietButton}"
+                            Click="OnReleaseAll" />
+
+                    <TextBlock Grid.Column="2" Style="{StaticResource Mono}"
+                               VerticalAlignment="Center" Margin="16,0,6,0">
                         <Run Text="holding " />
                         <Run Text="{Binding ActiveCount, Mode=OneWay}"
                              Foreground="{StaticResource HoldingBrush}" FontWeight="Bold" />

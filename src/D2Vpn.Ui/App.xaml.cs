@@ -3,6 +3,7 @@ using System.IO;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 
 using D2Vpn.Core.Hosting;
 using D2Vpn.Ui.ViewModels;
@@ -74,6 +75,23 @@ public partial class App : Application
 /// Collapsed rather than Hidden, so a section a module does not have takes no space instead of
 /// leaving a gap - 7500 has no keepalive to switch, and pause has neither switch.
 /// </remarks>
+/// <summary>Looks a geometry up by resource key.</summary>
+/// <remarks>
+/// A category names its icon with a string so it stays a plain object with no WPF types on it,
+/// which is what lets the categories be built in the view model rather than in XAML.
+/// </remarks>
+[ValueConversion(typeof(string), typeof(Geometry))]
+public sealed class KeyToGeometryConverter : IValueConverter
+{
+    /// <inheritdoc/>
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is string key ? Application.Current.TryFindResource(key) : null;
+
+    /// <inheritdoc/>
+    public object ConvertBack(object? value, Type t, object? p, CultureInfo c) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>Dims an element when the bound value is false.</summary>
 /// <remarks>
 /// For a disabled module in the sidebar: it stays listed and selectable, because you still need to
