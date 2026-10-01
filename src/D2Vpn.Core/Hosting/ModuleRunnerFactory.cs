@@ -1,4 +1,4 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
@@ -18,7 +18,7 @@ namespace D2Vpn.Core.Hosting;
 /// <para>
 /// <b>Specs are grouped by port group, one handle each.</b> A filter is keyed on the group alone, so
 /// four toggles on 3074 become four modules behind one handle rather than four handles. That is what
-/// <see cref="CreateAll"/> does, and why it is the entry point rather than a per-spec create.
+/// <c>CreateAll</c> does, and why it is the entry point rather than a per-spec create.
 /// </para>
 /// <para>
 /// <b>Presets only.</b> Everything comes from <see cref="MeasuredDefaults"/> or
@@ -37,17 +37,24 @@ public static class ModuleRunnerFactory
     /// A block is ordered before its slow variant, so turning both on blocks rather than delays -
     /// the first non-passing verdict wins. See <see cref="ModuleSlot"/>.
     /// </remarks>
-    public static IReadOnlyList<WinDivertModuleRunner> CreateAll(IReadOnlyList<ModuleSpec> specs)
+    public static IReadOnlyList<WinDivertModuleRunner> CreateAll(IReadOnlyList<ModuleSpec> specs) =>
+        CreateAll([.. specs.Select(s => (s, ModuleTuning.Default))]);
+
+    /// <summary>
+    /// Builds one runner per port group, applying each module's config-supplied numbers.
+    /// </summary>
+    public static IReadOnlyList<WinDivertModuleRunner> CreateAll(
+        IReadOnlyList<(ModuleSpec Spec, ModuleTuning Tuning)> modules)
     {
-        ArgumentNullException.ThrowIfNull(specs);
+        ArgumentNullException.ThrowIfNull(modules);
 
         List<WinDivertModuleRunner> runners = [];
 
         try
         {
-            foreach (var group in specs.GroupBy(s => s.Group))
+            foreach (var group in modules.GroupBy(m => m.Spec.Group))
             {
-                runners.Add(CreateGroup(group.Key, [.. group.OrderBy(s => s.Slow)]));
+                runners.Add(CreateGroup(group.Key, [.. group.OrderBy(m => m.Spec.Slow)]));
             }
         }
         catch
@@ -65,17 +72,17 @@ public static class ModuleRunnerFactory
     }
 
     private static WinDivertModuleRunner CreateGroup(
-        PortGroup group, IReadOnlyList<ModuleSpec> specs) =>
+        PortGroup group, IReadOnlyList<(ModuleSpec Spec, ModuleTuning Tuning)> modules) =>
         group.Protocol == PortProtocol.Tcp
-            ? CreateTcpGroup(group, specs)
-            : CreateUdpGroup(group, specs);
+            ? CreateTcpGroup(group, modules)
+            : CreateUdpGroup(group, modules);
 
     private static WinDivertModuleRunner CreateUdpGroup(
-        PortGroup group, IReadOnlyList<ModuleSpec> specs)
+        PortGroup group, IReadOnlyList<(ModuleSpec Spec, ModuleTuning Tuning)> modules)
     {
         List<(string, ModuleSlot, IModuleOptions?)> slots = [];
 
-        foreach (var spec in specs)
+        foreach (var (spec, tuning) in modules)
         {
             var options = MeasuredDefaults.For(group, spec.Direction)
                 ?? throw new ArgumentException($"no measured defaults for {spec.Name}");
@@ -91,6 +98,38 @@ public static class ModuleRunnerFactory
                 SlowThrottle = spec.Slow
             };
 
+            // Only what the config actually set. Anything it omits keeps the measured value, so a
+            // corrected calibration reaches every session that did not deliberately override it.
+            if (tuning.SlowMs is { } slowMs)
+            {
+                options = options with { SlowDelay = TimeSpan.FromMilliseconds(slowMs) };
+            }
+
+            if (tuning.ResyncCooldownS is { } cooldown)
+            {
+                options = options with { ResyncCooldown = TimeSpan.FromSeconds(cooldown) };
+            }
+
+            if (tuning.BufferPackets is { } packets)
+            {
+                options = options with { BufferCapacity = packets };
+            }
+
+            if (tuning.BufferAgeS is { } age)
+            {
+                options = options with { BufferMaxAge = TimeSpan.FromSeconds(age) };
+            }
+
+            // A delayed packet that expired before it was due would never be sent at all, which
+            // looks like the module silently not working.
+            if (options.SlowMode && options.SlowDelay > options.BufferMaxAge)
+            {
+                throw new ArgumentException(
+                    $"{spec.Name}: slowMs {options.SlowDelay.TotalMilliseconds:N0} is longer than "
+                    + $"the {options.BufferMaxAge.TotalSeconds:N0}s buffer age, so every delayed "
+                    + "packet would expire before it was due. Raise bufferAgeS or lower slowMs.");
+            }
+
             var module = new HoldModule(spec.Name, group, options);
 
             var schedule = options.SlowMode
@@ -100,13 +139,16 @@ public static class ModuleRunnerFactory
 
             var buffer = new PacketBuffer(options.BufferCapacity, options.BufferMaxAge, schedule);
 
-            slots.Add((spec.Name, new ModuleSlot(module, buffer), new HoldModuleToggles(module)));
+            var toggles = new HoldModuleToggles(module);
+            ApplySwitches(toggles, tuning);
+
+            slots.Add((spec.Name, new ModuleSlot(module, buffer), toggles));
         }
 
         // Inbound observability has to sit ahead of the WFP filter, which is what the single-module
         // command uses -1000 for. One handle now serves both directions, so it takes the lower
         // priority whenever any slot on it holds inbound.
-        var priority = specs.Any(s => s.Direction != HoldDirection.Uplink)
+        var priority = modules.Any(m => m.Spec.Direction != HoldDirection.Uplink)
             ? (short)-1000
             : (short)0;
 
@@ -114,13 +156,21 @@ public static class ModuleRunnerFactory
     }
 
     private static WinDivertModuleRunner CreateTcpGroup(
-        PortGroup group, IReadOnlyList<ModuleSpec> specs)
+        PortGroup group, IReadOnlyList<(ModuleSpec Spec, ModuleTuning Tuning)> modules)
     {
         List<(string, ModuleSlot, IModuleOptions?)> slots = [];
 
-        foreach (var spec in specs)
+        foreach (var (spec, tuning) in modules)
         {
             var options = TcpDefaults(spec);
+
+            // Only a delay line has a depth to change. Setting one on a block would silently turn
+            // it into a delay line, which is a different module.
+            if (tuning.SlowMs is { } slowMs && options.ReleaseAfter is not null)
+            {
+                options = options with { ReleaseAfter = TimeSpan.FromMilliseconds(slowMs) };
+            }
+
             var module = new ApiBlockModule(spec.Name, group, options);
 
             var schedule = options.ReleaseAfter is { } after
@@ -129,9 +179,13 @@ public static class ModuleRunnerFactory
 
             // An ordered stream wants no age limit: a segment dropped for being stale blocks
             // everything behind it for good. See PacketBuffer.NeverExpires.
-            var buffer = new PacketBuffer(2048, PacketBuffer.NeverExpires, schedule);
+            var buffer = new PacketBuffer(
+                tuning.BufferPackets ?? 2048, PacketBuffer.NeverExpires, schedule);
 
-            slots.Add((spec.Name, new ModuleSlot(module, buffer), new ApiBlockToggles(module)));
+            var toggles = new ApiBlockToggles(module);
+            ApplySwitches(toggles, tuning);
+
+            slots.Add((spec.Name, new ModuleSlot(module, buffer), toggles));
         }
 
         // A replayed segment acknowledges a position the connection has long since passed, which
@@ -144,6 +198,28 @@ public static class ModuleRunnerFactory
         var sampler = new ConnectionSampler(TimeSpan.FromSeconds(10));
 
         return new WinDivertModuleRunner(group.Name, slots, 0, rewriter, sampler);
+    }
+
+    /// <summary>
+    /// Sets a module's switches to what the config asked, skipping ones it does not have.
+    /// </summary>
+    /// <remarks>
+    /// A config turning the buffer off on a delay line is a contradiction the switch itself
+    /// refuses, and turning resync off on 7500 asks to disable something that was never
+    /// identified. Neither is worth failing a whole session over, so an inapplicable switch is
+    /// skipped - and reported honestly as n/a by the control surface rather than as off.
+    /// </remarks>
+    private static void ApplySwitches(IModuleOptions toggles, ModuleTuning tuning)
+    {
+        if (toggles.SupportsResync)
+        {
+            toggles.ResyncEnabled = tuning.Resync;
+        }
+
+        if (toggles.SupportsBuffer)
+        {
+            toggles.BufferEnabled = tuning.Buffer;
+        }
     }
 
     private static ApiBlockOptions TcpDefaults(ModuleSpec spec)

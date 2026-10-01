@@ -1,6 +1,8 @@
 ﻿using System.Runtime.Versioning;
 
+using D2Vpn.Cli.Hotkeys;
 using D2Vpn.Core.Diagnostics;
+using D2Vpn.Core.Input;
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Processes;
 
@@ -24,25 +26,26 @@ namespace D2Vpn.Cli;
 internal static class HostCommand
 {
     public static async Task<int> ExecuteAsync(
-        IReadOnlyList<ModuleSpec> specs,
-        string pipeName,
+        HostConfig config,
         string? logPath,
-        string? pauseProcess,
-        TimeSpan? pauseTimeout,
         CancellationToken cancellationToken)
     {
+        var pipeName = config.Pipe;
         List<IModuleRunner> runners = [];
 
         try
         {
             // One handle per port group, with every module on that group as a slot behind it.
-            runners.AddRange(ModuleRunnerFactory.CreateAll(specs));
+            runners.AddRange(ModuleRunnerFactory.CreateAll(config.Resolve()));
 
-            if (pauseProcess is not null)
+            if (config.Pause.Enabled)
             {
-                var process = NtProcessControl.Open(pauseProcess);
-                runners.Add(new GamePauseRunner(
-                    new GamePauseSession(process, pauseTimeout), "pause"));
+                var process = NtProcessControl.Open(config.Pause.Process);
+                var timeout = config.Pause.SafetyTimeoutS > 0
+                    ? TimeSpan.FromSeconds(config.Pause.SafetyTimeoutS)
+                    : (TimeSpan?)null;
+
+                runners.Add(new GamePauseRunner(new GamePauseSession(process, timeout), "pause"));
             }
         }
         catch (Exception ex)
@@ -109,6 +112,25 @@ internal static class HostCommand
         Console.WriteLine();
         Console.WriteLine("Ctrl+C releases every module and closes every handle.");
         Console.WriteLine();
+
+        // Bound here rather than in the host, which stays input-free: a macro drives the pipe
+        // directly, and these keys are so the app is usable with no macro tooling at all. Both read
+        // the same file, so there is one mapping rather than two that can disagree.
+        using var hotkeys = new HotkeyWatcher(TimeSpan.FromMilliseconds(config.PollMs));
+        var bound = BindKeys(config, host, hotkeys, log);
+        hotkeys.Start();
+
+        if (bound.Count > 0)
+        {
+            Console.WriteLine("  keys:");
+
+            foreach (var (key, what) in bound)
+            {
+                Console.WriteLine($"    {key,-12} {what}");
+            }
+
+            Console.WriteLine();
+        }
 
         using var stopping = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, server.ShutdownRequested);
@@ -185,5 +207,77 @@ internal static class HostCommand
         Console.WriteLine();
         Console.WriteLine("Released - every handle is closed and traffic is back to normal.");
         return failure;
+    }
+
+    /// <summary>
+    /// Binds the keys a config names, returning what was bound for display.
+    /// </summary>
+    /// <remarks>
+    /// A bad key name is reported and skipped rather than failing the session. Losing one binding
+    /// is a nuisance; refusing to start because of a typo in the eleventh one, when the other ten
+    /// would have worked, is worse.
+    /// </remarks>
+    private static List<(string Key, string What)> BindKeys(
+        HostConfig config, ModuleHost host, HotkeyWatcher hotkeys, SessionLog? log)
+    {
+        List<(string, string)> bound = [];
+
+        void Bind(string? key, string what, Action action)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            int code;
+
+            try
+            {
+                code = KeyName.Parse(key);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"warning: cannot bind '{key}' to {what}: {ex.Message}");
+                return;
+            }
+
+            hotkeys.Bind(code, action);
+            bound.Add((KeyName.Describe(code), what));
+        }
+
+        foreach (var module in config.Modules)
+        {
+            var name = ModuleSpec.Parse(module.Name).Name;
+            Bind(module.Bind, $"toggle {name}", () => host.Toggle(name));
+        }
+
+        if (config.Pause.Enabled)
+        {
+            Bind(config.Pause.Bind, "toggle pause", () => host.Toggle("pause"));
+        }
+
+        Bind(config.ReleaseBind, "release everything", () => host.ReleaseAll());
+
+        foreach (var reset in config.ResetBinds)
+        {
+            var name = ModuleSpec.Parse(reset.Module).Name;
+
+            Bind(reset.Bind, $"reset {name}", () =>
+            {
+                try
+                {
+                    host.RequestReset(name);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    // Validation already refused a reset bind on a module that is not hosted, so
+                    // this is the module being a hold rather than a TCP one.
+                    Console.Error.WriteLine($"\n{ex.Message}");
+                }
+            });
+        }
+
+        log?.Write("binds", string.Join(" ", bound.Select(b => $"{b.Item1}={b.Item2}")));
+        return bound;
     }
 }

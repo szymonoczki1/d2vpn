@@ -34,6 +34,7 @@ try
         "reconnect" or "rc" => await ReconnectAsync(args),
         "pause" => await PauseAsync(args),
         "host" => await HostAsync(args),
+        "config" => ConfigCommand(args),
         _ => Unknown(args[0])
     };
 }
@@ -270,6 +271,17 @@ static void PrintUsage()
     Console.WriteLine("      something. --idle-s (10) is how long a silent connection still");
     Console.WriteLine("      counts as live. Trigger defaults to f9.");
     Console.WriteLine("");
+    Console.WriteLine("  d2vpn config init [PATH] [--force]   |   d2vpn config check [PATH]");
+    Console.WriteLine("      Writes a commented config holding every module and its bind, or");
+    Console.WriteLine("      validates one. Defaults to d2vpn.json. This is the one place binds");
+    Console.WriteLine("      live: the host reads it and binds the keys itself, and the AHK");
+    Console.WriteLine("      manager will generate a script from the same file rather than");
+    Console.WriteLine("      keeping a second copy of the mapping.");
+    Console.WriteLine("");
+    Console.WriteLine("      Anything omitted keeps the value measured in docs/protocol.md, so");
+    Console.WriteLine("      only write a number you have deliberately changed.");
+    Console.WriteLine("");
+    Console.WriteLine("  d2vpn host --config FILE [--log FILE]");
     Console.WriteLine("  d2vpn host <module> ... [--pause] [--pipe NAME] [--log FILE]");
     Console.WriteLine("      Runs several modules at once, controlled over a named pipe instead");
     Console.WriteLine("      of by hotkeys. This is what the AutoHotkey manager and the UI are");
@@ -307,8 +319,8 @@ static void PrintUsage()
     Console.WriteLine("      The pipe is created by an elevated process, so a client must be");
     Console.WriteLine("      elevated too - a normally-started AHK script cannot open it.");
     Console.WriteLine("");
-    Console.WriteLine("      Numeric flags that 'run' exposes (buffer size, resync cooldown,");
-    Console.WriteLine("      slow depth) are not reachable through a name. Use 'run' for those.");
+    Console.WriteLine("      Named inline, every module takes its measured defaults. To change");
+    Console.WriteLine("      buffer size, resync cooldown or slow depth, use --config.");
     Console.WriteLine("");
     Console.WriteLine("  d2vpn pause [--process NAME] [--key NAME] [--timeout-s N] [--log FILE]");
     Console.WriteLine("      Freezes the game itself rather than its traffic. Suspends every");
@@ -1309,8 +1321,71 @@ static async Task<int> RunAsync(string[] args)
         cts.Token);
 }
 
+static int ConfigCommand(string[] args)
+{
+    var action = args.Length > 1 ? args[1].ToLowerInvariant() : "init";
+    var path = StringOption(args, "--out")
+        ?? (args.Length > 2 && !args[2].StartsWith("--", StringComparison.Ordinal)
+            ? args[2]
+            : "d2vpn.json");
+
+    if (action == "check")
+    {
+        var config = HostConfig.Load(path);
+
+        Console.WriteLine($"{path} is valid.");
+        Console.WriteLine($"  pipe    : {config.Pipe}");
+        Console.WriteLine($"  modules : {config.Modules.Count}");
+        Console.WriteLine($"  pause   : {(config.Pause.Enabled ? config.Pause.Process : "off")}");
+        return 0;
+    }
+
+    if (action != "init")
+    {
+        Console.Error.WriteLine($"unknown config action '{action}'. Try: init, check");
+        return 1;
+    }
+
+    // Never silently. A config is hand-edited, and overwriting someone's binds because they
+    // re-ran a command is not recoverable from.
+    if (File.Exists(path) && !HasFlag(args, "--force"))
+    {
+        Console.Error.WriteLine($"{path} already exists. Pass --force to overwrite it.");
+        return 1;
+    }
+
+    File.WriteAllText(path, ConfigTemplate.Text);
+
+    // Parsed back so a template that cannot load is caught here rather than by the operator.
+    HostConfig.Load(path);
+
+    Console.WriteLine($"wrote {path}");
+    Console.WriteLine();
+    Console.WriteLine("It hosts all nine traffic modules plus pause, with every bind set. Edit the");
+    Console.WriteLine("keys, then run:");
+    Console.WriteLine();
+    Console.WriteLine($"  d2vpn host --config {path}");
+    return 0;
+}
+
 static async Task<int> HostAsync(string[] args)
 {
+    if (StringOption(args, "--config") is { } configPath)
+    {
+        var fromFile = HostConfig.Load(configPath);
+
+        if (!Elevation.RequireElevated())
+        {
+            return 1;
+        }
+
+        using var configCts = new CancellationTokenSource();
+        using var configSigint = SetupInterrupt(configCts);
+
+        return await HostCommand.ExecuteAsync(
+            fromFile, StringOption(args, "--log"), configCts.Token);
+    }
+
     // Everything that is not a flag or a flag's value is a module name.
     List<ModuleSpec> specs = [];
 
@@ -1348,18 +1423,22 @@ static async Task<int> HostAsync(string[] args)
     using var cts = new CancellationTokenSource();
     using var sigint = SetupInterrupt(cts);
 
-    // Game pause is hosted when asked for, as a toggle beside the traffic modules. It opens no
-    // packet handle, so it never collides with one.
-    var wantsPause = HasFlag(args, "--pause");
-    var pauseTimeoutSeconds = IntOption(args, "--pause-timeout-s", 30, allowZero: true);
+    // The command line is the same thing a config expresses, so it builds one rather than taking a
+    // second path through the host.
+    var inline = new HostConfig
+    {
+        Pipe = StringOption(args, "--pipe") ?? "d2vpn",
+        PollMs = IntOption(args, "--poll-ms", 1),
+        Modules = [.. specs.Select(s => new ModuleConfig { Name = s.Name })],
+        Pause = new PauseConfig
+        {
+            Enabled = HasFlag(args, "--pause"),
+            Process = StringOption(args, "--process") ?? "destiny2",
+            SafetyTimeoutS = IntOption(args, "--pause-timeout-s", 30, allowZero: true)
+        }
+    };
 
-    return await HostCommand.ExecuteAsync(
-        specs,
-        StringOption(args, "--pipe") ?? "d2vpn",
-        StringOption(args, "--log"),
-        wantsPause ? StringOption(args, "--process") ?? "destiny2" : null,
-        pauseTimeoutSeconds > 0 ? TimeSpan.FromSeconds(pauseTimeoutSeconds) : null,
-        cts.Token);
+    return await HostCommand.ExecuteAsync(inline, StringOption(args, "--log"), cts.Token);
 }
 
 static async Task<int> PauseAsync(string[] args)
