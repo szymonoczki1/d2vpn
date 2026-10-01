@@ -1,4 +1,4 @@
-using System.IO.Pipes;
+﻿using System.IO.Pipes;
 
 using D2Vpn.Core.Hosting;
 
@@ -171,6 +171,8 @@ public class NamedPipeControlServerTests
         public bool IsActive { get; set; }
 
         public bool SupportsReset => false;
+
+        public string? HandleKey { get; init; }
 
         public ModuleStatus Status => new(name, IsActive, 0, 0, 0, 0, 0);
 

@@ -19,9 +19,15 @@
 /// <para>
 /// <b>One handle per module, not one shared handle.</b> A combined filter would be fewer handles,
 /// but it would also mean rewriting the receive loop and re-establishing drop semantics that are
-/// already measured. Separate handles reuse the controller unchanged. The cost is that two modules
-/// whose filters overlap - a hold and a reconnect on the same group - must not be hosted together,
-/// which <see cref="ModuleHost(IEnumerable{IModuleRunner})"/> rejects.
+/// already measured. Separate handles reuse the controller unchanged.
+/// </para>
+/// <para>
+/// The cost is real and worth stating plainly: a filter is built from a port group alone, so every
+/// module on one group wants the same handle. <c>3074-ul</c> and <c>3074-dl</c> cannot both be
+/// hosted, nor <c>30k</c> and <c>30k-slow</c>. The constructor refuses such a set rather than
+/// letting one module silently sit behind another - see <see cref="IModuleRunner.HandleKey"/>.
+/// Independent per-direction toggles on one group would need a runner that owns several modules
+/// behind a single handle, which does not exist yet.
 /// </para>
 /// <para>
 /// Toggling is safe from any thread: a control connection, a UI thread and the shutdown path all
@@ -55,6 +61,25 @@ public sealed class ModuleHost : IDisposable
         if (_runners.Count == 0)
         {
             throw new ArgumentException("a host needs at least one module");
+        }
+
+        // Overlapping handles are the failure that has no symptom. See IModuleRunner.HandleKey:
+        // a WinDivert filter is keyed on the port group alone, so two modules on one group match
+        // the same packets and the lower-priority one only ever sees what the other reinjected.
+        var claims = _runners.Values
+            .Where(r => r.HandleKey is not null)
+            .GroupBy(r => r.HandleKey!)
+            .FirstOrDefault(g => g.Count() > 1);
+
+        if (claims is not null)
+        {
+            var names = claims.Select(r => r.Name).ToArray();
+
+            throw new ArgumentException(
+                $"{string.Join(" and ", names)} act on the same ports, so they would need the "
+                + "same packet handle and the second would only see what the first let through. "
+                + "Host one of them, or use the combined module if you want both directions at "
+                + "once.");
         }
     }
 

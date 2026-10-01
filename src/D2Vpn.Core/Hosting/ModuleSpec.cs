@@ -1,4 +1,4 @@
-using D2Vpn.Core.Modules;
+﻿using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Hosting;
@@ -46,6 +46,23 @@ public readonly record struct ModuleSpec(
         }
 
         var parts = text.Trim().ToLowerInvariant().Split('-', StringSplitOptions.TrimEntries);
+
+        // Two things people reasonably expect to be modules here are not, and a bare "unknown
+        // group" would leave them guessing why.
+        if (parts[0] is "rc" or "reconnect")
+        {
+            throw new ArgumentException(
+                "reconnect is not a module - it is a capability of the TCP ones. Host '30k' or "
+                + "'7500' and send 'reset 30k' over the control pipe. A sampler has to share the "
+                + "hold's handle, so it cannot be hosted separately.");
+        }
+
+        if (parts[0] is "pause" or "gamepause")
+        {
+            throw new ArgumentException(
+                "pause suspends the game process rather than filtering packets, so it is its own "
+                + "command: run 'd2vpn pause' alongside the host.");
+        }
 
         var group = DestinyPorts.ByName(parts[0])
             ?? throw new ArgumentException(
@@ -102,6 +119,49 @@ public readonly record struct ModuleSpec(
         }
 
         return new ModuleSpec(Canonical(group, resolved, slow), group, resolved, slow);
+    }
+
+    /// <summary>
+    /// Throws if two specs want the same packet handle.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The same rule <see cref="ModuleHost"/> enforces, checked a step earlier. The host can only
+    /// see it once every runner has opened a handle, which needs administrator rights - so
+    /// without this, naming two modules on one group costs an elevation prompt before reporting a
+    /// mistake that was visible from the command line.
+    /// </para>
+    /// <para>
+    /// A port group is the unit, because a WinDivert filter is built from nothing else. Direction
+    /// and slow do not appear in it.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">Two specs share a port group.</exception>
+    public static void EnsureNoConflicts(IReadOnlyList<ModuleSpec> specs)
+    {
+        ArgumentNullException.ThrowIfNull(specs);
+
+        var clash = specs
+            .GroupBy(s => s.Group.Name)
+            .FirstOrDefault(g => g.Count() > 1);
+
+        if (clash is null)
+        {
+            return;
+        }
+
+        var names = clash.Select(s => s.Name).ToArray();
+
+        // Only a UDP group has a combined form; a TCP hold is inbound-only and has no direction,
+        // so suggesting one would send the operator after a module that does not exist.
+        var alternative = clash.First().Group.Protocol == PortProtocol.Udp
+            ? $" For both directions at once use '{clash.Key}-full'."
+            : string.Empty;
+
+        throw new ArgumentException(
+            $"{string.Join(" and ", names)} both act on {clash.Key}, and modules on one port "
+            + "group need the same packet handle - the second would only see what the first let "
+            + $"through. Host one of them per session.{alternative}");
     }
 
     private static string Canonical(PortGroup group, HoldDirection? direction, bool slow)

@@ -1,4 +1,4 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
@@ -57,6 +57,9 @@ public sealed class WinDivertModuleRunner : IModuleRunner
 
     /// <summary>The filter this module's handle was opened with.</summary>
     public string FilterExpression => _controller.FilterExpression;
+
+    /// <inheritdoc/>
+    public string? HandleKey => _controller.FilterExpression;
 
     /// <inheritdoc/>
     public Task RunAsync(CancellationToken cancellationToken) =>

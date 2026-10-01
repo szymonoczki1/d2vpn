@@ -1,4 +1,4 @@
-using D2Vpn.Core.Hosting;
+﻿using D2Vpn.Core.Hosting;
 
 namespace D2Vpn.Core.Tests.Hosting;
 
@@ -205,6 +205,8 @@ public class ControlProtocolTests
         public bool IsActive { get; set; }
 
         public bool SupportsReset => supportsReset;
+
+        public string? HandleKey { get; init; }
 
         public ModuleStatus Status => new(name, IsActive, 10, 4, 3, 2, 0);
 

@@ -1,4 +1,4 @@
-using D2Vpn.Core.Hosting;
+﻿using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
@@ -87,6 +87,63 @@ public class ModuleSpecTests
     public void An_empty_spec_is_rejected(string text)
     {
         Assert.Throws<ArgumentException>(() => ModuleSpec.Parse(text));
+    }
+
+    [Theory]
+    [InlineData("rc")]
+    [InlineData("reconnect")]
+    public void Reconnect_explains_that_it_is_a_capability(string text)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => ModuleSpec.Parse(text));
+
+        Assert.Contains("reset 30k", ex.Message);
+    }
+
+    [Theory]
+    [InlineData("pause")]
+    [InlineData("gamepause")]
+    public void Pause_explains_that_it_is_its_own_command(string text)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => ModuleSpec.Parse(text));
+
+        Assert.Contains("d2vpn pause", ex.Message);
+    }
+
+    [Fact]
+    public void Two_modules_on_one_group_conflict()
+    {
+        var specs = new[] { ModuleSpec.Parse("3074-ul"), ModuleSpec.Parse("3074-dl") };
+
+        var ex = Assert.Throws<ArgumentException>(() => ModuleSpec.EnsureNoConflicts(specs));
+
+        Assert.Contains("3074-ul", ex.Message);
+        Assert.Contains("3074-full", ex.Message);
+    }
+
+    [Fact]
+    public void A_tcp_conflict_does_not_suggest_a_full_variant()
+    {
+        // 30k is inbound-only and has no combined form, so pointing at one would send the operator
+        // after a module that does not exist.
+        var specs = new[] { ModuleSpec.Parse("30k"), ModuleSpec.Parse("30k-slow") };
+
+        var ex = Assert.Throws<ArgumentException>(() => ModuleSpec.EnsureNoConflicts(specs));
+
+        Assert.DoesNotContain("-full", ex.Message);
+    }
+
+    [Fact]
+    public void Modules_on_different_groups_do_not_conflict()
+    {
+        var specs = new[]
+        {
+            ModuleSpec.Parse("3074-ul"),
+            ModuleSpec.Parse("27k-ul"),
+            ModuleSpec.Parse("30k"),
+            ModuleSpec.Parse("7500")
+        };
+
+        ModuleSpec.EnsureNoConflicts(specs);
     }
 
     [Fact]

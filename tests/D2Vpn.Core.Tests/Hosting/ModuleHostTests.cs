@@ -85,6 +85,45 @@ public class ModuleHostTests
     }
 
     [Fact]
+    public void Two_modules_claiming_one_handle_are_rejected()
+    {
+        // The failure that has no symptom. A WinDivert filter is keyed on the port group alone, so
+        // 3074-ul and 3074-dl produce identical filters; hosting both would leave the second
+        // seeing only what the first reinjected, with nothing to explain why it did nothing.
+        var ex = Assert.Throws<ArgumentException>(() => new ModuleHost(
+        [
+            Fake("3074-ul", handleKey: "udp and remotePort == 3074"),
+            Fake("3074-dl", handleKey: "udp and remotePort == 3074")
+        ]));
+
+        Assert.Contains("3074-ul", ex.Message);
+        Assert.Contains("3074-dl", ex.Message);
+        Assert.Contains("same ports", ex.Message);
+    }
+
+    [Fact]
+    public void Modules_on_different_handles_are_allowed()
+    {
+        using var host = new ModuleHost(
+        [
+            Fake("3074-ul", handleKey: "udp and remotePort == 3074"),
+            Fake("30k", handleKey: "tcp and remotePort >= 30000")
+        ]);
+
+        Assert.Equal(2, host.Names.Count);
+    }
+
+    [Fact]
+    public void Runners_without_a_handle_never_collide()
+    {
+        // Every other test in this file hosts fakes that open nothing, and they must stay hostable
+        // together regardless of how many there are.
+        using var host = new ModuleHost([Fake("a"), Fake("b"), Fake("c")]);
+
+        Assert.Equal(3, host.Names.Count);
+    }
+
+    [Fact]
     public void A_host_with_no_modules_is_rejected()
     {
         Assert.Throws<ArgumentException>(() => new ModuleHost([]));
@@ -162,8 +201,11 @@ public class ModuleHostTests
     }
 
     private static FakeRunner Fake(
-        string name, bool supportsReset = false, bool fails = false) =>
-        new(name, supportsReset, fails);
+        string name,
+        bool supportsReset = false,
+        bool fails = false,
+        string? handleKey = null) =>
+        new(name, supportsReset, fails) { HandleKey = handleKey };
 
     private sealed class FakeRunner(string name, bool supportsReset, bool fails) : IModuleRunner
     {
@@ -172,6 +214,8 @@ public class ModuleHostTests
         public bool IsActive { get; set; }
 
         public bool SupportsReset => supportsReset;
+
+        public string? HandleKey { get; init; }
 
         public int Resets { get; private set; }
 

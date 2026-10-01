@@ -1318,6 +1318,9 @@ static async Task<int> HostAsync(string[] args)
             "name at least one module, such as: d2vpn host 3074-ul 30k");
     }
 
+    // Before elevation, so a bad command line is reported without a UAC prompt first.
+    ModuleSpec.EnsureNoConflicts(specs);
+
     if (!Elevation.RequireElevated())
     {
         return 1;
