@@ -44,7 +44,12 @@ internal static class HostCommand
                     ? TimeSpan.FromSeconds(config.Pause.SafetyTimeoutS)
                     : (TimeSpan?)null;
 
-                runners.Add(new GamePauseRunner(new GamePauseSession(process, timeout), "pause"));
+                var pause = new GamePauseRunner(new GamePauseSession(process, timeout), "pause")
+                {
+                    IsEnabled = config.Pause.ModuleEnabled
+                };
+
+                runners.Add(pause);
             }
         }
         catch (Exception ex)

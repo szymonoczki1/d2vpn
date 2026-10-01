@@ -1,4 +1,4 @@
-namespace D2Vpn.Core.Hosting;
+﻿namespace D2Vpn.Core.Hosting;
 
 /// <summary>
 /// Per-module numbers a config file may override, on top of the measured defaults.
@@ -17,6 +17,16 @@ namespace D2Vpn.Core.Hosting;
 /// </remarks>
 public sealed record ModuleTuning
 {
+    /// <summary>
+    /// Whether the module participates at all when the session starts.
+    /// </summary>
+    /// <remarks>
+    /// Restored like any other setting, so a module turned off stays off next launch. What is not
+    /// restored is whether it was <em>holding</em> - coming back to a session that is already
+    /// withholding traffic, with no keypress to explain it, is not something anyone wants.
+    /// </remarks>
+    public bool Enabled { get; init; } = true;
+
     /// <summary>Whether the resync window, or the TCP keepalive, starts enabled.</summary>
     public bool Resync { get; init; } = true;
 

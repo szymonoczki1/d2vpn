@@ -25,6 +25,16 @@ public sealed class ModuleViewModel : ObservableObject
     private int? _resyncKey;
     private int? _bufferKey;
 
+    /// <summary>
+    /// Raised when the operator changes a setting that belongs in the config file.
+    /// </summary>
+    /// <remarks>
+    /// Only from the setters, never from <see cref="Refresh"/>. Refresh re-raises these properties
+    /// four times a second so the window tracks the live module, and saving on that would rewrite
+    /// the file continuously for no reason.
+    /// </remarks>
+    public event Action? SettingChanged;
+
     /// <summary>Wraps a hosted module.</summary>
     public ModuleViewModel(IControllable control, ModuleConfig? config)
     {
@@ -97,6 +107,7 @@ public sealed class ModuleViewModel : ObservableObject
 
             _control.IsEnabled = value;
             RaiseAll(nameof(IsEnabled), nameof(IsActive), nameof(StateLabel), nameof(CanHold));
+            SettingChanged?.Invoke();
         }
     }
 
@@ -144,6 +155,7 @@ public sealed class ModuleViewModel : ObservableObject
 
             options.ResyncEnabled = value;
             Raise();
+            SettingChanged?.Invoke();
         }
     }
 
@@ -167,9 +179,12 @@ public sealed class ModuleViewModel : ObservableObject
                 // A delay line refuses to give up its buffer. The switch is disabled in the window,
                 // so this is only reachable by a binding racing a state change - and silently
                 // keeping the old value is right either way.
+                Raise();
+                return;
             }
 
             Raise();
+            SettingChanged?.Invoke();
         }
     }
 

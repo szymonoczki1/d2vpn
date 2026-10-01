@@ -125,7 +125,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     ? TimeSpan.FromSeconds(_config.Pause.SafetyTimeoutS)
                     : (TimeSpan?)null;
 
-                _runners.Add(new GamePauseRunner(new GamePauseSession(process, timeout), "pause"));
+                _runners.Add(new GamePauseRunner(new GamePauseSession(process, timeout), "pause")
+                {
+                    IsEnabled = _config.Pause.ModuleEnabled
+                });
             }
 
             _host = new ModuleHost(_runners);
@@ -146,6 +149,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             var module = new ModuleViewModel(
                 controllable, byName.GetValueOrDefault(controllable.Name));
+
+            // Every switch the operator flips is written straight back, so enabled, autoresync and
+            // buffering are all where they were left next launch - the same as a keybind.
+            module.SettingChanged += Save;
 
             // Two controls have no entry in Modules, so without this they would show as unbound
             // however the config was written: pause keeps its key in the Pause section, and a
@@ -339,7 +346,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     ? _config.Pause
                     : _config.Pause with
                     {
-                        Bind = pause.BindKey is { } key ? KeyName.Describe(key) : null
+                        Bind = pause.BindKey is { } key ? KeyName.Describe(key) : null,
+
+                        // Not Enabled, which is whether pause is hosted at all. A switch that
+                        // unhosted its own control could not be switched back.
+                        ModuleEnabled = pause.IsEnabled
                     }
             };
 

@@ -373,6 +373,74 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void Switch_states_reach_the_tuning_that_configures_a_module()
+    {
+        // They were written to the file and then ignored on the way back in: nothing carried
+        // Enabled through to the module, so a module turned off came back on.
+        var config = HostConfig.Parse("""
+        {
+          "modules": [
+            { "name": "30k", "enabled": false, "resync": false, "buffer": false }
+          ]
+        }
+        """);
+
+        var tuning = config.Resolve()[0].Tuning;
+
+        Assert.False(tuning.Enabled);
+        Assert.False(tuning.Resync);
+        Assert.False(tuning.Buffer);
+    }
+
+    [Fact]
+    public void Switch_states_default_to_on_when_a_config_does_not_mention_them()
+    {
+        var tuning = HostConfig.Parse("""{ "modules": [ { "name": "30k" } ] }""")
+            .Resolve()[0].Tuning;
+
+        Assert.True(tuning.Enabled);
+        Assert.True(tuning.Resync);
+        Assert.True(tuning.Buffer);
+    }
+
+    [Fact]
+    public void Pause_separates_being_hosted_from_being_enabled()
+    {
+        // Two different questions that would otherwise share one flag: a switch in the window that
+        // unhosted its own control could not be switched back on from the window.
+        var config = HostConfig.Parse("""
+        {
+          "pause": { "enabled": true, "moduleEnabled": false, "bind": "f10" }
+        }
+        """);
+
+        Assert.True(config.Pause.Enabled);
+        Assert.False(config.Pause.ModuleEnabled);
+
+        // Hosted and enabled is the default, so an older config keeps working.
+        var older = HostConfig.Parse("""{ "pause": { "enabled": true } }""");
+
+        Assert.True(older.Pause.ModuleEnabled);
+    }
+
+    [Fact]
+    public void Switch_states_survive_a_round_trip()
+    {
+        var original = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k", "enabled": false, "resync": false } ],
+          "pause": { "enabled": true, "moduleEnabled": false }
+        }
+        """);
+
+        var again = HostConfig.Parse(original.ToJson());
+
+        Assert.False(again.Modules[0].Enabled);
+        Assert.False(again.Modules[0].Resync);
+        Assert.False(again.Pause.ModuleEnabled);
+    }
+
+    [Fact]
     public void A_duplicate_key_is_repaired_rather_than_fatal()
     {
         // The window is the tool for fixing a config, so it must not be stopped from opening by

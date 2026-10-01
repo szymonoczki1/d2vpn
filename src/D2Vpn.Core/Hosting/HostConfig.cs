@@ -58,6 +58,7 @@ public sealed record ModuleConfig
     /// <summary>The numbers, as the factory wants them.</summary>
     public ModuleTuning ToTuning() => new()
     {
+        Enabled = Enabled,
         Resync = Resync,
         Buffer = Buffer,
         SlowMs = SlowMs,
@@ -70,8 +71,21 @@ public sealed record ModuleConfig
 /// <summary>Game pause, as a config file describes it.</summary>
 public sealed record PauseConfig
 {
-    /// <summary>Whether to host it at all.</summary>
+    /// <summary>
+    /// Whether to host it at all.
+    /// </summary>
+    /// <remarks>
+    /// The equivalent of a module being present in <see cref="HostConfig.Modules"/> rather than of
+    /// <see cref="ModuleConfig.Enabled"/>. False means it does not appear in the window at all,
+    /// which is why the window's own switch writes to <see cref="ModuleEnabled"/> instead - a
+    /// switch that removed its own control from the window could not be switched back.
+    /// </remarks>
     public bool Enabled { get; init; }
+
+    /// <summary>
+    /// Whether it participates, once hosted. The window's "Module enabled" switch.
+    /// </summary>
+    public bool ModuleEnabled { get; init; } = true;
 
     /// <summary>The key that toggles it.</summary>
     public string? Bind { get; init; }

@@ -73,6 +73,10 @@ public static class ConfigTemplate
       // Suspends the game process. Nothing is sent, received, drawn or simulated while it is held.
       // safetyTimeoutS ends a pause automatically - on by default, unlike every traffic hold,
       // because a suspend that goes wrong leaves a process that will never run again. 0 for none.
+      //
+      // enabled is whether to host it at all - false and it does not appear in the window.
+      // moduleEnabled is the window's own switch, which is a different question: hosted, listed,
+      // but refusing to activate.
       "pause": {
         "enabled": true,
         "bind": "f10",

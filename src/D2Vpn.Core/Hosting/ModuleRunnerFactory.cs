@@ -54,7 +54,23 @@ public static class ModuleRunnerFactory
         {
             foreach (var group in modules.GroupBy(m => m.Spec.Group))
             {
-                runners.Add(CreateGroup(group.Key, [.. group.OrderBy(m => m.Spec.Slow)]));
+                var ordered = group.OrderBy(m => m.Spec.Slow).ToArray();
+                var runner = CreateGroup(group.Key, ordered);
+
+                // After construction, because a control only exists once its runner does. A module
+                // configured as disabled is still hosted and still holds its handle - it simply
+                // refuses to be activated, which is what disabled means here.
+                foreach (var (spec, tuning) in ordered)
+                {
+                    var control = runner.Controls.FirstOrDefault(c => c.Name == spec.Name);
+
+                    if (control is not null)
+                    {
+                        control.IsEnabled = tuning.Enabled;
+                    }
+                }
+
+                runners.Add(runner);
             }
         }
         catch
