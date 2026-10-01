@@ -1,0 +1,48 @@
+<Project>
+
+  <!--
+    Shared build settings for every project here.
+
+    The Release block exists because this is distributed as a compiled zip rather than as a repo,
+    which moves where a build can leak the machine it was built on. A .NET assembly normally embeds
+    the absolute path of its PDB, and a shipped PDB carries the absolute path of every source file -
+    so a default Release build of this project contained the developer's Windows username, visible
+    with nothing more than `strings`. Nobody reads a DLL expecting to find that, which is exactly
+    why it is worth setting here rather than remembering at publish time.
+  -->
+
+  <PropertyGroup>
+    <Product>d2vpn</Product>
+    <Company>szymonoczki1</Company>
+    <Authors>szymonoczki1</Authors>
+    <Copyright>Copyright (c) 2026 szymonoczki1</Copyright>
+    <Description>Network traffic control and macro management for Destiny 2, on Windows.</Description>
+    <Version>0.1.0</Version>
+
+    <!-- Reproducible output: the same source produces the same bytes. -->
+    <Deterministic>true</Deterministic>
+
+    <!-- Nothing here is localised, and the satellite assemblies are noise in a zip. -->
+    <NeutralLanguage>en</NeutralLanguage>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <!--
+      No PDB at all, and so no PDB path embedded in the assembly. Stack traces lose line numbers,
+      which is the trade: a distributed build should not describe the filesystem it came from, and a
+      Debug build still has everything for diagnosing a problem here.
+    -->
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+
+    <!--
+      Normalises any source path the compiler would otherwise record to /_/ instead of an absolute
+      one. Belt and braces alongside DebugType, since several things besides PDBs can capture a
+      path - CallerFilePath among them.
+    -->
+    <DeterministicSourcePaths>true</DeterministicSourcePaths>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+</Project>

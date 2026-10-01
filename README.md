@@ -6,12 +6,15 @@ Packet interception through the WinDivert kernel driver, with per-module control
 port groups. Built on measurements taken from live traffic rather than on inherited constants -
 see [docs/protocol.md](docs/protocol.md).
 
-> **Status: both 3074 modules work.** Uplink and downlink are each validated end to end against a
-> live game - 96% of traffic blocked over a 60 second hold, twice the ~30 s ceiling a hold without
-> a working resync dies at, with the in-game effect confirmed both ways: a downlink hold defers an
-> interaction until release, and an uplink hold stops the server learning about a kill. The other
-> three port groups are unmeasured. What follows describes what exists today, not what is
-> planned.
+> **Status: every module works, validated against a live game.** All four port groups, in both
+> directions where the group has two, plus reconnect and a process pause. A session host runs them
+> together and takes commands over a named pipe, driven by a config file or a hotkey.
+>
+> What is *not* yet proven is the host under sustained real play - the modules were each validated
+> on their own, and the host that combines them has had only light use. There is no GUI and no
+> installer yet.
+>
+> What follows describes what exists today, not what is planned.
 
 ## Why calibration is the centrepiece
 
@@ -71,10 +74,41 @@ untouched, so it cannot stall or break a live game.
 | `d2vpn watch <group> [--seconds N]` | Live packet counts and a payload-size histogram |
 | `d2vpn calibrate <group> [--seconds N] [--downlink]` | Derive this machine's signature for a group, in either direction |
 | `d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]` | Hold a group in one direction for a fixed time. `--dry-run` reports what it would drop without touching traffic |
-| `d2vpn run <group> [--key K] [--downlink] [--full] [--slow] [--no-buffer]` | Hold a group on a hotkey, until Ctrl+C. This is the one to actually play with |
+| `d2vpn run <group> [--key K] [--downlink] [--full] [--slow] [--no-buffer]` | Hold one group on a hotkey, until Ctrl+C. The most direct way to try a single module |
+| `d2vpn reconnect [group] [--key K]` | Inject a TCP reset into every live connection, so the game error-codes and reconnects |
+| `d2vpn pause [--key K] [--timeout-s N]` | Suspend the game process itself. Nothing is sent, received, drawn or simulated while held |
+| `d2vpn host <module> ... [--config FILE]` | Run several modules at once, controlled over a named pipe. The one to actually play with |
+| `d2vpn config init \| check [PATH]` | Write a commented config holding every module and its keybind, or validate one |
+| `d2vpn ctl <command ...>` | Send one command to a running host and print the reply |
 
-Groups: `3074`, `27k`, `7500`, `30k`. Both `watch` and `calibrate` need an elevated terminal,
-because loading a kernel driver does.
+Groups: `3074`, `27k`, `7500`, `30k`. Anything that opens the driver needs an elevated terminal,
+because loading a kernel driver does. `config` and a `host` that runs only `pause` do not.
+
+### The host, in practice
+
+```
+d2vpn config init                       # writes d2vpn.json with every module and bind
+d2vpn host --config d2vpn.json          # hosts them; nothing holds until told to
+```
+
+Modules are named `group[-direction][-slow]`: `3074-ul`, `3074-dl`, `27k-full`, `30k-slow`, `7500`.
+TCP groups are inbound-only and take no direction. Several modules on one group share that group's
+packet handle, each with its own buffer and its own release, so uplink and downlink can be separate
+toggles.
+
+From a second elevated terminal, or from a macro:
+
+```
+d2vpn ctl status                        # ok 3074-ul=0 27k-ul=1 30k=0 pause=0
+d2vpn ctl on 3074-ul
+d2vpn ctl set 3074-ul resync off        # switches change while running
+d2vpn ctl reset 30k                     # the reconnect
+d2vpn ctl release                       # drop every hold at once
+```
+
+One line in, one line out, every reply starting `ok` or `err`, and the exit code following it. The
+protocol has no JSON because its first consumer is AutoHotkey v2, which has no JSON parser in the
+box - a script that reads one line and splits on spaces needs no library at all.
 
 ## Holding uplink is a cycle, not a switch
 
@@ -216,12 +250,16 @@ reaches its destination only if it is reinjected.
 
 ## Port groups
 
-| Group | Protocol | Ports | Role |
-|---|---|---|---|
-| `3074` | UDP | 3074 | Primary peer traffic, ~10 Hz each way |
-| `27k` | UDP | 27015-27200 | Additional peer traffic |
-| `7500` | TCP | 7500-7509 | Service channel |
-| `30k` | TCP | 30000-30009 | Instance and session control |
+| Group | Protocol | Ports | Role | Measured hold |
+|---|---|---|---|---|
+| `3074` | UDP | 3074 | Primary peer traffic, ~10 Hz each way | 96% blocked over 60 s; survives 20 min with resync |
+| `27k` | UDP | 27015-27200 | Additional peer traffic, many peers | 97.7% of uplink blocked; no ceiling found |
+| `7500` | TCP | 7500-7509 | Service channel, ~2.3 packets/s | Reset somewhere between 75 s and 87 s |
+| `30k` | TCP | 30000-30009 | Instance and session control | Dies in ~20 s without the 73-byte heartbeat, indefinite with it |
+
+Both UDP groups hold uplink, downlink or both. Both TCP groups are inbound-only, and both carry
+`reset` - the reconnect - as a capability rather than as a separate module, because the sampler it
+needs has to share the hold's packet handle.
 
 ## Design rules
 
@@ -247,12 +285,22 @@ every module and the calibrator can be tested against synthetic packets with no 
 ## Layout
 
 ```
-src/D2Vpn.Core/        domain, interception, calibration  (net9.0, no UI)
-src/D2Vpn.Cli/         command-line front end             (net9.0-windows)
-tests/D2Vpn.Core.Tests/
-tools/capture/         PowerShell capture and analysis scripts
-docs/                  measured findings and prior-art analysis
+src/D2Vpn.Core/            net9.0, no UI dependency
+  Network/                 port groups
+  Interception/            WinDivert handles, packet buffer, slot composition
+  Modules/                 the traffic modules and their measured options
+  Calibration/             per-peer signature finder
+  Processes/               process suspend, for game pause
+  Hosting/                 session host, control protocol, config file
+src/D2Vpn.Cli/             command-line front end  (net9.0-windows)
+tests/D2Vpn.Core.Tests/    437 tests, none needing the driver or elevation
+tools/capture/             PowerShell capture and analysis scripts
+docs/                      measured findings and prior-art analysis
 ```
+
+`Hosting` is the seam a GUI would attach to. `ModuleHost` holds the modules, `IControllable` is one
+addressable toggle, `IModuleOptions` is a switch that changes while running, and `HostConfig` is the
+file all of it is configured from - so a front end binds to those rather than to WinDivert.
 
 ## Building and running
 
@@ -271,15 +319,40 @@ this directory:
 .\d2vpn calibrate 3074 --seconds 60
 ```
 
-The leading `.\` is required in PowerShell for a script in the current directory. To drop it,
-put the output directory on PATH for the session:
+The leading `.\` is required in PowerShell for a script in the current directory.
+
+Anything that opens the driver - `watch`, `calibrate`, `hold`, `run`, `host` with a traffic module -
+needs an elevated terminal. `config`, and a `host` running only `pause`, do not.
+
+## Distributing a build
 
 ```
-$env:PATH += ";$PWD\src\D2Vpn.Cliin\Debug
-et9.0-windows"
+dotnet publish src/D2Vpn.Cli -c Release -o out
 ```
 
-Commands that touch the driver - `watch`, `calibrate`, `hold` - need an elevated terminal.
+The Release configuration deliberately produces **no PDB and no absolute paths**. A .NET assembly
+normally embeds the absolute path of its PDB, and a shipped PDB carries the absolute path of every
+source file - so a default Release build contained the build machine's Windows username, readable
+with nothing more than `strings`. `Directory.Build.props` turns that off, and the trade is that
+stack traces from a Release build have no line numbers. Debug builds keep everything.
+
+WinDivert's driver files ship with the `WindivertDotnet` package and have to sit beside the
+executable.
+
+## Licence
+
+[MIT](LICENSE).
+
+The reference implementations this project learned from carry **no licence at all**, which means
+their authors retain every right and copying from them would have been infringement regardless of
+being public. So nothing was copied: they were read for facts - that a resync window exists, which
+payload sizes matter, that 1300 bytes opens one - and the implementation here is original.
+[docs/prior-art.md](docs/prior-art.md) marks which numbers came from reading someone else's source
+and which were measured here, and the measured ones disagree with the inherited ones often enough
+that the distinction earns its keep.
+
+Separately, and not a licence question: this manipulates the traffic of a live online game. Whether
+that is permitted is between you and the game's terms of service.
 
 ## Documentation
 
