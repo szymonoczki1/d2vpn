@@ -373,6 +373,20 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void A_written_config_uses_the_same_casing_as_the_template()
+    {
+        // The reader does not care, but a file the window rewrites should not come back looking
+        // different from the one the operator was given.
+        var json = HostConfig.Parse(ConfigTemplate.Text).ToJson();
+
+        Assert.Contains("\"pipe\"", json);
+        Assert.Contains("\"pollMs\"", json);
+        Assert.Contains("\"resetBinds\"", json);
+        Assert.DoesNotContain("\"Pipe\"", json);
+        Assert.DoesNotContain("\"PollMs\"", json);
+    }
+
+    [Fact]
     public void A_config_survives_a_round_trip_through_json()
     {
         var original = HostConfig.Parse("""

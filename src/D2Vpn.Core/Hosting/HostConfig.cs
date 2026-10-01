@@ -155,6 +155,10 @@ public sealed record HostConfig
     private static readonly JsonSerializerOptions WriteOptions = new()
     {
         WriteIndented = true,
+
+        // Match the template. The reader is case-insensitive either way, but a file the window
+        // rewrites should not come back in different casing from the one it was given.
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
@@ -186,7 +190,15 @@ public sealed record HostConfig
     /// <summary>Reads a config from a file.</summary>
     public static HostConfig Load(string path) => Parse(File.ReadAllText(path));
 
-    /// <summary>Serialises this config.</summary>
+    /// <summary>
+    /// Serialises this config.
+    /// </summary>
+    /// <remarks>
+    /// <b>Comments do not survive this.</b> A JSON writer cannot emit them, so a hand-commented
+    /// file rewritten from the window comes back as data alone. That is the cost of letting the
+    /// window own the file; the commented template is always available again from
+    /// <see cref="ConfigTemplate"/> via <c>d2vpn config init</c>.
+    /// </remarks>
     public string ToJson() => JsonSerializer.Serialize(this, WriteOptions);
 
     /// <summary>
