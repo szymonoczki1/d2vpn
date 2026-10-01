@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Runtime.Versioning;
 using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
@@ -42,16 +42,26 @@ namespace D2Vpn.Core.Interception;
 public sealed class WinDivertTrafficController : IDisposable
 {
     private readonly WinDivert _divert;
-    private readonly ITrafficModule _module;
-    private readonly PacketBuffer? _buffer;
+    private readonly IReadOnlyList<ModuleSlot> _slots;
     private readonly TcpAckRewriter? _rewriter;
     private readonly ConnectionSampler? _sampler;
     private int _resetRequested;
-    private bool _wasHolding;
     private bool _disposed;
 
-    /// <summary>The module deciding each packet.</summary>
-    public ITrafficModule Module => _module;
+    /// <summary>The slots sharing this handle, in the order they are consulted.</summary>
+    public IReadOnlyList<ModuleSlot> Slots => _slots;
+
+    /// <summary>
+    /// The module deciding each packet, for a handle carrying exactly one.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">This handle carries several.</exception>
+    public ITrafficModule Module => _slots.Count == 1
+        ? _slots[0].Module
+        : throw new InvalidOperationException(
+            $"this handle carries {_slots.Count} modules - use Slots");
+
+    /// <summary>True while any slot is holding.</summary>
+    public bool AnyHolding => _slots.Any(s => s.Module.IsActive);
 
     /// <summary>The filter string handed to the driver.</summary>
     public string FilterExpression { get; }
@@ -166,13 +176,56 @@ public sealed class WinDivertTrafficController : IDisposable
         PacketBuffer? buffer = null,
         TcpAckRewriter? rewriter = null,
         ConnectionSampler? sampler = null)
+        : this([new ModuleSlot(module, buffer)], priority, rewriter, sampler)
     {
-        _module = module;
-        _buffer = buffer;
+    }
+
+    /// <summary>
+    /// Opens one diverting handle shared by several modules on the same port group.
+    /// </summary>
+    /// <remarks>
+    /// Several modules on one group cannot each have a handle: a filter is built from the group
+    /// alone, so they would all match the same packets and the lower-priority ones would see only
+    /// what the first reinjected. See <see cref="ModuleSlot"/>.
+    /// </remarks>
+    /// <param name="slots">
+    /// The modules sharing this handle, consulted in order. The first non-passing verdict wins and
+    /// that slot's buffer keeps the packet.
+    /// </param>
+    /// <param name="priority">Handle priority.</param>
+    /// <param name="rewriter">Shared ack rewriter, or null for UDP.</param>
+    /// <param name="sampler">Shared sampler, or null if this handle never injects.</param>
+    /// <exception cref="ArgumentException">
+    /// No slots, or slots on different port groups - which could not share a filter.
+    /// </exception>
+    public WinDivertTrafficController(
+        IReadOnlyList<ModuleSlot> slots,
+        short priority = 0,
+        TcpAckRewriter? rewriter = null,
+        ConnectionSampler? sampler = null)
+    {
+        ArgumentNullException.ThrowIfNull(slots);
+
+        if (slots.Count == 0)
+        {
+            throw new ArgumentException("a handle needs at least one module", nameof(slots));
+        }
+
+        var group = slots[0].Module.Group;
+
+        if (slots.Any(slot => slot.Module.Group != group))
+        {
+            throw new ArgumentException(
+                "every module on one handle must act on the same port group, because the filter is "
+                + "built from the group and nothing else",
+                nameof(slots));
+        }
+
+        _slots = slots;
         _rewriter = rewriter;
         _sampler = sampler;
 
-        var filter = WinDivertFilterBuilder.Build(module.Group);
+        var filter = WinDivertFilterBuilder.Build(group);
         FilterExpression = filter.ToString() ?? string.Empty;
 
         try
@@ -183,7 +236,7 @@ public sealed class WinDivertTrafficController : IDisposable
         catch (Exception ex)
         {
             throw new InvalidOperationException(
-                $"Could not open WinDivert for {module.Group} in divert mode. This needs an "
+                $"Could not open WinDivert for {group} in divert mode. This needs an "
                 + "elevated process, and no other limiter may be holding an overlapping filter. "
                 + $"Filter was: {FilterExpression}", ex);
         }
@@ -222,7 +275,7 @@ public sealed class WinDivertTrafficController : IDisposable
                 // be most of a second away. Measured on 7500 at 2.3 packets/s, which is a ~430 ms
                 // average gap and was felt in game as a delay after unticking. The read is not
                 // cancelled to do this; it is simply left outstanding until it completes.
-                if (_buffer is not null || _sampler is not null)
+                if (_sampler is not null || _slots.Any(slot => slot.Buffer is not null))
                 {
                     var tick = Task.Delay(DrainInterval, cancellationToken);
                     var finished = await Task.WhenAny(receive, tick).ConfigureAwait(false);
@@ -272,7 +325,7 @@ public sealed class WinDivertTrafficController : IDisposable
                     InboundSeen++;
                 }
 
-                var verdict = Decide(packet, addr, out var peer);
+                var verdict = Decide(packet, addr, out var peer, out var owner);
 
                 if (verdict == PacketVerdict.Pass)
                 {
@@ -290,10 +343,13 @@ public sealed class WinDivertTrafficController : IDisposable
                         InboundDropped++;
                     }
 
-                    if (verdict == PacketVerdict.Buffer && _buffer is not null)
+                    owner?.CountDropped();
+
+                    if (verdict == PacketVerdict.Buffer && owner?.Buffer is { } slotBuffer)
                     {
-                        _buffer.Hold(packet, addr, DateTimeOffset.UtcNow, peer);
+                        slotBuffer.Hold(packet, addr, DateTimeOffset.UtcNow, peer);
                         PacketsBuffered++;
+                        owner.CountBuffered();
                     }
                 }
             }
@@ -330,17 +386,12 @@ public sealed class WinDivertTrafficController : IDisposable
     /// and the game copes, so there is nothing to gain by pacing - and pacing would mean the last
     /// actions of a hold arriving later still, which is the opposite of what they are held for.
     /// </remarks>
-    private async Task ReplayAsync()
+    private async Task ReplayAsync(ModuleSlot slot, PacketBuffer buffer)
     {
-        if (_buffer is null)
-        {
-            return;
-        }
-
         var started = System.Diagnostics.Stopwatch.StartNew();
         var sent = 0;
 
-        foreach (var entry in _buffer.TakeForReplay(DateTimeOffset.UtcNow))
+        foreach (var entry in buffer.TakeForReplay(DateTimeOffset.UtcNow))
         {
             try
             {
@@ -360,6 +411,7 @@ public sealed class WinDivertTrafficController : IDisposable
             }
         }
 
+        slot.CountReplayed(sent);
         Report(sent, started.Elapsed);
     }
 
@@ -445,10 +497,13 @@ public sealed class WinDivertTrafficController : IDisposable
         // mean nothing now, so delivering them would inject packets for a connection that no
         // longer exists - which the stack answers with resets of its own. Discarded rather than
         // replayed, for the same reason disposal discards rather than flushing.
-        if (sent > 0 && _buffer is not null)
+        if (sent > 0)
         {
-            DiscardedOnReset += _buffer.Count;
-            _buffer.DiscardAll();
+            foreach (var buffer in _slots.Select(slot => slot.Buffer).OfType<PacketBuffer>())
+            {
+                DiscardedOnReset += buffer.Count;
+                buffer.DiscardAll();
+            }
         }
 
         LastResetConnections = connections;
@@ -460,25 +515,27 @@ public sealed class WinDivertTrafficController : IDisposable
     /// </summary>
     private async Task DrainAsync()
     {
-        if (_buffer is null)
+        // Per slot, not per handle. With one release flag for the whole handle, turning off an
+        // uplink hold would have replayed the inbound packets a downlink hold was still holding.
+        foreach (var slot in _slots)
         {
-            return;
-        }
+            if (slot.Buffer is not { } buffer)
+            {
+                continue;
+            }
 
-        if (_buffer.Schedule is not null)
-        {
-            await DrainDueAsync().ConfigureAwait(false);
-        }
+            if (buffer.Schedule is not null)
+            {
+                await DrainDueAsync(slot, buffer).ConfigureAwait(false);
+            }
 
-        var holding = _module.IsActive;
-        if (_wasHolding && !holding)
-        {
-            // A release sends the remainder too, due or not. Those packets were going to be
-            // delivered; turning the module off is not a reason to destroy them.
-            await ReplayAsync().ConfigureAwait(false);
+            if (slot.TakeReleaseEdge())
+            {
+                // A release sends the remainder too, due or not. Those packets were going to be
+                // delivered; turning the module off is not a reason to destroy them.
+                await ReplayAsync(slot, buffer).ConfigureAwait(false);
+            }
         }
-
-        _wasHolding = holding;
     }
 
     /// <summary>
@@ -498,17 +555,12 @@ public sealed class WinDivertTrafficController : IDisposable
     /// waiting is discarded rather than sent stale.
     /// </para>
     /// </remarks>
-    private async Task DrainDueAsync()
+    private async Task DrainDueAsync(ModuleSlot slot, PacketBuffer buffer)
     {
-        if (_buffer is null)
-        {
-            return;
-        }
-
         var started = System.Diagnostics.Stopwatch.StartNew();
         var sent = 0;
 
-        foreach (var entry in _buffer.TakeDue(DateTimeOffset.UtcNow))
+        foreach (var entry in buffer.TakeDue(DateTimeOffset.UtcNow))
         {
             try
             {
@@ -528,6 +580,7 @@ public sealed class WinDivertTrafficController : IDisposable
             }
         }
 
+        slot.CountReplayed(sent);
         Report(sent, started.Elapsed);
     }
 
@@ -540,10 +593,17 @@ public sealed class WinDivertTrafficController : IDisposable
     /// The remote address, handed back so a throttled buffer can pace per peer without describing
     /// the packet a second time. Null whenever the verdict came from a failure path.
     /// </param>
+    /// <param name="owner">
+    /// The slot that withheld the packet, so its own buffer keeps it. Null when the packet passed.
+    /// </param>
     private PacketVerdict Decide(
-        WinDivertPacket packet, WinDivertAddress addr, out IPAddress? peer)
+        WinDivertPacket packet,
+        WinDivertAddress addr,
+        out IPAddress? peer,
+        out ModuleSlot? owner)
     {
         peer = null;
+        owner = null;
 
         try
         {
@@ -563,14 +623,26 @@ public sealed class WinDivertTrafficController : IDisposable
             _rewriter?.Observe(info.Value);
             _sampler?.Observe(info.Value, packet, addr);
 
-            var verdict = _module.Decide(info.Value);
+            // First non-passing verdict wins, in declared order. A packet can only be handled
+            // once, and the slot that withheld it has to be the one whose buffer keeps it -
+            // otherwise releasing one module would replay another's backlog.
+            foreach (var slot in _slots)
+            {
+                var slotVerdict = slot.Module.Decide(info.Value);
 
-            if (verdict == PacketVerdict.Pass && _module.IsActive)
+                if (slotVerdict != PacketVerdict.Pass)
+                {
+                    owner = slot;
+                    return slotVerdict;
+                }
+            }
+
+            if (AnyHolding)
             {
                 PacketPassedWhileHolding?.Invoke(info.Value);
             }
 
-            return verdict;
+            return PacketVerdict.Pass;
         }
         catch
         {
@@ -593,12 +665,20 @@ public sealed class WinDivertTrafficController : IDisposable
         }
 
         _disposed = true;
-        _module.Reset();
+
+        foreach (var slot in _slots)
+        {
+            slot.Module.Reset();
+        }
 
         // Held packets are discarded rather than flushed. Disposal is the kill switch, and it has
         // to restore normal traffic at once rather than first pushing a backlog of stale actions
-        // into a session that may already be in trouble.
-        _buffer?.Dispose();
+        // into a session that may already be in trouble. Each slot disposes its own buffer.
+        foreach (var slot in _slots)
+        {
+            slot.Dispose();
+        }
+
         _sampler?.Dispose();
         _divert.Dispose();
     }
