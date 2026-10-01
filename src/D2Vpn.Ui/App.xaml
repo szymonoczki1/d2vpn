@@ -14,6 +14,7 @@
             <ui:BoolToVisibilityConverter x:Key="BoolToVisibility" />
             <ui:NullToVisibilityConverter x:Key="NullToVisibility" />
             <ui:NotNullToVisibilityConverter x:Key="NotNullToVisibility" />
+            <ui:BoolToOpacityConverter x:Key="BoolToOpacity" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

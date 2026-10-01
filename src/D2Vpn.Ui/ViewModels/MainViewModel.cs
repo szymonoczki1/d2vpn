@@ -117,11 +117,14 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             var module = new ModuleViewModel(
                 controllable, byName.GetValueOrDefault(controllable.Name));
 
-            // Pause has no entry in Modules - its bind lives in the Pause section - so it would
-            // otherwise show as unbound however the config was written.
-            if (module.Config is null && controllable.Name == PauseName)
+            // Two controls have no entry in Modules, so without this they would show as unbound
+            // however the config was written: pause keeps its key in the Pause section, and a
+            // reconnect keeps its in resetBinds.
+            if (module.Config is null)
             {
-                module.BindKey = ParseOrNull(_config.Pause.Bind);
+                module.BindKey = controllable.Name == PauseName
+                    ? ParseOrNull(_config.Pause.Bind)
+                    : ParseOrNull(ResetBindFor(controllable.Name));
             }
 
             Modules.Add(module);
@@ -232,8 +235,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             _config = _config with
             {
                 Modules = [.. Modules
-                    .Where(m => m.Name != PauseName)
+                    .Where(m => m.Kind == ModuleKind.Hold)
                     .Select(m => m.ToConfig())],
+                ResetBinds = [.. Modules
+                    .Where(m => m.Kind == ModuleKind.Trigger && m.BindKey is not null)
+                    .Select(m => new ResetBind
+                    {
+                        Module = GroupOf(m.Name),
+                        Bind = KeyName.Describe(m.BindKey!.Value)
+                    })],
                 Pause = pause is null
                     ? _config.Pause
                     : _config.Pause with
@@ -250,6 +260,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Status = $"could not save {Path.GetFileName(_configPath)}: {ex.Message}";
         }
     }
+
+    /// <summary>The key a config bound to a reconnect, found by its group.</summary>
+    /// <remarks>
+    /// A reconnect is addressed as <c>&lt;group&gt;-rc</c> but stored under the group name, since
+    /// that is the shape resetBinds already had before it became its own entry.
+    /// </remarks>
+    private string? ResetBindFor(string controlName) =>
+        _config.ResetBinds
+            .FirstOrDefault(r => string.Equals(
+                r.Module, GroupOf(controlName), StringComparison.OrdinalIgnoreCase))
+            ?.Bind;
+
+    private static string GroupOf(string controlName) =>
+        controlName.EndsWith("-rc", StringComparison.Ordinal)
+            ? controlName[..^3]
+            : controlName;
 
     private static int? ParseOrNull(string? name)
     {

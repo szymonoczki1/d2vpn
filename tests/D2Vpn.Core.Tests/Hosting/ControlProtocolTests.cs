@@ -73,8 +73,60 @@ public class ControlProtocolTests
         host.Set("30k", true);
 
         Assert.Equal(
-            "ok 30k active=1 seen=10 dropped=4 buffered=3 replayed=2 resets=0",
+            "ok 30k active=1 enabled=1 seen=10 dropped=4 buffered=3 replayed=2 resets=0",
             ControlProtocol.Execute("stat 30k", host).Response);
+    }
+
+    [Fact]
+    public void Disabling_releases_and_refuses_to_be_turned_back_on()
+    {
+        // Enabled sits a layer above active: active asks whether it is holding, enabled whether it
+        // may. Leaving a module holding while refusing to let anything turn it off would be the
+        // worst of both, so disabling releases first.
+        using var host = Host("30k");
+
+        Assert.Equal("ok 30k=1", ControlProtocol.Execute("on 30k", host).Response);
+        Assert.Equal("ok 30k enabled=0", ControlProtocol.Execute("disable 30k", host).Response);
+        Assert.Equal(0, host.ActiveCount);
+
+        Assert.StartsWith("err", ControlProtocol.Execute("on 30k", host).Response);
+        Assert.StartsWith("err", ControlProtocol.Execute("toggle 30k", host).Response);
+        Assert.Equal(0, host.ActiveCount);
+
+        Assert.Equal("ok 30k enabled=1", ControlProtocol.Execute("enable 30k", host).Response);
+        Assert.Equal("ok 30k=1", ControlProtocol.Execute("on 30k", host).Response);
+    }
+
+    [Fact]
+    public void Disabling_is_reported_by_stat_and_survives_a_release()
+    {
+        using var host = Host("30k");
+
+        ControlProtocol.Execute("disable 30k", host);
+
+        Assert.Contains("enabled=0", ControlProtocol.Execute("stat 30k", host).Response);
+
+        // Release is about holds, not about whether a module is allowed to exist.
+        ControlProtocol.Execute("release", host);
+
+        Assert.Contains("enabled=0", ControlProtocol.Execute("stat 30k", host).Response);
+    }
+
+    [Fact]
+    public void Toggling_a_trigger_fires_it_instead_of_latching()
+    {
+        // A reconnect has no on state. Showing it as a switch that silently returns to off is the
+        // kind of control nobody trusts, so a toggle fires it and reports no state.
+        var reconnect = new FakeRunner("30k-rc", supportsReset: true)
+        {
+            Kind = ModuleKind.Trigger
+        };
+
+        using var host = new ModuleHost([reconnect]);
+
+        Assert.Equal("ok 30k-rc=0", ControlProtocol.Execute("toggle 30k-rc", host).Response);
+        Assert.Equal(0, host.ActiveCount);
+        Assert.Equal("ok reset=30k-rc", ControlProtocol.Execute("reset 30k-rc", host).Response);
     }
 
     [Fact]
@@ -210,9 +262,13 @@ public class ControlProtocolTests
 
         public IReadOnlyList<IControllable> Controls => [this];
 
+        public ModuleKind Kind { get; init; } = ModuleKind.Hold;
+
+        public bool IsEnabled { get; set; } = true;
+
         public IModuleOptions? Options { get; init; }
 
-        public ModuleStatus Status => new(name, IsActive, 10, 4, 3, 2, 0);
+        public ModuleStatus Status => new(name, IsActive, IsEnabled, 10, 4, 3, 2, 0);
 
         public Task RunAsync(CancellationToken cancellationToken) =>
             Task.Delay(Timeout.Infinite, cancellationToken);

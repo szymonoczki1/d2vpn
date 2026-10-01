@@ -31,6 +31,8 @@ public static class ConfigTemplate
       // Names: 3074-ul 3074-dl 3074-full (+ -slow), 27k-ul 27k-dl 27k-full (+ -slow),
       //        30k (+ -slow), 7500. TCP groups take no direction.
       //
+      // enabled - whether the module participates at all. A disabled one keeps its handle but
+      //           refuses to be activated, by a key or over the pipe. Omit it for enabled.
       // resync - the resync window on 3074/27k, the keepalive on 30k. Changeable while running.
       // buffer - whether withheld packets are kept for replay. A slow module cannot turn it off,
       //          since a packet cannot arrive late unless it was kept.
@@ -81,8 +83,9 @@ public static class ConfigTemplate
       // Releases every module at once, including pause. Worth binding somewhere easy to hit.
       "releaseBind": "f12",
 
-      // Reconnect. It is a capability of the TCP modules rather than a module of its own, because
-      // the sampler it needs has to share the hold's packet handle.
+      // Reconnect. It is its own entry in the window - addressed as 30k-rc over the pipe - but its
+      // key is stored here, under the group, because the sampler it needs shares that group's
+      // packet handle rather than opening one of its own.
       "resetBinds": [
         { "module": "30k", "bind": "f9" }
       ]

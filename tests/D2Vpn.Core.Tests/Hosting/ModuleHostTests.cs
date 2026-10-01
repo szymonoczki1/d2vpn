@@ -219,13 +219,17 @@ public class ModuleHostTests
 
         public IReadOnlyList<IControllable> Controls => [this];
 
+        public ModuleKind Kind { get; init; } = ModuleKind.Hold;
+
+        public bool IsEnabled { get; set; } = true;
+
         public IModuleOptions? Options { get; init; }
 
         public int Resets { get; private set; }
 
         public bool Disposed { get; private set; }
 
-        public ModuleStatus Status => new(name, IsActive, 10, 4, 3, 2, Resets);
+        public ModuleStatus Status => new(name, IsActive, IsEnabled, 10, 4, 3, 2, Resets);
 
         public async Task RunAsync(CancellationToken cancellationToken)
         {

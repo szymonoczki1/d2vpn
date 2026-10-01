@@ -31,6 +31,8 @@ public readonly record struct ControlResult(string Response, bool Shutdown);
 ///   on &lt;name&gt;       -> ok &lt;name&gt;=1
 ///   off &lt;name&gt;      -> ok &lt;name&gt;=0
 ///   release              -> ok released=2
+///   enable &lt;name&gt;   -> ok 30k enabled=1
+///   disable &lt;name&gt;  -> ok 30k enabled=0
 ///   opts &lt;name&gt;     -> ok 3074-ul resync=on buffer=on
 ///   set &lt;name&gt; resync off  -> ok 3074-ul resync=off buffer=on
 ///   set &lt;name&gt; buffer on   -> ok 3074-ul resync=off buffer=on
@@ -79,6 +81,8 @@ public static class ControlProtocol
                 "on" => WithName(argument, name => SetTo(host, name, true)),
                 "off" => WithName(argument, name => SetTo(host, name, false)),
                 "release" => Ok($"released={host.ReleaseAll()}"),
+                "enable" => WithName(argument, name => Enable(host, name, true)),
+                "disable" => WithName(argument, name => Enable(host, name, false)),
                 "opts" => WithName(argument, name => Ok(Opts(host, name))),
                 "set" => Set(host, parts),
                 "reset" => WithName(argument, name => Reset(host, name)),
@@ -167,6 +171,15 @@ public static class ControlProtocol
         return host.OptionsFor(resolved) is { } options
             ? $"{resolved} {options.ToLine()}"
             : $"{resolved} resync=n/a buffer=n/a";
+    }
+
+    private static ControlResult Enable(ModuleHost host, string name, bool enabled)
+    {
+        var resolved = Resolve(host, name);
+        host.SetEnabled(resolved, enabled);
+
+        // The state, not whether this call changed it, for the same reason "on" reports it.
+        return Ok($"{resolved} enabled={(enabled ? 1 : 0)}");
     }
 
     private static ControlResult Reset(ModuleHost host, string name)

@@ -176,9 +176,13 @@ public class NamedPipeControlServerTests
 
         public IReadOnlyList<IControllable> Controls => [this];
 
+        public ModuleKind Kind { get; init; } = ModuleKind.Hold;
+
+        public bool IsEnabled { get; set; } = true;
+
         public IModuleOptions? Options { get; init; }
 
-        public ModuleStatus Status => new(name, IsActive, 0, 0, 0, 0, 0);
+        public ModuleStatus Status => new(name, IsActive, IsEnabled, 0, 0, 0, 0, 0);
 
         public Task RunAsync(CancellationToken cancellationToken) =>
             Task.Delay(Timeout.Infinite, cancellationToken);

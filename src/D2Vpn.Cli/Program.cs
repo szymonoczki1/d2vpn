@@ -315,7 +315,7 @@ static void PrintUsage()
     Console.WriteLine("      One line in, one line out, replies starting ok or err:");
     Console.WriteLine("        ping list status stat <m> toggle <m> on <m> off <m>");
     Console.WriteLine("        opts <m> set <m> resync|buffer on|off");
-    Console.WriteLine("        release reset <m> quit");
+    Console.WriteLine("        enable <m> disable <m> release reset <m> quit");
     Console.WriteLine("");
     Console.WriteLine("      'set' changes a switch while running. resync is the resync window");
     Console.WriteLine("      on 3074/27k and the keepalive on 30k; buffer is whether withheld");
@@ -323,9 +323,13 @@ static void PrintUsage()
     Console.WriteLine("      buffer, since a packet cannot arrive late unless it was kept.");
     Console.WriteLine("      'opts' reads them back; n/a means the module has no such switch.");
     Console.WriteLine("");
-    Console.WriteLine("      'reset' is the reconnect: TCP modules carry a sampler on the same");
-    Console.WriteLine("      handle, so it is a capability of 30k and 7500 rather than a module");
-    Console.WriteLine("      of its own. A sampler has to see packets the hold withheld.");
+    Console.WriteLine("      A TCP group also gets a reconnect of its own, addressed <group>-rc.");
+    Console.WriteLine("      It shares that group's handle, because the sampler it needs has to");
+    Console.WriteLine("      see the packets a hold withheld. It is a trigger rather than a");
+    Console.WriteLine("      switch: toggling it fires one reset and leaves nothing on.");
+    Console.WriteLine("");
+    Console.WriteLine("      'disable' takes a module out of play without unhosting it: it keeps");
+    Console.WriteLine("      its handle, releases, and refuses to be turned on until enabled.");
     Console.WriteLine("");
     Console.WriteLine("      --pause hosts GamePause as a toggle too, suspending destiny2. It");
     Console.WriteLine("      opens no packet handle. --pause-timeout-s (30) is its safety limit,");

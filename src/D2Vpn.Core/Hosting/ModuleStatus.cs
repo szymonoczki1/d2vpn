@@ -1,10 +1,11 @@
-namespace D2Vpn.Core.Hosting;
+﻿namespace D2Vpn.Core.Hosting;
 
 /// <summary>
 /// What one module is doing, as the control surface reports it.
 /// </summary>
 /// <param name="Name">The module's address, such as <c>27k-ul</c>.</param>
 /// <param name="IsActive">Whether it is holding.</param>
+/// <param name="IsEnabled">Whether it is allowed to hold at all.</param>
 /// <param name="PacketsSeen">Packets the module has decided on.</param>
 /// <param name="PacketsDropped">Packets withheld and destroyed.</param>
 /// <param name="PacketsBuffered">Packets withheld and kept for replay.</param>
@@ -17,6 +18,7 @@ namespace D2Vpn.Core.Hosting;
 public readonly record struct ModuleStatus(
     string Name,
     bool IsActive,
+    bool IsEnabled,
     long PacketsSeen,
     long PacketsDropped,
     long PacketsBuffered,
@@ -32,6 +34,7 @@ public readonly record struct ModuleStatus(
     /// produce and nothing to read.
     /// </remarks>
     public string ToLine() =>
-        $"{Name} active={(IsActive ? 1 : 0)} seen={PacketsSeen} dropped={PacketsDropped} "
+        $"{Name} active={(IsActive ? 1 : 0)} enabled={(IsEnabled ? 1 : 0)} "
+        + $"seen={PacketsSeen} dropped={PacketsDropped} "
         + $"buffered={PacketsBuffered} replayed={PacketsReplayed} resets={ResetsInjected}";
 }

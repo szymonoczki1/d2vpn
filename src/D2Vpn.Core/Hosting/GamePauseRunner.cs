@@ -1,4 +1,4 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Processes;
 
@@ -46,6 +46,12 @@ public sealed class GamePauseRunner : IModuleRunner, IControllable
     public string? HandleKey => null;
 
     /// <inheritdoc/>
+    public ModuleKind Kind => ModuleKind.Process;
+
+    /// <inheritdoc/>
+    public bool IsEnabled { get; set; } = true;
+
+    /// <inheritdoc/>
     public bool IsActive
     {
         get => _session.IsPaused;
@@ -72,6 +78,7 @@ public sealed class GamePauseRunner : IModuleRunner, IControllable
     public ModuleStatus Status => new(
         Name,
         _session.IsPaused,
+        IsEnabled,
         _session.Pauses,
         0,
         0,

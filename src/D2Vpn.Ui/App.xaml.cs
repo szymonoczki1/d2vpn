@@ -74,6 +74,23 @@ public partial class App : Application
 /// Collapsed rather than Hidden, so a section a module does not have takes no space instead of
 /// leaving a gap - 7500 has no keepalive to switch, and pause has neither switch.
 /// </remarks>
+/// <summary>Dims an element when the bound value is false.</summary>
+/// <remarks>
+/// For a disabled module in the sidebar: it stays listed and selectable, because you still need to
+/// reach its settings, but it should not read as one of the live ones.
+/// </remarks>
+[ValueConversion(typeof(bool), typeof(double))]
+public sealed class BoolToOpacityConverter : IValueConverter
+{
+    /// <inheritdoc/>
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is false ? 0.4 : 1.0;
+
+    /// <inheritdoc/>
+    public object ConvertBack(object? value, Type t, object? p, CultureInfo c) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>Shows an element only when the bound value is null.</summary>
 /// <remarks>For the empty state: there is nothing to configure until a module is selected.</remarks>
 [ValueConversion(typeof(object), typeof(Visibility))]

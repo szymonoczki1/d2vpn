@@ -1,4 +1,4 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
@@ -26,7 +26,7 @@ public sealed class WinDivertModuleRunner : IModuleRunner
 {
     private readonly WinDivertTrafficController _controller;
     private readonly ConnectionSampler? _sampler;
-    private readonly List<SlotControl> _controls = [];
+    private readonly List<IControllable> _controls = [];
 
     /// <summary>Opens one handle for a set of slots on the same port group.</summary>
     /// <param name="label">A name for this handle, used in errors and on the status line.</param>
@@ -53,7 +53,19 @@ public sealed class WinDivertModuleRunner : IModuleRunner
         {
             _controls.Add(new SlotControl(name, slot, options, this));
         }
+
+        // Reconnect is its own entry rather than a button hidden inside a hold, because it is a
+        // different kind of thing: one shot, no state, and useful whether or not anything is
+        // holding. It still shares this handle - a sampler has to see the packets a hold withheld -
+        // so it is a second control on one runner rather than a runner of its own.
+        if (sampler is not null)
+        {
+            _reconnect = new ReconnectControl($"{label}-rc", this);
+            _controls.Add(_reconnect);
+        }
     }
+
+    private readonly ReconnectControl? _reconnect;
 
     /// <summary>Convenience for a handle carrying exactly one module.</summary>
     public WinDivertModuleRunner(
@@ -100,26 +112,87 @@ public sealed class WinDivertModuleRunner : IModuleRunner
     {
         public string Name => name;
 
+        public ModuleKind Kind => ModuleKind.Hold;
+
+        public bool IsEnabled { get; set; } = true;
+
         public bool IsActive
         {
             get => slot.Module.IsActive;
             set => slot.Module.IsActive = value;
         }
 
-        // A sampler is shared across the handle, so every module on a group that can reset can.
-        public bool SupportsReset => owner._sampler is not null;
+        // False: reconnect is its own control now, so a hold does not also pretend to offer it.
+        public bool SupportsReset => false;
 
         public IModuleOptions? Options => options;
 
         public ModuleStatus Status => new(
             name,
             slot.Module.IsActive,
+            IsEnabled,
             owner._controller.PacketsSeen,
             slot.Dropped,
             slot.Buffered,
             slot.Replayed,
             owner._controller.ResetsInjected);
 
-        public void RequestReset() => owner._controller.RequestReset();
+        public void RequestReset() =>
+            throw new InvalidOperationException(
+                $"'{name}' is a hold - use '{owner.Name}-rc' to reconnect");
+    }
+
+    /// <summary>
+    /// The reconnect for a port group, as its own addressable entry.
+    /// </summary>
+    /// <remarks>
+    /// A trigger: it has no on state, so <see cref="IsActive"/> is always false and activating it
+    /// fires a reset instead of latching. <see cref="ModuleHost.Toggle"/> routes a key press here
+    /// rather than treating it as a switch.
+    /// </remarks>
+    private sealed class ReconnectControl(string name, WinDivertModuleRunner owner) : IControllable
+    {
+        public string Name => name;
+
+        public ModuleKind Kind => ModuleKind.Trigger;
+
+        public bool IsEnabled { get; set; } = true;
+
+        /// <summary>Always false: there is nothing here to leave switched on.</summary>
+        public bool IsActive
+        {
+            get => false;
+            set
+            {
+                if (value)
+                {
+                    RequestReset();
+                }
+            }
+        }
+
+        public bool SupportsReset => true;
+
+        public IModuleOptions? Options => null;
+
+        public ModuleStatus Status => new(
+            name,
+            false,
+            IsEnabled,
+            owner._controller.PacketsSeen,
+            0,
+            0,
+            0,
+            owner._controller.ResetsInjected);
+
+        public void RequestReset()
+        {
+            if (!IsEnabled)
+            {
+                throw new InvalidOperationException($"'{name}' is disabled");
+            }
+
+            owner._controller.RequestReset();
+        }
     }
 }

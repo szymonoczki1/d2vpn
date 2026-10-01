@@ -357,6 +357,22 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void A_module_can_be_configured_as_disabled()
+    {
+        var config = HostConfig.Parse("""
+        {
+          "modules": [
+            { "name": "3074-ul" },
+            { "name": "30k", "enabled": false }
+          ]
+        }
+        """);
+
+        Assert.True(config.Modules[0].Enabled);
+        Assert.False(config.Modules[1].Enabled);
+    }
+
+    [Fact]
     public void A_config_survives_a_round_trip_through_json()
     {
         var original = HostConfig.Parse("""

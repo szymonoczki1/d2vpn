@@ -1,4 +1,4 @@
-using D2Vpn.Core.Hosting;
+﻿using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
@@ -194,13 +194,17 @@ public class RuntimeOptionTests
 
         public IReadOnlyList<IControllable> Controls => [this];
 
+        public ModuleKind Kind { get; init; } = ModuleKind.Hold;
+
+        public bool IsEnabled { get; set; } = true;
+
         public IModuleOptions? Options { get; init; }
 
         public bool IsActive { get; set; }
 
         public bool SupportsReset => false;
 
-        public ModuleStatus Status => new(name, IsActive, 0, 0, 0, 0, 0);
+        public ModuleStatus Status => new(name, IsActive, IsEnabled, 0, 0, 0, 0, 0);
 
         public Task RunAsync(CancellationToken cancellationToken) =>
             Task.Delay(Timeout.Infinite, cancellationToken);

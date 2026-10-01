@@ -115,16 +115,65 @@ public sealed class ModuleHost : IDisposable
     public bool Toggle(string name)
     {
         var control = Find(name);
+
+        // A trigger has no state to flip, so toggling one fires it. That keeps a single "the key
+        // was pressed" path for every kind rather than making callers ask what they are holding.
+        if (control.Kind == ModuleKind.Trigger)
+        {
+            RequestReset(name);
+            return false;
+        }
+
         bool now;
 
         lock (_gate)
         {
+            if (!control.IsEnabled)
+            {
+                throw new InvalidOperationException($"'{name}' is disabled");
+            }
+
             now = !control.IsActive;
             control.IsActive = now;
         }
 
         StateChanged?.Invoke(name, now);
         return now;
+    }
+
+    /// <summary>Enables or disables a module, returning true if it changed.</summary>
+    /// <remarks>
+    /// Disabling releases first. Leaving a module holding while refusing to let anything turn it
+    /// off would be the worst of both.
+    /// </remarks>
+    /// <exception cref="KeyNotFoundException">No such module.</exception>
+    public bool SetEnabled(string name, bool enabled)
+    {
+        var control = Find(name);
+        var released = false;
+
+        lock (_gate)
+        {
+            if (control.IsEnabled == enabled)
+            {
+                return false;
+            }
+
+            if (!enabled && control.IsActive)
+            {
+                control.IsActive = false;
+                released = true;
+            }
+
+            control.IsEnabled = enabled;
+        }
+
+        if (released)
+        {
+            StateChanged?.Invoke(name, false);
+        }
+
+        return true;
     }
 
     /// <summary>Sets one module's state, returning true if it changed.</summary>
@@ -135,6 +184,11 @@ public sealed class ModuleHost : IDisposable
 
         lock (_gate)
         {
+            if (!control.IsEnabled && active)
+            {
+                throw new InvalidOperationException($"'{name}' is disabled");
+            }
+
             if (control.IsActive == active)
             {
                 return false;

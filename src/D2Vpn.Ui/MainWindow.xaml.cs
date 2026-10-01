@@ -1,7 +1,5 @@
-﻿using System.Runtime.InteropServices;
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 using System.Windows;
-using System.Windows.Interop;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -42,33 +40,40 @@ public partial class MainWindow : Window
         _refresh.Start();
     }
 
-    /// <summary>
-    /// Asks Windows for a dark title bar, so the system chrome matches the window.
-    /// </summary>
-    /// <remarks>
-    /// WPF does not style the non-client area, so without this a near-black window sits under a
-    /// white caption bar. The attribute number changed between Windows 10 builds, hence both;
-    /// a build that knows neither simply keeps the light one.
-    /// </remarks>
-    protected override void OnSourceInitialized(EventArgs e)
+    /// <summary>Drags the window, and maximises on a double click as a caption bar does.</summary>
+    private void OnTitleBarDrag(object sender, MouseButtonEventArgs e)
     {
-        base.OnSourceInitialized(e);
-
-        var handle = new WindowInteropHelper(this).Handle;
-        var on = 1;
-
-        foreach (var attribute in (int[])[20, 19])
+        if (e.ClickCount == 2)
         {
-            if (DwmSetWindowAttribute(handle, attribute, ref on, sizeof(int)) == 0)
+            ToggleMaximised();
+            return;
+        }
+
+        // Guarded: DragMove throws if the button is already up by the time it runs, which happens
+        // on a fast click.
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            try
             {
-                return;
+                DragMove();
+            }
+            catch (InvalidOperationException)
+            {
             }
         }
     }
 
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(
-        IntPtr window, int attribute, ref int value, int size);
+    private void OnMinimise(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState.Minimized;
+
+    private void OnMaximise(object sender, RoutedEventArgs e) => ToggleMaximised();
+
+    private void OnClose(object sender, RoutedEventArgs e) => Close();
+
+    private void ToggleMaximised() =>
+        WindowState = WindowState == WindowState.Maximized
+            ? WindowState.Normal
+            : WindowState.Maximized;
 
     private void OnReleaseAll(object sender, RoutedEventArgs e) => _model.ReleaseAll();
 

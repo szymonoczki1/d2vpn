@@ -1,4 +1,4 @@
-using D2Vpn.Core.Hosting;
+﻿using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Input;
 
 namespace D2Vpn.Ui.ViewModels;
@@ -42,10 +42,66 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>The module's name, which is also how the control surface addresses it.</summary>
     public string Name => _control.Name;
 
-    /// <summary>What kind of thing this is, for the sidebar subtitle.</summary>
-    public string Kind => _control.Options is null
-        ? "process"
-        : Name.Contains("-slow", StringComparison.Ordinal) ? "delay line" : "hold";
+    /// <summary>What shape of thing this is, which decides which panel the window shows.</summary>
+    public ModuleKind Kind => _control.Kind;
+
+    /// <summary>
+    /// True for anything with an on state, which is everything but a trigger.
+    /// </summary>
+    /// <remarks>
+    /// Pause is one of these. It is a different kind from a traffic hold - it suspends a process
+    /// rather than withholding packets - but it is still a thing you switch on and leave on, and it
+    /// needs a switch in the window for the same reason every module does.
+    /// </remarks>
+    public bool IsToggleable => Kind != ModuleKind.Trigger;
+
+    /// <summary>True for a traffic hold or delay line, which is what has switches.</summary>
+    public bool IsHold => Kind == ModuleKind.Hold;
+
+    /// <summary>The heading over the on switch, which is not "hold" for a process.</summary>
+    public string ToggleSectionLabel => Kind == ModuleKind.Process ? "PAUSE" : "HOLD";
+
+    /// <summary>What the on switch does, in a sentence.</summary>
+    public string ToggleDescription => Kind == ModuleKind.Process
+        ? "Suspends the game process. Nothing is sent, received, drawn or simulated while it is held."
+        : "On until you turn it off. The key below does the same thing.";
+
+    /// <summary>True for a one-shot action such as reconnect.</summary>
+    public bool IsTrigger => Kind == ModuleKind.Trigger;
+
+    /// <summary>A short description under the name.</summary>
+    public string KindLabel => Kind switch
+    {
+        ModuleKind.Trigger => "reconnect",
+        ModuleKind.Process => "process",
+        _ => Name.Contains("-slow", StringComparison.Ordinal) ? "delay line" : "hold"
+    };
+
+    /// <summary>
+    /// Whether the module participates at all. Turning it off releases it first.
+    /// </summary>
+    public bool IsEnabled
+    {
+        get => _control.IsEnabled;
+        set
+        {
+            if (_control.IsEnabled == value)
+            {
+                return;
+            }
+
+            if (!value && _control.IsActive)
+            {
+                _control.IsActive = false;
+            }
+
+            _control.IsEnabled = value;
+            RaiseAll(nameof(IsEnabled), nameof(IsActive), nameof(StateLabel), nameof(CanHold));
+        }
+    }
+
+    /// <summary>True when the hold switch should respond.</summary>
+    public bool CanHold => IsEnabled && IsToggleable;
 
     /// <summary>Whether the module is holding. Setting this reaches the real module.</summary>
     public bool IsActive
@@ -53,7 +109,9 @@ public sealed class ModuleViewModel : ObservableObject
         get => _control.IsActive;
         set
         {
-            if (_control.IsActive == value)
+            // A disabled module stays off whatever a binding does, since the switch that drives
+            // this is disabled rather than hidden and a stale binding could still arrive.
+            if (_control.IsActive == value || (!IsEnabled && value))
             {
                 return;
             }
@@ -160,11 +218,19 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>The buffer key as text.</summary>
     public string BufferKeyLabel => Describe(_bufferKey);
 
+    /// <summary>What the main key does, which is not "hold" for every kind.</summary>
+    public string KeyActionLabel => Kind switch
+    {
+        ModuleKind.Trigger => "Reconnect",
+        ModuleKind.Process => "Pause",
+        _ => "Hold"
+    };
+
     /// <summary>True when a key is bound, so the sidebar can show it.</summary>
     public bool HasBind => _bindKey is not null;
 
-    /// <summary>HOLDING or idle, for the panel.</summary>
-    public string StateLabel => IsActive ? "HOLDING" : "idle";
+    /// <summary>HOLDING, idle or disabled, for the panel.</summary>
+    public string StateLabel => !IsEnabled ? "disabled" : IsActive ? "HOLDING" : "idle";
 
     /// <summary>Packets this module has withheld.</summary>
     public long Dropped => _control.Status.PacketsDropped;
@@ -184,12 +250,27 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>Asks for a reconnect.</summary>
     public void RequestReset() => _control.RequestReset();
 
-    /// <summary>Flips the hold.</summary>
-    public void Toggle() => IsActive = !IsActive;
+    /// <summary>Flips the hold, or fires a trigger.</summary>
+    public void Toggle()
+    {
+        if (!IsEnabled)
+        {
+            return;
+        }
+
+        if (IsTrigger)
+        {
+            RequestReset();
+            return;
+        }
+
+        IsActive = !IsActive;
+    }
 
     /// <summary>Re-reads everything the host owns, for the refresh tick.</summary>
     public void Refresh() => RaiseAll(
-        nameof(IsActive), nameof(StateLabel), nameof(ResyncEnabled), nameof(BufferEnabled),
+        nameof(IsActive), nameof(StateLabel), nameof(IsEnabled), nameof(CanHold),
+        nameof(ResyncEnabled), nameof(BufferEnabled),
         nameof(Dropped), nameof(Buffered), nameof(Replayed), nameof(Seen), nameof(Resets));
 
     /// <summary>Raises only the state, for an immediate response to a click.</summary>
@@ -198,6 +279,7 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>This module as a config entry, for saving.</summary>
     public ModuleConfig ToConfig() => (Config ?? new ModuleConfig { Name = Name }) with
     {
+        Enabled = IsEnabled,
         Bind = _bindKey is { } b ? KeyName.Describe(b) : null,
         ResyncBind = _resyncKey is { } r ? KeyName.Describe(r) : null,
         BufferBind = _bufferKey is { } f ? KeyName.Describe(f) : null,

@@ -1,275 +1,351 @@
-﻿<Window x:Class="D2Vpn.Ui.MainWindow"
+<Window x:Class="D2Vpn.Ui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="d2vpn"
-        Height="640" Width="980"
-        MinHeight="520" MinWidth="820"
+        Height="660" Width="1000"
+        MinHeight="540" MinWidth="860"
         WindowStartupLocation="CenterScreen"
         Background="{StaticResource WindowBrush}"
         TextOptions.TextRenderingMode="ClearType"
-        UseLayoutRounding="True">
+        UseLayoutRounding="True"
+        WindowStyle="None"
+        AllowsTransparency="False"
+        ResizeMode="CanResize">
 
-    <Grid>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="248" />
-            <ColumnDefinition Width="*" />
-        </Grid.ColumnDefinitions>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <!--
+        WindowStyle="None" removes the system caption bar so the window can be drawn end to end in
+        its own palette. WindowChrome keeps what the system bar was actually providing - the resize
+        borders, snapping, and Aero Snap - which a bare borderless window loses.
+    -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="0"
+                      GlassFrameThickness="0" UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
 
-        <!-- ============ Sidebar ============ -->
-        <Border Grid.Column="0" Grid.RowSpan="2" Background="{StaticResource SidebarBrush}">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
+    <Border BorderBrush="{StaticResource LineBrush}" BorderThickness="1">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="40" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="248" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-                <StackPanel Margin="18,20,18,16">
-                    <TextBlock Text="d2vpn" Style="{StaticResource Heading}" />
-                    <TextBlock Text="traffic control for Destiny 2"
-                               Style="{StaticResource Subtle}" Margin="0,2,0,0" />
-                </StackPanel>
-
-                <ListBox x:Name="ModuleList" Grid.Row="1"
-                         Background="Transparent" BorderThickness="0"
-                         ItemContainerStyle="{StaticResource SidebarItem}"
-                         ItemsSource="{Binding Modules}"
-                         SelectedItem="{Binding Selected, Mode=TwoWay}"
-                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                    <TextBlock Text="{Binding BindLabel}"
-                                               Style="{StaticResource Mono}"
-                                               Foreground="{StaticResource TextFaintBrush}"
-                                               FontSize="11" />
-                                </StackPanel>
-
-                                <!-- A filled dot means holding. It is the only red in the sidebar,
-                                     so an active module is visible without reading anything. -->
-                                <Ellipse Grid.Column="1" Width="8" Height="8"
-                                         VerticalAlignment="Center"
-                                         Fill="{StaticResource HoldingBrush}"
-                                         Visibility="{Binding IsActive,
-                                            Converter={StaticResource BoolToVisibility}}" />
-                            </Grid>
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
-
-                <Button Grid.Row="2" Content="Release everything"
-                        Style="{StaticResource DangerButton}"
-                        Margin="14,10,14,16"
-                        Click="OnReleaseAll" />
-            </Grid>
-        </Border>
-
-        <!-- ============ Detail ============ -->
-        <!-- Empty state. Without this the detail cards render against a null selection, which
-             reads as a working panel whose every value happens to be blank. -->
-        <StackPanel Grid.Column="1" Grid.Row="0"
-                    VerticalAlignment="Center" HorizontalAlignment="Center"
-                    MaxWidth="440"
-                    Visibility="{Binding Selected, Converter={StaticResource NullToVisibility}}">
-            <TextBlock Text="Nothing is hosted" Style="{StaticResource Heading}"
-                       HorizontalAlignment="Center" />
-            <TextBlock Style="{StaticResource Subtle}" TextAlignment="Center" Margin="0,10,0,0"
-                       Text="No module could be started. The status bar below says why - the usual causes are another limiter still running, or this process not being elevated." />
-            <TextBlock Style="{StaticResource Subtle}" TextAlignment="Center" Margin="0,14,0,0"
-                       Text="{Binding ConfigPath, StringFormat=config: {0}}" />
-        </StackPanel>
-
-        <ScrollViewer Grid.Column="1" Grid.Row="0"
-                      VerticalScrollBarVisibility="Auto"
-                      Padding="26,22,26,8"
-                      Visibility="{Binding Selected, Converter={StaticResource NotNullToVisibility}}">
-            <StackPanel DataContext="{Binding Selected}">
-
-                <!-- Header: name, state, and the hold switch. -->
-                <Grid Margin="0,0,0,18">
+            <!-- ============ Title bar ============ -->
+            <Border Grid.Row="0" Grid.ColumnSpan="2"
+                    Background="{StaticResource SidebarBrush}"
+                    MouseLeftButtonDown="OnTitleBarDrag">
+                <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <StackPanel>
-                        <TextBlock Text="{Binding Name}" Style="{StaticResource Heading}" />
-                        <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                            <TextBlock Text="{Binding Kind}" Style="{StaticResource Subtle}" />
-                            <TextBlock Text="  ·  " Style="{StaticResource Subtle}" />
-                            <TextBlock Text="{Binding StateLabel}"
-                                       Style="{StaticResource Subtle}"
-                                       FontWeight="SemiBold" />
-                        </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="16,0,0,0"
+                                VerticalAlignment="Center">
+                        <Rectangle Width="9" Height="9" RadiusX="2" RadiusY="2"
+                                   Fill="{StaticResource AccentBrush}" />
+                        <TextBlock Text="d2vpn" Margin="10,0,0,0" FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding Status}" Margin="16,0,0,0"
+                                   Style="{StaticResource Mono}" FontSize="11"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
                     </StackPanel>
 
-                    <CheckBox Grid.Column="1"
-                              Style="{StaticResource Switch}"
-                              VerticalAlignment="Center"
-                              IsChecked="{Binding IsActive, Mode=TwoWay}"
-                              Content="Hold" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                        <Button Style="{StaticResource CaptionButton}" Click="OnMinimise"
+                                ToolTip="Minimise">
+                            <Path Data="M 0,0 H 10" Stroke="{StaticResource TextBrush}"
+                                  StrokeThickness="1" />
+                        </Button>
+                        <Button Style="{StaticResource CaptionButton}" Click="OnMaximise"
+                                ToolTip="Maximise">
+                            <Path Data="M 0,0 H 10 V 10 H 0 Z" Stroke="{StaticResource TextBrush}"
+                                  StrokeThickness="1" Fill="Transparent" />
+                        </Button>
+                        <Button Style="{StaticResource CloseButton}" Click="OnClose"
+                                ToolTip="Close">
+                            <Path Data="M 0,0 L 10,10 M 10,0 L 0,10"
+                                  Stroke="{StaticResource TextBrush}" StrokeThickness="1" />
+                        </Button>
+                    </StackPanel>
                 </Grid>
+            </Border>
 
-                <!-- Keys. Click a box, press a key; Esc clears it. -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="KEYS" Style="{StaticResource SectionLabel}" />
+            <!-- ============ Sidebar ============ -->
+            <Border Grid.Row="1" Grid.RowSpan="2" Grid.Column="0"
+                    Background="{StaticResource SidebarBrush}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
+                    <ListBox x:Name="ModuleList"
+                             Background="Transparent" BorderThickness="0"
+                             Margin="0,10,0,0"
+                             ItemContainerStyle="{StaticResource SidebarItem}"
+                             ItemsSource="{Binding Modules}"
+                             SelectedItem="{Binding Selected, Mode=TwoWay}"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <StackPanel Opacity="{Binding IsEnabled,
+                                                   Converter={StaticResource BoolToOpacity}}">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding BindLabel}"
+                                                   Style="{StaticResource Mono}"
+                                                   Foreground="{StaticResource TextFaintBrush}"
+                                                   FontSize="11" />
+                                    </StackPanel>
+
+                                    <!-- The only red in the sidebar, so a module that is holding is
+                                         visible without reading anything. -->
+                                    <Ellipse Grid.Column="1" Width="8" Height="8"
+                                             VerticalAlignment="Center"
+                                             Fill="{StaticResource HoldingBrush}"
+                                             Visibility="{Binding IsActive,
+                                                Converter={StaticResource BoolToVisibility}}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Button Grid.Row="1" Content="Release everything"
+                            Style="{StaticResource DangerButton}"
+                            Margin="14,10,14,16"
+                            Click="OnReleaseAll" />
+                </Grid>
+            </Border>
+
+            <!-- ============ Empty state ============ -->
+            <StackPanel Grid.Row="1" Grid.Column="1"
+                        VerticalAlignment="Center" HorizontalAlignment="Center"
+                        MaxWidth="440"
+                        Visibility="{Binding Selected, Converter={StaticResource NullToVisibility}}">
+                <TextBlock Text="Nothing is hosted" Style="{StaticResource Heading}"
+                           HorizontalAlignment="Center" />
+                <TextBlock Style="{StaticResource Subtle}" TextAlignment="Center" Margin="0,10,0,0"
+                           Text="No module could be started. The title bar says why - the usual causes are another limiter still running, or this process not being elevated." />
+                <TextBlock Style="{StaticResource Subtle}" TextAlignment="Center" Margin="0,14,0,0"
+                           Text="{Binding ConfigPath, StringFormat=config: {0}}" />
+            </StackPanel>
+
+            <!-- ============ Detail ============ -->
+            <ScrollViewer Grid.Row="1" Grid.Column="1"
+                          VerticalScrollBarVisibility="Auto"
+                          Padding="26,20,26,8"
+                          Visibility="{Binding Selected,
+                             Converter={StaticResource NotNullToVisibility}}">
+                <StackPanel DataContext="{Binding Selected}">
+
+                    <!-- Header. The enable switch sits here because it governs everything below
+                         it: a disabled module shows its settings but will not act on them. -->
+                    <Grid Margin="0,0,0,18">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel>
+                            <TextBlock Text="{Binding Name}" Style="{StaticResource Heading}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <TextBlock Text="{Binding KindLabel}" Style="{StaticResource Subtle}" />
+                                <TextBlock Text="  ·  " Style="{StaticResource Subtle}" />
+                                <TextBlock Text="{Binding StateLabel}"
+                                           Style="{StaticResource Subtle}" FontWeight="SemiBold" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <CheckBox Grid.Column="1"
+                                  Style="{StaticResource Switch}"
+                                  VerticalAlignment="Center"
+                                  IsChecked="{Binding IsEnabled, Mode=TwoWay}"
+                                  Content="Module enabled" />
+                    </Grid>
+
+                    <!-- The on switch. Everything but a reconnect has one, including pause. -->
+                    <Border Style="{StaticResource Card}"
+                            Visibility="{Binding IsToggleable,
+                               Converter={StaticResource BoolToVisibility}}">
                         <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
 
-                            <TextBlock Text="Hold" VerticalAlignment="Center" Margin="0,6" />
-                            <Button Grid.Column="1" Margin="0,4"
-                                    Style="{StaticResource FlatButton}"
-                                    HorizontalContentAlignment="Left"
-                                    Content="{Binding BindLabel}"
-                                    Tag="Toggle"
-                                    Click="OnRebind" />
+                            <StackPanel>
+                                <TextBlock Text="{Binding ToggleSectionLabel}" Style="{StaticResource SectionLabel}" />
+                                <TextBlock Style="{StaticResource Subtle}"
+                                           Text="{Binding ToggleDescription}" />
+                            </StackPanel>
 
-                            <TextBlock Grid.Row="1" Text="Autoresync"
-                                       VerticalAlignment="Center" Margin="0,6"
-                                       Visibility="{Binding SupportsResync,
-                                          Converter={StaticResource BoolToVisibility}}" />
-                            <Button Grid.Row="1" Grid.Column="1" Margin="0,4"
-                                    Style="{StaticResource FlatButton}"
-                                    HorizontalContentAlignment="Left"
-                                    Content="{Binding ResyncKeyLabel}"
-                                    Tag="Resync"
-                                    Click="OnRebind"
-                                    Visibility="{Binding SupportsResync,
-                                       Converter={StaticResource BoolToVisibility}}" />
-
-                            <TextBlock Grid.Row="2" Text="Buffer"
-                                       VerticalAlignment="Center" Margin="0,6"
-                                       Visibility="{Binding SupportsBuffer,
-                                          Converter={StaticResource BoolToVisibility}}" />
-                            <Button Grid.Row="2" Grid.Column="1" Margin="0,4"
-                                    Style="{StaticResource FlatButton}"
-                                    HorizontalContentAlignment="Left"
-                                    Content="{Binding BufferKeyLabel}"
-                                    Tag="Buffer"
-                                    Click="OnRebind"
-                                    Visibility="{Binding SupportsBuffer,
-                                       Converter={StaticResource BoolToVisibility}}" />
+                            <CheckBox Grid.Column="1" Style="{StaticResource Switch}"
+                                      VerticalAlignment="Center"
+                                      IsEnabled="{Binding CanHold}"
+                                      IsChecked="{Binding IsActive, Mode=TwoWay}" />
                         </Grid>
+                    </Border>
 
-                        <TextBlock Style="{StaticResource Subtle}" Margin="0,10,0,0"
-                                   Text="Click a key, then press one. Esc clears it, so a module can be driven from the window alone." />
-                    </StackPanel>
-                </Border>
+                    <!-- Reconnect, for a trigger. -->
+                    <Border Style="{StaticResource Card}"
+                            Visibility="{Binding IsTrigger,
+                               Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Text="RECONNECT" Style="{StaticResource SectionLabel}" />
+                            <TextBlock Style="{StaticResource Subtle}"
+                                       Text="Injects a TCP reset into every live connection on this group - one to the peer, one to this machine, since killing one end leaves the other believing the connection is alive. The game error-codes and reconnects by itself." />
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
+                                       Text="A connection can only be reset once a packet carrying payload has been seen in both directions, so give it a few seconds of traffic first." />
+                            <Button Content="Reconnect now"
+                                    Style="{StaticResource AccentButton}"
+                                    HorizontalAlignment="Left"
+                                    IsEnabled="{Binding IsEnabled}"
+                                    Margin="0,14,0,0"
+                                    Click="OnReset" />
+                        </StackPanel>
+                    </Border>
 
-                <!-- Switches. -->
-                <Border Style="{StaticResource Card}"
-                        Visibility="{Binding HasSwitches,
-                           Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel>
-                        <TextBlock Text="SWITCHES" Style="{StaticResource SectionLabel}" />
+                    <!-- Keys. -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="KEYS" Style="{StaticResource SectionLabel}" />
 
-                        <CheckBox Style="{StaticResource Switch}" Margin="0,4"
-                                  IsChecked="{Binding ResyncEnabled, Mode=TwoWay}"
-                                  IsEnabled="{Binding SupportsResync}"
-                                  Content="Autoresync"
-                                  Visibility="{Binding SupportsResync,
-                                     Converter={StaticResource BoolToVisibility}}" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="130" />
+                                    <ColumnDefinition Width="200" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                        <CheckBox Style="{StaticResource Switch}" Margin="0,8,0,4"
-                                  IsChecked="{Binding BufferEnabled, Mode=TwoWay}"
-                                  IsEnabled="{Binding SupportsBuffer}"
-                                  Content="Buffer withheld packets"
-                                  Visibility="{Binding SupportsBuffer,
-                                     Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Text="{Binding KeyActionLabel}"
+                                           VerticalAlignment="Center" Margin="0,7" />
+                                <Button Grid.Column="1" Margin="0,4"
+                                        Style="{StaticResource KeyButton}"
+                                        Content="{Binding BindLabel}"
+                                        Tag="Toggle" Click="OnRebind" />
 
-                        <TextBlock Style="{StaticResource Subtle}" Margin="0,10,0,0"
-                                   Text="Both take effect on the next packet. A delay line cannot give up its buffer, since a packet cannot arrive late unless it was kept." />
-                    </StackPanel>
-                </Border>
+                                <TextBlock Grid.Row="1" Text="Autoresync"
+                                           VerticalAlignment="Center" Margin="0,7"
+                                           Visibility="{Binding SupportsResync,
+                                              Converter={StaticResource BoolToVisibility}}" />
+                                <Button Grid.Row="1" Grid.Column="1" Margin="0,4"
+                                        Style="{StaticResource KeyButton}"
+                                        Content="{Binding ResyncKeyLabel}"
+                                        Tag="Resync" Click="OnRebind"
+                                        Visibility="{Binding SupportsResync,
+                                           Converter={StaticResource BoolToVisibility}}" />
 
-                <!-- Counters. -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="TRAFFIC" Style="{StaticResource SectionLabel}" />
+                                <TextBlock Grid.Row="2" Text="Buffer"
+                                           VerticalAlignment="Center" Margin="0,7"
+                                           Visibility="{Binding SupportsBuffer,
+                                              Converter={StaticResource BoolToVisibility}}" />
+                                <Button Grid.Row="2" Grid.Column="1" Margin="0,4"
+                                        Style="{StaticResource KeyButton}"
+                                        Content="{Binding BufferKeyLabel}"
+                                        Tag="Buffer" Click="OnRebind"
+                                        Visibility="{Binding SupportsBuffer,
+                                           Converter={StaticResource BoolToVisibility}}" />
+                            </Grid>
 
-                        <UniformGrid Columns="4">
-                            <StackPanel>
-                                <TextBlock Text="{Binding Seen}" FontSize="19" FontWeight="SemiBold" />
-                                <TextBlock Text="seen" Style="{StaticResource Subtle}" />
-                            </StackPanel>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Dropped}" FontSize="19" FontWeight="SemiBold" />
-                                <TextBlock Text="withheld" Style="{StaticResource Subtle}" />
-                            </StackPanel>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Buffered}" FontSize="19" FontWeight="SemiBold" />
-                                <TextBlock Text="buffered" Style="{StaticResource Subtle}" />
-                            </StackPanel>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Replayed}" FontSize="19" FontWeight="SemiBold" />
-                                <TextBlock Text="replayed" Style="{StaticResource Subtle}" />
-                            </StackPanel>
-                        </UniformGrid>
-                    </StackPanel>
-                </Border>
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,12,0,0"
+                                       Text="Click a key, then press one. Esc clears it, so a module can be driven from this window alone." />
+                        </StackPanel>
+                    </Border>
 
-                <!-- Reconnect, only where it exists. -->
-                <Border Style="{StaticResource Card}"
-                        Visibility="{Binding SupportsReset,
-                           Converter={StaticResource BoolToVisibility}}">
-                    <StackPanel>
-                        <TextBlock Text="RECONNECT" Style="{StaticResource SectionLabel}" />
-                        <TextBlock Style="{StaticResource Subtle}"
-                                   Text="Injects a TCP reset into every live connection on this group. The game error-codes and reconnects by itself." />
-                        <Button Content="Reconnect now"
-                                Style="{StaticResource AccentButton}"
-                                HorizontalAlignment="Left"
-                                Margin="0,12,0,0"
-                                Click="OnReset" />
-                    </StackPanel>
-                </Border>
+                    <!-- Switches. -->
+                    <Border Style="{StaticResource Card}"
+                            Visibility="{Binding HasSwitches,
+                               Converter={StaticResource BoolToVisibility}}">
+                        <StackPanel>
+                            <TextBlock Text="SWITCHES" Style="{StaticResource SectionLabel}" />
 
-            </StackPanel>
-        </ScrollViewer>
+                            <CheckBox Style="{StaticResource Switch}" Margin="0,4"
+                                      IsChecked="{Binding ResyncEnabled, Mode=TwoWay}"
+                                      IsEnabled="{Binding SupportsResync}"
+                                      Content="Autoresync"
+                                      Visibility="{Binding SupportsResync,
+                                         Converter={StaticResource BoolToVisibility}}" />
 
-        <!-- ============ Status bar ============ -->
-        <Border Grid.Column="1" Grid.Row="1"
-                Background="{StaticResource SidebarBrush}"
-                BorderBrush="{StaticResource LineBrush}"
-                BorderThickness="0,1,0,0"
-                Padding="26,9">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+                            <CheckBox Style="{StaticResource Switch}" Margin="0,8,0,4"
+                                      IsChecked="{Binding BufferEnabled, Mode=TwoWay}"
+                                      IsEnabled="{Binding SupportsBuffer}"
+                                      Content="Buffer withheld packets"
+                                      Visibility="{Binding SupportsBuffer,
+                                         Converter={StaticResource BoolToVisibility}}" />
 
-                <TextBlock Text="{Binding Status}" Style="{StaticResource Mono}"
-                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,12,0,0"
+                                       Text="Both take effect on the next packet. A delay line cannot give up its buffer, since a packet cannot arrive late unless it was kept." />
+                        </StackPanel>
+                    </Border>
 
-                <TextBlock Grid.Column="1" Style="{StaticResource Mono}"
-                           VerticalAlignment="Center">
-                    <Run Text="holding " />
-                    <Run Text="{Binding ActiveCount, Mode=OneWay}"
-                         Foreground="{StaticResource HoldingBrush}" FontWeight="Bold" />
-                </TextBlock>
-            </Grid>
-        </Border>
-    </Grid>
+                    <!-- Counters. -->
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="TRAFFIC" Style="{StaticResource SectionLabel}" />
+
+                            <UniformGrid Columns="4">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Seen}" FontSize="19" FontWeight="SemiBold" />
+                                    <TextBlock Text="seen" Style="{StaticResource Subtle}" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Dropped}" FontSize="19" FontWeight="SemiBold" />
+                                    <TextBlock Text="withheld" Style="{StaticResource Subtle}" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Buffered}" FontSize="19" FontWeight="SemiBold" />
+                                    <TextBlock Text="buffered" Style="{StaticResource Subtle}" />
+                                </StackPanel>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Replayed}" FontSize="19" FontWeight="SemiBold" />
+                                    <TextBlock Text="replayed" Style="{StaticResource Subtle}" />
+                                </StackPanel>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ============ Status bar ============ -->
+            <Border Grid.Row="2" Grid.Column="1"
+                    Background="{StaticResource SidebarBrush}"
+                    BorderBrush="{StaticResource LineBrush}"
+                    BorderThickness="0,1,0,0"
+                    Padding="26,9">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Text="{Binding PipePath}" Style="{StaticResource Mono}"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+
+                    <TextBlock Grid.Column="1" Style="{StaticResource Mono}"
+                               VerticalAlignment="Center">
+                        <Run Text="holding " />
+                        <Run Text="{Binding ActiveCount, Mode=OneWay}"
+                             Foreground="{StaticResource HoldingBrush}" FontWeight="Bold" />
+                    </TextBlock>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
 </Window>

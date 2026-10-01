@@ -14,6 +14,16 @@ public sealed record ModuleConfig
     /// </summary>
     public string? Bind { get; init; }
 
+    /// <summary>
+    /// Whether the module participates at all.
+    /// </summary>
+    /// <remarks>
+    /// A layer above holding: a disabled module keeps its handle but refuses to be activated, by a
+    /// key or by the control pipe. Useful for keeping a module configured without it being
+    /// reachable by a mistimed keypress.
+    /// </remarks>
+    public bool Enabled { get; init; } = true;
+
     /// <summary>Whether the resync window, or the TCP keepalive, starts on.</summary>
     public bool Resync { get; init; } = true;
 
