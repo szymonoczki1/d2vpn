@@ -2879,6 +2879,28 @@ so there is nothing here to compare against the reference's stated purpose for t
 
 ---
 
+## Finding 61 - BattlEye does not refuse a suspend handle on destiny2
+
+`d2vpn pause` works. The process suspends and resumes, which was the open question when GamePause
+was built: the expectation was that the anti-cheat would refuse the handle and the module could not
+exist.
+
+The handle asks for **`PROCESS_SUSPEND_RESUME` alone**, not the full access .NET's
+`Process.Handle` requests. Whether the narrow right is what makes the difference is **untested** -
+full access was never tried, so this says only that the narrow one is granted.
+
+What follows from it: the game is freezable from user mode by anything that can open it, so the
+safety design in `GamePauseSession` is the whole module. A pause that is never released is a game
+that must be killed, and nothing outside this process will release it.
+
+Resource Monitor's "Suspend Process" produces the same freeze and the same kernel suspend count.
+The difference is ownership: resmon's suspend is sticky, surviving resmon itself closing, while
+this one is released by Ctrl+C, by `Dispose` on any faulting path, and by a 30 s safety timeout.
+The TCP stack is in the kernel either way, so connections keep being acknowledged while the game
+is frozen and only the game's own sends stop.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

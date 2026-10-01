@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
@@ -25,8 +25,12 @@ namespace D2Vpn.Core.Processes;
 /// </para>
 /// <para>
 /// The handle asks for <c>PROCESS_SUSPEND_RESUME</c> alone. .NET's <see cref="Process.Handle"/>
-/// requests full access, which an anti-cheat is far more likely to refuse - and refusing is the
-/// expected outcome here, not an error to be surprised by.
+/// requests full access, which an anti-cheat is far more likely to refuse.
+/// </para>
+/// <para>
+/// <b>Measured: BattlEye does not refuse it.</b> Pausing destiny2 works, which was the open
+/// question when this was written - the failure was expected, not the success. Whether the narrow
+/// right is what makes the difference is untested; nobody tried full access to find out.
 /// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]

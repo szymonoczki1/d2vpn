@@ -282,8 +282,8 @@ static void PrintUsage()
     Console.WriteLine("      limit is for. --timeout-s 0 removes it, with a warning.");
     Console.WriteLine("");
     Console.WriteLine("      --process defaults to destiny2. Needs no WinDivert handle, so it");
-    Console.WriteLine("      does not conflict with another limiter, but the game's anti-cheat");
-    Console.WriteLine("      may refuse the handle outright - if it does, this cannot work.");
+    Console.WriteLine("      does not conflict with another limiter. BattlEye does not refuse");
+    Console.WriteLine("      the handle - pausing destiny2 is measured working.");
     Console.WriteLine("");
     Console.WriteLine("groups:  3074  27k  7500  30k");
     Console.WriteLine();
