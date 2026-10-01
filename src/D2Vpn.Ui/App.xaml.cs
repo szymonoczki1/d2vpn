@@ -30,8 +30,8 @@ public partial class App : Application
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
-        var path = e.Args.FirstOrDefault(a => a.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-            ?? Path.Combine(AppContext.BaseDirectory, "d2vpn.json");
+        var path = ConfigLocation.Resolve(
+            e.Args.FirstOrDefault(a => a.EndsWith(".json", StringComparison.OrdinalIgnoreCase)));
 
         HostConfig config;
 
@@ -39,11 +39,7 @@ public partial class App : Application
         {
             // First run writes the template rather than demanding the CLI be used first. The window
             // has to be able to stand alone, since that is the whole point of shipping one.
-            if (!File.Exists(path))
-            {
-                File.WriteAllText(path, ConfigTemplate.Text);
-            }
-
+            ConfigLocation.EnsureExists(path);
             config = HostConfig.Load(path);
         }
         catch (Exception ex)

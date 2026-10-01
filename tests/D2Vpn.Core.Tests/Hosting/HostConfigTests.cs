@@ -373,6 +373,42 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void The_config_lives_in_appdata_unless_a_path_is_given()
+    {
+        // Both front ends used to pick their own: the window wrote beside its executable and the
+        // CLI in the working directory, so a bind saved by one was invisible to the other. A build
+        // directory is also wiped by a clean, and is under Program Files once installed - a
+        // per-machine path for a per-user setting.
+        var fallback = ConfigLocation.Resolve(null);
+
+        Assert.Equal(ConfigLocation.Default, fallback);
+        Assert.StartsWith(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            fallback,
+            StringComparison.OrdinalIgnoreCase);
+
+        Assert.EndsWith("d2vpn.json", fallback, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void A_blank_path_falls_back_rather_than_resolving_to_nothing(string requested)
+    {
+        Assert.Equal(ConfigLocation.Default, ConfigLocation.Resolve(requested));
+    }
+
+    [Fact]
+    public void An_explicit_path_is_made_absolute_and_kept()
+    {
+        var resolved = ConfigLocation.Resolve("somewhere/else.json");
+
+        Assert.NotEqual(ConfigLocation.Default, resolved);
+        Assert.EndsWith("else.json", resolved, StringComparison.OrdinalIgnoreCase);
+        Assert.True(Path.IsPathRooted(resolved));
+    }
+
+    [Fact]
     public void A_written_config_uses_the_same_casing_as_the_template()
     {
         // The reader does not care, but a file the window rewrites should not come back looking

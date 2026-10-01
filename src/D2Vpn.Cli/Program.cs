@@ -1370,14 +1370,24 @@ static async Task<int> ControlAsync(string[] args)
 static int ConfigCommand(string[] args)
 {
     var action = args.Length > 1 ? args[1].ToLowerInvariant() : "init";
-    var path = StringOption(args, "--out")
+    var path = ConfigLocation.Resolve(
+        StringOption(args, "--out")
         ?? (args.Length > 2 && !args[2].StartsWith("--", StringComparison.Ordinal)
             ? args[2]
-            : "d2vpn.json");
+            : null));
 
     if (action == "check")
     {
+        if (!File.Exists(path))
+        {
+            Console.Error.WriteLine($"no config at {path}");
+            Console.Error.WriteLine("Create one with: d2vpn config init");
+            return 1;
+        }
+
         var config = HostConfig.Load(path);
+
+        Console.WriteLine($"  path    : {path}");
 
         Console.WriteLine($"{path} is valid.");
         Console.WriteLine($"  pipe    : {config.Pipe}");
@@ -1400,6 +1410,7 @@ static int ConfigCommand(string[] args)
         return 1;
     }
 
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
     File.WriteAllText(path, ConfigTemplate.Text);
 
     // Parsed back so a template that cannot load is caught here rather than by the operator.
@@ -1408,16 +1419,44 @@ static int ConfigCommand(string[] args)
     Console.WriteLine($"wrote {path}");
     Console.WriteLine();
     Console.WriteLine("It hosts all nine traffic modules plus pause, with every bind set. Edit the");
-    Console.WriteLine("keys, then run:");
+    Console.WriteLine("keys, then run either front end - both read this same file, and the window");
+    Console.WriteLine("writes a rebind straight back to it:");
     Console.WriteLine();
-    Console.WriteLine($"  d2vpn host --config {path}");
+    Console.WriteLine("  d2vpn host");
     return 0;
+}
+
+static int specsNamed(string[] args)
+{
+    var count = 0;
+
+    for (var i = 1; i < args.Length; i++)
+    {
+        if (args[i].StartsWith("--", StringComparison.Ordinal))
+        {
+            if (!args[i].Equals("--pause", StringComparison.OrdinalIgnoreCase))
+            {
+                i++;
+            }
+
+            continue;
+        }
+
+        count++;
+    }
+
+    return count;
 }
 
 static async Task<int> HostAsync(string[] args)
 {
-    if (StringOption(args, "--config") is { } configPath)
+    // --config with no value, or no --config at all when nothing else was named, both mean the
+    // one config this machine keeps.
+    if (HasFlag(args, "--config") || specsNamed(args) == 0)
     {
+        var configPath = ConfigLocation.Resolve(StringOption(args, "--config"));
+
+        ConfigLocation.EnsureExists(configPath);
         var fromFile = HostConfig.Load(configPath);
 
         // Only WinDivert needs elevation. A config hosting pause alone opens no driver, and
