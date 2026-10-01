@@ -180,6 +180,8 @@ public class NamedPipeControlServerTests
 
         public bool IsEnabled { get; set; } = true;
 
+        public IReadOnlyList<ModuleMetric> Metrics => [];
+
         public IModuleOptions? Options { get; init; }
 
         public ModuleStatus Status => new(name, IsActive, IsEnabled, 0, 0, 0, 0, 0);

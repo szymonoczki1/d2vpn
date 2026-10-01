@@ -51,9 +51,31 @@ public interface IControllable
     /// <summary>A point-in-time reading.</summary>
     ModuleStatus Status { get; }
 
+    /// <summary>
+    /// The numbers worth showing for this module, already labelled.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not the same as <see cref="Status"/>, which is packet-shaped because the control protocol is.
+    /// A front end that rendered those for every module ends up showing game pause four packet
+    /// counters that can only ever be zero - and, worse, labelling its pause count "seen", because
+    /// that was the only field left to put it in.
+    /// </para>
+    /// <para>
+    /// So each module says what it measures. A hold counts packets, a reconnect counts resets, and
+    /// a process pause counts pauses and the time spent in them.
+    /// </para>
+    /// </remarks>
+    IReadOnlyList<ModuleMetric> Metrics { get; }
+
     /// <summary>Asks for a reset, if this supports one.</summary>
     void RequestReset();
 }
+
+/// <summary>One labelled number a module reports.</summary>
+/// <param name="Label">What it is, in lower case, for under the figure.</param>
+/// <param name="Value">The figure itself, already formatted.</param>
+public readonly record struct ModuleMetric(string Label, string Value);
 
 /// <summary>What shape of thing a controllable is.</summary>
 /// <remarks>

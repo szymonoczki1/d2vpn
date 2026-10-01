@@ -223,6 +223,8 @@ public class ModuleHostTests
 
         public bool IsEnabled { get; set; } = true;
 
+        public IReadOnlyList<ModuleMetric> Metrics => [];
+
         public IModuleOptions? Options { get; init; }
 
         public int Resets { get; private set; }

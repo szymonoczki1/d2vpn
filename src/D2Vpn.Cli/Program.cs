@@ -15,6 +15,11 @@ using D2Vpn.Core.Network;
 CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
 CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
+// The current thread as well: the two above only reach threads created after them, so this one
+// would otherwise keep the system locale. The window hit exactly that and printed "2,4s".
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
+
 if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
 {
     PrintUsage();

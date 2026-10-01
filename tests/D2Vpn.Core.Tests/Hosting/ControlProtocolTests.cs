@@ -266,6 +266,8 @@ public class ControlProtocolTests
 
         public bool IsEnabled { get; set; } = true;
 
+        public IReadOnlyList<ModuleMetric> Metrics => [];
+
         public IModuleOptions? Options { get; init; }
 
         public ModuleStatus Status => new(name, IsActive, IsEnabled, 10, 4, 3, 2, 0);

@@ -137,6 +137,14 @@ public sealed class WinDivertModuleRunner : IModuleRunner
             slot.Replayed,
             owner._controller.ResetsInjected);
 
+        public IReadOnlyList<ModuleMetric> Metrics =>
+        [
+            new("seen", $"{owner._controller.PacketsSeen}"),
+            new("withheld", $"{slot.Dropped}"),
+            new("buffered", $"{slot.Buffered}"),
+            new("replayed", $"{slot.Replayed}")
+        ];
+
         public void RequestReset() =>
             throw new InvalidOperationException(
                 $"'{name}' is a hold - use '{owner.Name}-rc' to reconnect");
@@ -184,6 +192,15 @@ public sealed class WinDivertModuleRunner : IModuleRunner
             0,
             0,
             owner._controller.ResetsInjected);
+
+        // A reconnect withholds nothing, so the packet counters a hold reports would all be zero.
+        // What it does is inject resets, and how much traffic the handle has seen says whether
+        // there is a connection live enough to reset at all.
+        public IReadOnlyList<ModuleMetric> Metrics =>
+        [
+            new("resets sent", $"{owner._controller.ResetsInjected}"),
+            new("packets seen", $"{owner._controller.PacketsSeen}")
+        ];
 
         public void RequestReset()
         {

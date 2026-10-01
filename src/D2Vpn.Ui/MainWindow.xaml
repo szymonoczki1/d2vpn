@@ -337,29 +337,29 @@
                         </StackPanel>
                     </Border>
 
-                    <!-- Counters. -->
+                    <!-- What this module measures, which is not the same for all of them. -->
                     <Border Style="{StaticResource Card}">
                         <StackPanel>
-                            <TextBlock Text="TRAFFIC" Style="{StaticResource SectionLabel}" />
+                            <TextBlock Text="{Binding MetricsLabel}"
+                                       Style="{StaticResource SectionLabel}" />
 
-                            <UniformGrid Columns="4">
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Seen}" FontSize="19" FontWeight="SemiBold" />
-                                    <TextBlock Text="seen" Style="{StaticResource Subtle}" />
-                                </StackPanel>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Dropped}" FontSize="19" FontWeight="SemiBold" />
-                                    <TextBlock Text="withheld" Style="{StaticResource Subtle}" />
-                                </StackPanel>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Buffered}" FontSize="19" FontWeight="SemiBold" />
-                                    <TextBlock Text="buffered" Style="{StaticResource Subtle}" />
-                                </StackPanel>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding Replayed}" FontSize="19" FontWeight="SemiBold" />
-                                    <TextBlock Text="replayed" Style="{StaticResource Subtle}" />
-                                </StackPanel>
-                            </UniformGrid>
+                            <ItemsControl ItemsSource="{Binding Metrics}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Rows="1" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Value}" FontSize="19"
+                                                       FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding Label}"
+                                                       Style="{StaticResource Subtle}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
                     </Border>
 

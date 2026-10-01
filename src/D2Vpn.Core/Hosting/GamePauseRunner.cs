@@ -74,16 +74,24 @@ public sealed class GamePauseRunner : IModuleRunner, IControllable
     /// <summary>Null: neither buffering nor resync means anything to a suspended process.</summary>
     public IModuleOptions? Options => null;
 
+    /// <summary>
+    /// A reading, with every packet counter zero because this module handles none.
+    /// </summary>
+    /// <remarks>
+    /// The pause count used to be reported here as packets seen, there being no other field for it,
+    /// which put a number under the wrong word in every front end. It lives in
+    /// <see cref="Metrics"/> now.
+    /// </remarks>
+    public ModuleStatus Status => new(Name, _session.IsPaused, IsEnabled, 0, 0, 0, 0, 0);
+
     /// <inheritdoc/>
-    public ModuleStatus Status => new(
-        Name,
-        _session.IsPaused,
-        IsEnabled,
-        _session.Pauses,
-        0,
-        0,
-        0,
-        0);
+    public IReadOnlyList<ModuleMetric> Metrics =>
+    [
+        new("pauses", $"{_session.Pauses}"),
+        new("total held", $"{_session.TotalPaused.TotalSeconds:F1}s"),
+        new("longest", $"{_session.LongestPause.TotalSeconds:F1}s"),
+        new("safety stops", $"{_session.SafetyStops}")
+    ];
 
     /// <inheritdoc/>
     public void RequestReset() =>

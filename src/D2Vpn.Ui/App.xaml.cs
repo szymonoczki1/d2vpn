@@ -25,10 +25,16 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        // Numbers here are counters and sizes read at a glance, and a locale whose group separator
-        // is a non-breaking space has already caused trouble once in this project.
+        // Numbers here are counters and durations read at a glance, and a locale whose group
+        // separator is a non-breaking space has already caused trouble once in this project.
+        //
+        // Both forms are needed. DefaultThreadCurrentCulture only reaches threads created after it
+        // is set, so on its own the UI thread kept the system locale and a pause of two and a half
+        // seconds was rendered "2,4s".
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
         CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+        CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
         var path = ConfigLocation.Resolve(
             e.Args.FirstOrDefault(a => a.EndsWith(".json", StringComparison.OrdinalIgnoreCase)));

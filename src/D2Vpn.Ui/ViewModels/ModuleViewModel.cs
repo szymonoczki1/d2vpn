@@ -247,20 +247,18 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>HOLDING, idle or disabled, for the panel.</summary>
     public string StateLabel => !IsEnabled ? "disabled" : IsActive ? "HOLDING" : "idle";
 
-    /// <summary>Packets this module has withheld.</summary>
-    public long Dropped => _control.Status.PacketsDropped;
+    /// <summary>
+    /// The labelled numbers this module reports, which differ by what it actually does.
+    /// </summary>
+    /// <remarks>
+    /// A hold counts packets, a reconnect counts resets, and game pause counts pauses - it handles
+    /// no packets at all, so the four packet counters it used to be given were three zeroes and a
+    /// pause count labelled "seen".
+    /// </remarks>
+    public IReadOnlyList<ModuleMetric> Metrics => _control.Metrics;
 
-    /// <summary>Packets it is keeping, or has kept.</summary>
-    public long Buffered => _control.Status.PacketsBuffered;
-
-    /// <summary>Packets replayed out of its buffer.</summary>
-    public long Replayed => _control.Status.PacketsReplayed;
-
-    /// <summary>Packets the handle has seen.</summary>
-    public long Seen => _control.Status.PacketsSeen;
-
-    /// <summary>Resets injected on this handle.</summary>
-    public long Resets => _control.Status.ResetsInjected;
+    /// <summary>The heading over them.</summary>
+    public string MetricsLabel => Kind == ModuleKind.Process ? "ACTIVITY" : "TRAFFIC";
 
     /// <summary>Asks for a reconnect.</summary>
     public void RequestReset() => _control.RequestReset();
@@ -285,8 +283,7 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>Re-reads everything the host owns, for the refresh tick.</summary>
     public void Refresh() => RaiseAll(
         nameof(IsActive), nameof(StateLabel), nameof(IsEnabled), nameof(CanHold),
-        nameof(ResyncEnabled), nameof(BufferEnabled),
-        nameof(Dropped), nameof(Buffered), nameof(Replayed), nameof(Seen), nameof(Resets));
+        nameof(ResyncEnabled), nameof(BufferEnabled), nameof(Metrics));
 
     /// <summary>Raises only the state, for an immediate response to a click.</summary>
     public void RaiseState() => RaiseAll(nameof(IsActive), nameof(StateLabel));

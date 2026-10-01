@@ -198,6 +198,8 @@ public class RuntimeOptionTests
 
         public bool IsEnabled { get; set; } = true;
 
+        public IReadOnlyList<ModuleMetric> Metrics => [];
+
         public IModuleOptions? Options { get; init; }
 
         public bool IsActive { get; set; }
