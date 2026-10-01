@@ -1,13 +1,16 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-using D2Vpn.Core.Input;
 
-namespace D2Vpn.Cli.Hotkeys;
+namespace D2Vpn.Core.Input;
 
 /// <summary>
 /// Watches for key presses globally and raises an event on each press.
 /// </summary>
+/// <remarks>
+/// In Core rather than in a front end because two of them need it: the CLI host and the window
+/// both bind the same keys from the same config file.
+/// </remarks>
 /// <remarks>
 /// <para>
 /// Polls <c>GetAsyncKeyState</c> rather than installing a hook. A low-level keyboard hook needs a
@@ -25,7 +28,7 @@ namespace D2Vpn.Cli.Hotkeys;
 /// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
-internal sealed class HotkeyWatcher : IDisposable
+public sealed class HotkeyWatcher : IDisposable
 {
     private readonly Dictionary<int, Action> _bindings = [];
     private readonly Dictionary<int, bool> _wasDown = [];

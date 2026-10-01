@@ -1,6 +1,5 @@
 ﻿using System.Globalization;
 using D2Vpn.Cli;
-using D2Vpn.Cli.Hotkeys;
 using D2Vpn.Core.Input;
 using D2Vpn.Core.Calibration;
 using D2Vpn.Core.Hosting;

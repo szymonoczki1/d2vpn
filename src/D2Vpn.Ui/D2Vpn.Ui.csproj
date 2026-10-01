@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AssemblyName>d2vpn-ui</AssemblyName>
+    <RootNamespace>D2Vpn.Ui</RootNamespace>
+
+    <!-- The window hosts the modules itself, so the process needs the driver, so it needs to be
+         elevated from the start. Asking in the manifest means one prompt as it launches rather
+         than a window that opens and then cannot do anything. -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\D2Vpn.Core\D2Vpn.Core.csproj" />
+  </ItemGroup>
+
+</Project>

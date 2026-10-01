@@ -1,6 +1,5 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
-using D2Vpn.Cli.Hotkeys;
 using D2Vpn.Core.Diagnostics;
 using D2Vpn.Core.Input;
 using D2Vpn.Core.Processes;
