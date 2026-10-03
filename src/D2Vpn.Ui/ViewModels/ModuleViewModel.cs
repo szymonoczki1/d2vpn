@@ -198,7 +198,8 @@ public sealed class ModuleViewModel : ObservableObject
         set
         {
             _bindKey = value;
-            RaiseAll(nameof(BindKey), nameof(BindLabel), nameof(HasBind));
+            RaiseAll(nameof(BindKey), nameof(BindLabel), nameof(HasBind),
+                nameof(SidebarDetail));
         }
     }
 
@@ -248,6 +249,30 @@ public sealed class ModuleViewModel : ObservableObject
     public string StateLabel => !IsEnabled ? "disabled" : IsActive ? "HOLDING" : "idle";
 
     /// <summary>
+    /// How long this has been on, counting up, or an empty string when it is not.
+    /// </summary>
+    /// <remarks>
+    /// Read from the module's own start time rather than counted here, so it is right regardless of
+    /// what turned the module on - a key, this window, or a command down the control pipe.
+    /// </remarks>
+    public string HeldLabel => _control.ActiveSince is { } since
+        ? Format(DateTimeOffset.UtcNow - since)
+        : string.Empty;
+
+    /// <summary>True while there is something to count.</summary>
+    public bool IsTiming => _control.ActiveSince is not null;
+
+    /// <summary>Everything in the sidebar's second line: the key, and the timer while running.</summary>
+    public string SidebarDetail => IsTiming ? HeldLabel : BindLabel;
+
+    /// <summary>
+    /// Minutes once there are any, because a hold measured in minutes read as "212.4s".
+    /// </summary>
+    private static string Format(TimeSpan held) => held.TotalMinutes >= 1
+        ? $"{(int)held.TotalMinutes}m {held.Seconds:00}s"
+        : $"{held.TotalSeconds:F1}s";
+
+    /// <summary>
     /// The labelled numbers this module reports, which differ by what it actually does.
     /// </summary>
     /// <remarks>
@@ -283,10 +308,13 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>Re-reads everything the host owns, for the refresh tick.</summary>
     public void Refresh() => RaiseAll(
         nameof(IsActive), nameof(StateLabel), nameof(IsEnabled), nameof(CanHold),
-        nameof(ResyncEnabled), nameof(BufferEnabled), nameof(Metrics));
+        nameof(ResyncEnabled), nameof(BufferEnabled), nameof(Metrics),
+        nameof(HeldLabel), nameof(IsTiming), nameof(SidebarDetail));
 
     /// <summary>Raises only the state, for an immediate response to a click.</summary>
-    public void RaiseState() => RaiseAll(nameof(IsActive), nameof(StateLabel));
+    public void RaiseState() => RaiseAll(
+        nameof(IsActive), nameof(StateLabel), nameof(HeldLabel), nameof(IsTiming),
+        nameof(SidebarDetail));
 
     /// <summary>This module as a config entry, for saving.</summary>
     public ModuleConfig ToConfig() => (Config ?? new ModuleConfig { Name = Name }) with

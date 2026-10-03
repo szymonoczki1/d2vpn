@@ -116,11 +116,40 @@ public sealed class WinDivertModuleRunner : IModuleRunner
 
         public bool IsEnabled { get; set; } = true;
 
+        private DateTimeOffset? _activeSince;
+        private TimeSpan _totalActive;
+
         public bool IsActive
         {
             get => slot.Module.IsActive;
-            set => slot.Module.IsActive = value;
+            set
+            {
+                if (slot.Module.IsActive == value)
+                {
+                    return;
+                }
+
+                slot.Module.IsActive = value;
+
+                // Banked on the way down rather than recomputed, so the total stays right even if
+                // nothing reads it while the hold is running.
+                if (value)
+                {
+                    _activeSince = DateTimeOffset.UtcNow;
+                }
+                else if (_activeSince is { } since)
+                {
+                    _totalActive += DateTimeOffset.UtcNow - since;
+                    _activeSince = null;
+                }
+            }
         }
+
+        public DateTimeOffset? ActiveSince => slot.Module.IsActive ? _activeSince : null;
+
+        public TimeSpan TotalActive => _activeSince is { } since
+            ? _totalActive + (DateTimeOffset.UtcNow - since)
+            : _totalActive;
 
         // False: reconnect is its own control now, so a hold does not also pretend to offer it.
         public bool SupportsReset => false;
@@ -135,14 +164,17 @@ public sealed class WinDivertModuleRunner : IModuleRunner
             slot.Dropped,
             slot.Buffered,
             slot.Replayed,
-            owner._controller.ResetsInjected);
+            owner._controller.ResetsInjected,
+            ActiveSince is { } since ? (DateTimeOffset.UtcNow - since).TotalSeconds : 0,
+            TotalActive.TotalSeconds);
 
         public IReadOnlyList<ModuleMetric> Metrics =>
         [
             new("seen", $"{owner._controller.PacketsSeen}"),
             new("withheld", $"{slot.Dropped}"),
             new("buffered", $"{slot.Buffered}"),
-            new("replayed", $"{slot.Replayed}")
+            new("replayed", $"{slot.Replayed}"),
+            new("total held", ModuleMetrics.Seconds(TotalActive))
         ];
 
         public void RequestReset() =>
@@ -180,6 +212,12 @@ public sealed class WinDivertModuleRunner : IModuleRunner
         }
 
         public bool SupportsReset => true;
+
+        /// <summary>Null: a trigger is never on, so there is nothing to time.</summary>
+        public DateTimeOffset? ActiveSince => null;
+
+        /// <inheritdoc/>
+        public TimeSpan TotalActive => TimeSpan.Zero;
 
         public IModuleOptions? Options => null;
 

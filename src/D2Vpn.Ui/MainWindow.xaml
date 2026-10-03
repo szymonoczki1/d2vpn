@@ -150,10 +150,23 @@
                                     <StackPanel Opacity="{Binding IsEnabled,
                                                    Converter={StaticResource BoolToOpacity}}">
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                                        <TextBlock Text="{Binding BindLabel}"
-                                                   Style="{StaticResource Mono}"
-                                                   Foreground="{StaticResource TextFaintBrush}"
-                                                   FontSize="11" />
+                                        <TextBlock Text="{Binding SidebarDetail}"
+                                                   FontSize="11">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock"
+                                                       BasedOn="{StaticResource Mono}">
+                                                    <Setter Property="Foreground"
+                                                            Value="{StaticResource TextFaintBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsTiming}"
+                                                                     Value="True">
+                                                            <Setter Property="Foreground"
+                                                                    Value="{StaticResource HoldingBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </StackPanel>
 
                                     <!-- The only red in the sidebar, so a module that is holding is
@@ -207,6 +220,14 @@
                                 <TextBlock Text="  ·  " Style="{StaticResource Subtle}" />
                                 <TextBlock Text="{Binding StateLabel}"
                                            Style="{StaticResource Subtle}" FontWeight="SemiBold" />
+                                <TextBlock Text="  ·  " Style="{StaticResource Subtle}"
+                                           Visibility="{Binding IsTiming,
+                                              Converter={StaticResource BoolToVisibility}}" />
+                                <TextBlock Text="{Binding HeldLabel}"
+                                           Style="{StaticResource Subtle}" FontWeight="SemiBold"
+                                           Foreground="{StaticResource HoldingBrush}"
+                                           Visibility="{Binding IsTiming,
+                                              Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </StackPanel>
 
@@ -233,10 +254,22 @@
                                            Text="{Binding ToggleDescription}" />
                             </StackPanel>
 
-                            <CheckBox Grid.Column="1" Style="{StaticResource Switch}"
-                                      VerticalAlignment="Center"
-                                      IsEnabled="{Binding CanHold}"
-                                      IsChecked="{Binding IsActive, Mode=TwoWay}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                        VerticalAlignment="Center">
+                                <!-- Counting up while it runs, because "how long have I been
+                                     holding this" is the question a hold creates. -->
+                                <TextBlock Text="{Binding HeldLabel}"
+                                           FontSize="22" FontWeight="SemiBold"
+                                           VerticalAlignment="Center" Margin="0,0,18,0"
+                                           Foreground="{StaticResource HoldingBrush}"
+                                           Visibility="{Binding IsTiming,
+                                              Converter={StaticResource BoolToVisibility}}" />
+
+                                <CheckBox Style="{StaticResource Switch}"
+                                          VerticalAlignment="Center"
+                                          IsEnabled="{Binding CanHold}"
+                                          IsChecked="{Binding IsActive, Mode=TwoWay}" />
+                            </StackPanel>
                         </Grid>
                     </Border>
 

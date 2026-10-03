@@ -1,4 +1,6 @@
-﻿namespace D2Vpn.Core.Hosting;
+﻿using System.Globalization;
+
+namespace D2Vpn.Core.Hosting;
 
 /// <summary>
 /// One thing the control surface can address by name.
@@ -48,6 +50,26 @@ public interface IControllable
     /// <summary>The options that can be changed while running, or null if it has none.</summary>
     IModuleOptions? Options { get; }
 
+    /// <summary>
+    /// When this module last became active, or <see langword="null"/> if it is not.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A timestamp rather than a duration, so whatever is displaying it decides how often to
+    /// re-read the clock. A front end refreshing four times a second gets a ticking figure out of
+    /// one property that never has to be pushed at it.
+    /// </para>
+    /// <para>
+    /// Kept here rather than in a front end because a hold can be started over the control pipe,
+    /// and a timer that only counted from the moment a window noticed would be wrong by however
+    /// long its refresh takes - and absent entirely for anything that is not that window.
+    /// </para>
+    /// </remarks>
+    DateTimeOffset? ActiveSince { get; }
+
+    /// <summary>How long this module has been active in total, across the session.</summary>
+    TimeSpan TotalActive { get; }
+
     /// <summary>A point-in-time reading.</summary>
     ModuleStatus Status { get; }
 
@@ -70,6 +92,19 @@ public interface IControllable
 
     /// <summary>Asks for a reset, if this supports one.</summary>
     void RequestReset();
+}
+
+/// <summary>Formatting shared by everything that reports a metric.</summary>
+public static class ModuleMetrics
+{
+    /// <summary>A duration in seconds, always with a full stop.</summary>
+    /// <remarks>
+    /// Invariant on purpose. These are produced by a library and read by a window, a console and a
+    /// script, and a locale with a decimal comma had already turned a three-second pause into
+    /// "3,4s" in one of them and a protocol field into <c>held=0,0</c> in another.
+    /// </remarks>
+    public static string Seconds(TimeSpan held) =>
+        held.TotalSeconds.ToString("F1", CultureInfo.InvariantCulture) + "s";
 }
 
 /// <summary>One labelled number a module reports.</summary>

@@ -182,6 +182,10 @@ public class NamedPipeControlServerTests
 
         public IReadOnlyList<ModuleMetric> Metrics => [];
 
+        public DateTimeOffset? ActiveSince => null;
+
+        public TimeSpan TotalActive => TimeSpan.Zero;
+
         public IModuleOptions? Options { get; init; }
 
         public ModuleStatus Status => new(name, IsActive, IsEnabled, 0, 0, 0, 0, 0);

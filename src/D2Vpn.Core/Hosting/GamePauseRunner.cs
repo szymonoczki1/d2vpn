@@ -68,6 +68,12 @@ public sealed class GamePauseRunner : IModuleRunner, IControllable
         }
     }
 
+    /// <inheritdoc/>
+    public DateTimeOffset? ActiveSince => _session.PausedAt;
+
+    /// <inheritdoc/>
+    public TimeSpan TotalActive => _session.TotalPaused + _session.Elapsed(DateTimeOffset.UtcNow);
+
     /// <summary>False: there is no connection here to reset.</summary>
     public bool SupportsReset => false;
 
@@ -82,14 +88,22 @@ public sealed class GamePauseRunner : IModuleRunner, IControllable
     /// which put a number under the wrong word in every front end. It lives in
     /// <see cref="Metrics"/> now.
     /// </remarks>
-    public ModuleStatus Status => new(Name, _session.IsPaused, IsEnabled, 0, 0, 0, 0, 0);
+    public ModuleStatus Status => new(
+        Name, _session.IsPaused, IsEnabled, 0, 0, 0, 0, 0,
+        _session.Elapsed(DateTimeOffset.UtcNow).TotalSeconds,
+        TotalActive.TotalSeconds);
 
     /// <inheritdoc/>
     public IReadOnlyList<ModuleMetric> Metrics =>
     [
         new("pauses", $"{_session.Pauses}"),
-        new("total held", $"{_session.TotalPaused.TotalSeconds:F1}s"),
-        new("longest", $"{_session.LongestPause.TotalSeconds:F1}s"),
+        // The pause in progress counts towards both. The session banks a pause only when it is
+        // released, so reading those raw showed "total held 0.0s" beside a timer reading 15.1s.
+        new("total held", ModuleMetrics.Seconds(TotalActive)),
+        new("longest", ModuleMetrics.Seconds(
+            _session.Elapsed(DateTimeOffset.UtcNow) > _session.LongestPause
+                ? _session.Elapsed(DateTimeOffset.UtcNow)
+                : _session.LongestPause)),
         new("safety stops", $"{_session.SafetyStops}")
     ];
 

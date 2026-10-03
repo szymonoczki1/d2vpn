@@ -1,4 +1,6 @@
-﻿using D2Vpn.Core.Hosting;
+﻿using System.Globalization;
+
+using D2Vpn.Core.Hosting;
 
 namespace D2Vpn.Core.Tests.Hosting;
 
@@ -73,7 +75,8 @@ public class ControlProtocolTests
         host.Set("30k", true);
 
         Assert.Equal(
-            "ok 30k active=1 enabled=1 seen=10 dropped=4 buffered=3 replayed=2 resets=0",
+            "ok 30k active=1 enabled=1 seen=10 dropped=4 buffered=3 replayed=2 resets=0 "
+                + "held=0.0 totalHeld=0.0",
             ControlProtocol.Execute("stat 30k", host).Response);
     }
 
@@ -127,6 +130,30 @@ public class ControlProtocolTests
         Assert.Equal("ok 30k-rc=0", ControlProtocol.Execute("toggle 30k-rc", host).Response);
         Assert.Equal(0, host.ActiveCount);
         Assert.Equal("ok reset=30k-rc", ControlProtocol.Execute("reset 30k-rc", host).Response);
+    }
+
+    [Fact]
+    public void The_protocol_is_invariant_whatever_the_machine_locale_is()
+    {
+        // It was not. On a machine with a decimal comma this emitted "held=0,0", which a consumer
+        // splitting on the separator misreads and which differed between machines running the same
+        // build. A library producing a wire format cannot rely on its host having set the culture.
+        var original = CultureInfo.CurrentCulture;
+
+        try
+        {
+            CultureInfo.CurrentCulture = new CultureInfo("pl-PL");
+
+            using var host = Host("30k");
+            var line = ControlProtocol.Execute("stat 30k", host).Response;
+
+            Assert.Contains("held=0.0", line);
+            Assert.DoesNotContain("held=0,0", line);
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]
@@ -267,6 +294,10 @@ public class ControlProtocolTests
         public bool IsEnabled { get; set; } = true;
 
         public IReadOnlyList<ModuleMetric> Metrics => [];
+
+        public DateTimeOffset? ActiveSince => null;
+
+        public TimeSpan TotalActive => TimeSpan.Zero;
 
         public IModuleOptions? Options { get; init; }
 

@@ -1,4 +1,4 @@
-namespace D2Vpn.Core.Processes;
+﻿namespace D2Vpn.Core.Processes;
 
 /// <summary>Why a pause ended.</summary>
 public enum ResumeReason
@@ -203,6 +203,9 @@ public sealed class GamePauseSession : IDisposable
 
     /// <summary>How long the current pause has been running, or zero if not paused.</summary>
     public TimeSpan Elapsed(DateTimeOffset now) => IsPaused ? now - _pausedAt : TimeSpan.Zero;
+
+    /// <summary>When the current pause started, or null if the game is running.</summary>
+    public DateTimeOffset? PausedAt => IsPaused ? _pausedAt : null;
 
     /// <summary>Resumes the game if it is paused, then releases the handle.</summary>
     public void Dispose()

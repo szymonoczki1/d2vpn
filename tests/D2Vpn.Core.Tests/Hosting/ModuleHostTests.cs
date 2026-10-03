@@ -225,6 +225,10 @@ public class ModuleHostTests
 
         public IReadOnlyList<ModuleMetric> Metrics => [];
 
+        public DateTimeOffset? ActiveSince => null;
+
+        public TimeSpan TotalActive => TimeSpan.Zero;
+
         public IModuleOptions? Options { get; init; }
 
         public int Resets { get; private set; }
