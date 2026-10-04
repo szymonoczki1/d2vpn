@@ -99,10 +99,16 @@ internal static class InstanceCommand
             {
                 var now = DateTimeOffset.UtcNow;
 
+                // Silence cannot be noticed from a packet, there being none, so something
+                // has to ask. Leaving this out made the backstop dead code: an error code
+                // followed by seventy seconds of nothing ended no instance at all.
+                watcher.Tick(now);
+
                 Console.Write($"\r{(now - started).TotalSeconds,6:N0}s  "
                     + $"{State(watcher, now)}  "
                     + $"changes {watcher.Changes}  "
                     + $"ends {watcher.Ends}  "
+                    + $"quiet {watcher.Quiet(now).TotalSeconds,5:F1}s  "
                     + $"packets {packets}   ");
 
                 await Task.Delay(200, cancellationToken).ConfigureAwait(false);
@@ -124,6 +130,9 @@ internal static class InstanceCommand
         Console.WriteLine();
         Console.WriteLine();
         Console.WriteLine($"instance changes  : {watcher.Changes}");
+        Console.WriteLine($"instances ended   : {watcher.Ends}"
+            + (watcher.QuietEnds > 0 ? $"  ({watcher.QuietEnds} by going quiet)" : string.Empty));
+        Console.WriteLine($"ignored after rc  : {watcher.Suppressed}");
         Console.WriteLine($"packets seen      : {packets}");
 
         if (watcher.Changes == 0)
