@@ -3049,30 +3049,26 @@ Theirs is the more conclusive test despite being shorter in wall-clock. Thirty s
 come down - fifteen is still five missed beats - at the cost of being wrong sooner if the game ever
 stalls that long. Not changed without measuring what a real stall looks like.
 
-### A departure is sometimes a reset rather than a close
+### A departure is sometimes a reset - observed, deliberately not acted on
 
-Leaving to orbit was measured producing inbound `[RST, ACK]` from the instance server instead of a
+Leaving to orbit sometimes produces inbound `[RST, ACK]` from the instance server rather than a
 FIN:
 
 ```
 205.209.x.x -> 10.x.x.x   TCP   40   30000 -> 59411 [RST, ACK] Seq=54700 Ack=14551 Win=79872 Len=0
 ```
 
-Same departure, different teardown. Both end the instance now.
+Treating it as a departure was built and then withdrawn. The reason it does not pay: a reset is
+also what this tool injects, and a capture cannot show whether a reconnect produces an inbound one,
+because an injected inbound packet is delivered up the local stack and never reaches the adapter
+(finding 46). So the flag cannot separate them, and the only thing that can is tracking which
+resets we caused - which the standalone measurement command cannot do at all, the reconnect being a
+separate process.
 
-**This removes the flag as a discriminator against our own reconnect**, which injects resets. A
-capture cannot settle whether a reconnect produces an inbound reset either, because an injected
-inbound packet is delivered up the local stack and never reaches the adapter (finding 46) - so
-"I don't see one in Wireshark" is what you would see whether or not it exists.
-
-What separates them is knowing which resets *we* caused. An inbound reset inside the grace window
-after this tool injects one is ignored and left in the live connection set, so resetting every
-socket still cannot read as a departure. A FIN is never suppressed: it is not something this tool
-injects, so leaving immediately after a reconnect is still noticed.
-
-The consequence is that the standalone `d2vpn instance` command cannot cover this - the reconnect is
-a separate process and nothing tells the watcher. Pressing reconnect during that command now looks
-like leaving. In the application both live in one process.
+Trading a signal that is definite for one that needs a grace window to be trusted, against a
+backstop that already covers the case within the silence wait, is not worth it. **A reset ends
+nothing.** The instance ends on a close or on silence, and this is recorded so it is not proposed
+again without a reason that was not available here.
 
 ### Not every departure sends a FIN
 
