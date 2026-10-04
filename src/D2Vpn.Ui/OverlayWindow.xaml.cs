@@ -3,6 +3,7 @@ using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Processes;
@@ -59,6 +60,7 @@ public partial class OverlayWindow : Window
         Panel.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
 
         _model.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(Reposition);
+        SizeChanged += OnSizeChanged;
 
         _watcher = new ForegroundWatcher(config.Process);
         _watcher.Changed += (inFront, bounds) =>
@@ -120,11 +122,34 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        if (!IsVisible)
+        if (IsVisible)
         {
-            Show();
+            Place();
+            return;
         }
 
+        // Shown transparent, placed on the next layout pass, and only then faded in.
+        //
+        // The right and bottom anchors subtract the panel's own size, and that size is not known
+        // until it has laid out - measuring it by hand returns whatever it last was, which after a
+        // spell hidden is wrong. So the first frames were drawn against a stale size and corrected
+        // once layout caught up, which is the jump; the top left anchor never reads the size, which
+        // is why that one corner always looked right.
+        Opacity = 0;
+        Show();
+
+        Dispatcher.BeginInvoke(
+            DispatcherPriority.Loaded,
+            () =>
+            {
+                Place();
+                Opacity = 1;
+            });
+    }
+
+    /// <summary>Puts the panel in its corner of the game window, using its laid-out size.</summary>
+    private void Place()
+    {
         // Win32 gives physical pixels and WPF positions in device-independent units, so on a
         // scaled display the two differ - without this the panel drifts further off the corner the
         // higher the scaling is.
@@ -144,6 +169,22 @@ public partial class OverlayWindow : Window
         Top = bottom
             ? topLeft.Y + size.Y - ActualHeight - _config.MarginY
             : topLeft.Y + _config.MarginY;
+    }
+
+    /// <summary>
+    /// Re-anchors when the panel's own size changes.
+    /// </summary>
+    /// <remarks>
+    /// The window sizes to its contents, so a module appearing, or a timer passing from 9.9s to
+    /// 10.0s, changes its width. Anchored right or bottom, the position depends on that size, so
+    /// without this the panel would creep every time the text grew by a character.
+    /// </remarks>
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (IsVisible)
+        {
+            Place();
+        }
     }
 
     /// <summary>Applies changed settings without restarting.</summary>
