@@ -1,4 +1,4 @@
-<Window x:Class="D2Vpn.Ui.MainWindow"
+﻿<Window x:Class="D2Vpn.Ui.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="clr-namespace:D2Vpn.Ui.ViewModels"
@@ -236,6 +236,26 @@
                               Content="Enabled" />
                 </Grid>
 
+                <!-- The figure itself. The overlay is where this is read in practice, since the
+                     game is what you are looking at; this is so it can be seen working, and so a
+                     timer saying nothing can be told from one that is not running. -->
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="NOW" Style="{StaticResource SectionLabel}" />
+
+                        <TextBlock Text="{Binding Elapsed}" Style="{StaticResource Mono}"
+                                   FontSize="40"
+                                   Foreground="{StaticResource TextBrush}"
+                                   Margin="0,2,0,0" />
+
+                        <TextBlock Text="{Binding State}" Style="{StaticResource Subtle}"
+                                   Margin="0,4,0,0" />
+
+                        <TextBlock Text="{Binding Counts}" Style="{StaticResource Subtle}"
+                                   Margin="0,10,0,0" />
+                    </StackPanel>
+                </Border>
+
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
                         <TextBlock Text="WAITS ON SILENCE" Style="{StaticResource SectionLabel}" />
@@ -329,6 +349,21 @@
                     <StackPanel>
                         <TextBlock Text="POSITION" Style="{StaticResource SectionLabel}" />
 
+                        <!-- Which chip the drag and the arrows move. Both panels are placed from
+                             this one preview because the preview is the screen: two things that
+                             appear on it, positioned from two separate pages, is how they end up
+                             on top of each other with nowhere showing why. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <RadioButton GroupName="PlacePanel" Style="{StaticResource Segment}"
+                                         IsChecked="{Binding EditingModules, Mode=TwoWay}"
+                                         Content="Modules" />
+                            <RadioButton GroupName="PlacePanel" Style="{StaticResource Segment}"
+                                         Margin="6,0,0,0"
+                                         IsEnabled="{Binding TimerHasOwnPlace}"
+                                         IsChecked="{Binding EditingTimer, Mode=TwoWay}"
+                                         Content="Timer" />
+                        </StackPanel>
+
                         <Border Background="{StaticResource WindowBrush}"
                                 BorderBrush="{StaticResource LineBrush}"
                                 BorderThickness="1" CornerRadius="6"
@@ -339,10 +374,30 @@
                                     MouseLeftButtonDown="OnPreviewDown"
                                     MouseMove="OnPreviewMove"
                                     MouseLeftButtonUp="OnPreviewUp">
-                                <Border Width="64" Height="18" CornerRadius="3"
+                                <!-- Tagged, because the code behind places each from its own
+                                     corner and margins and drags whichever is selected. -->
+                                <Border Tag="Modules" Width="64" Height="18" CornerRadius="3"
                                         Background="{StaticResource AccentBrush}"
+                                        Opacity="{Binding EditingModules,
+                                                  Converter={StaticResource BoolToOpacity}}"
                                         Canvas.Left="0" Canvas.Top="0">
-                                    <TextBlock Text="d2vpn" FontSize="9" Foreground="White"
+                                    <TextBlock Text="modules" FontSize="9" Foreground="White"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Border>
+
+                                <!-- The same accent as the module chip, because it is the same
+                                     kind of thing in the same preview. Red here would read as a
+                                     module holding, which is what that colour means everywhere
+                                     else in this window. Which one is selected is the opacity. -->
+                                <Border Tag="Timer" Width="44" Height="18" CornerRadius="3"
+                                        Background="{StaticResource AccentBrush}"
+                                        Opacity="{Binding EditingTimer,
+                                                  Converter={StaticResource BoolToOpacity}}"
+                                        Visibility="{Binding TimerHasOwnPlace,
+                                                     Converter={StaticResource BoolToVisibility}}"
+                                        Canvas.Left="0" Canvas.Top="0">
+                                    <TextBlock Text="0:00" FontSize="9" Foreground="White"
                                                HorizontalAlignment="Center"
                                                VerticalAlignment="Center" />
                                 </Border>
@@ -398,6 +453,18 @@
 
                         <TextBlock Style="{StaticResource Subtle}" Margin="0,12,0,0"
                                    Text="Distance from the anchored corner, in pixels of a 1920x1080 window. The preview is that window to scale." />
+
+                        <CheckBox Style="{StaticResource Switch}" Margin="0,14,0,0"
+                                  IsChecked="{Binding ShowTimerPanel, Mode=TwoWay}"
+                                  Content="Show the instance timer" />
+
+                        <CheckBox Style="{StaticResource Switch}" Margin="0,10,0,0"
+                                  IsEnabled="{Binding ShowTimerPanel}"
+                                  IsChecked="{Binding TimerAttached, Mode=TwoWay}"
+                                  Content="Keep it in the module panel" />
+
+                        <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
+                                   Text="Attached, the timer is the top row of the module panel and shares its corner. Detached, it is a panel of its own with its own place on the screen." />
                     </StackPanel>
                 </Border>
 

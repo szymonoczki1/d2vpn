@@ -651,6 +651,72 @@ public class InstanceWatcherTests
         Assert.Equal(1, watcher.Ends);
     }
 
+    [Fact]
+    public void Retuning_does_not_disturb_the_instance_being_timed()
+    {
+        // Because a running activity is exactly when someone would go and adjust these. Rebuilding
+        // the watcher would be simpler and would reset the timer the moment the number moved.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0));
+
+        watcher.Retune(TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(30));
+
+        Assert.Equal(T0, watcher.Since);
+        Assert.Equal(ServerA, watcher.Server);
+        Assert.Equal(1, watcher.Changes);
+    }
+
+    [Fact]
+    public void A_retuned_wait_is_the_one_that_applies()
+    {
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+        watcher.Observe(Syn(ServerA, T0));
+
+        watcher.Retune(TimeSpan.FromSeconds(90), TimeSpan.FromSeconds(30));
+
+        // Past the old wait, inside the new one.
+        watcher.Tick(T0.AddSeconds(45));
+        Assert.True(watcher.InInstance);
+
+        watcher.Tick(T0.AddSeconds(95));
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.QuietEnds);
+    }
+
+    [Fact]
+    public void A_long_wait_cannot_be_undone_by_the_forget_window()
+    {
+        // The invariant the constructor enforces, which retuning has to keep. A server dropped
+        // from the known set reads as new when it is next heard from, which restarts the timer -
+        // so a forget shorter than the silence wait would reset the very instance that wait exists
+        // to preserve, and only when a load screen happened to run long.
+        var watcher = new InstanceWatcher(forget: TimeSpan.FromSeconds(20));
+        watcher.Observe(Syn(ServerA, T0));
+
+        watcher.Retune(TimeSpan.FromSeconds(120), TimeSpan.FromSeconds(15));
+
+        // A hundred seconds of nothing, then the same server again. Still the same instance.
+        watcher.Tick(T0.AddSeconds(100));
+        watcher.Observe(Syn(ServerA, T0.AddSeconds(100)));
+
+        Assert.Equal(T0, watcher.Since);
+        Assert.Equal(1, watcher.Changes);
+    }
+
+    [Fact]
+    public void A_retuned_hide_wait_applies_too()
+    {
+        var watcher = new InstanceWatcher(dormantAfter: TimeSpan.FromSeconds(15));
+        watcher.Observe(Syn(ServerA, T0));
+
+        watcher.Retune(TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(40));
+
+        // Past the old hide wait, inside the new one: still shown, and still running either way.
+        Assert.True(watcher.ShouldShow(T0.AddSeconds(30)));
+        Assert.False(watcher.ShouldShow(T0.AddSeconds(50)));
+        Assert.True(watcher.InInstance);
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 

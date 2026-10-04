@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Input;
+using D2Vpn.Core.Network;
 using D2Vpn.Core.Processes;
 
 namespace D2Vpn.Ui.ViewModels;
@@ -35,6 +36,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private HotkeyWatcher? _hotkeys;
     private List<IModuleRunner> _runners = [];
     private HostConfig _config;
+    private TimerSettingsViewModel? _timerPage;
     private SidebarItem? _selected;
     private CategoryViewModel? _category;
     private string _status = string.Empty;
@@ -45,7 +47,31 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     {
         _configPath = configPath;
         _config = config;
+
+        Instances = new InstanceWatcher(
+            silence: TimeSpan.FromSeconds(config.Timer.EndAfterS),
+            dormantAfter: TimeSpan.FromSeconds(config.Timer.HideAfterS));
     }
+
+    /// <summary>
+    /// How long the current activity has lasted, as the 30k traffic shows it.
+    /// </summary>
+    /// <remarks>
+    /// Always here, even when nothing feeds it, so turning the 30k module on is the only thing
+    /// needed rather than a restart. <see cref="TimerIsFed"/> is how a front end knows whether what
+    /// it is showing means anything.
+    /// </remarks>
+    public InstanceWatcher Instances { get; }
+
+    /// <summary>
+    /// True when a hosted handle is reporting 30k traffic to <see cref="Instances"/>.
+    /// </summary>
+    /// <remarks>
+    /// The timer has no handle of its own and cannot have one: a second handle on 30k would sit
+    /// behind the first by priority and go blind for the length of every hold. So it rides the
+    /// handle the 30k modules already opened, and without those modules there is nothing to ride.
+    /// </remarks>
+    public bool TimerIsFed { get; private set; }
 
     /// <summary>Every hosted module, across all categories.</summary>
     public ObservableCollection<ModuleViewModel> Modules { get; } = [];
@@ -144,6 +170,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             }
 
             _host = new ModuleHost(_runners);
+
+            // From inside the handle the 30k modules already own, which is the only place a
+            // withheld packet is visible. See IPacketFeed.
+            foreach (var feed in _runners.OfType<IPacketFeed>()
+                .Where(f => f.Group == DestinyPorts.Instance))
+            {
+                feed.PacketObserved += Instances.Observe;
+
+                // Our own reconnect kills the connection and the game opens another within a third
+                // of a second, which is otherwise indistinguishable from arriving somewhere new.
+                feed.ResetsSent += (_, packets) =>
+                {
+                    if (packets > 0)
+                    {
+                        Instances.Suppress(DateTimeOffset.UtcNow);
+                    }
+                };
+
+                TimerIsFed = true;
+            }
         }
         catch (Exception ex)
         {
@@ -152,6 +198,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             Status = ex.Message;
             Failed = true;
             Dispose();
+
+            // The rail is still built. The overlay and the timer are configurable whether or not
+            // anything is hosted, and this is the one moment someone is most likely to go looking
+            // - a window with no sections at all reads as broken rather than as nothing running.
+            BuildCategories();
+            Category = Categories.FirstOrDefault();
+
             return false;
         }
 
@@ -226,7 +279,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             "Settings", "IconSettings", "Nothing to configure here yet.");
 
         settings.Items.Add(new OverlaySettingsViewModel(_config.Overlay, ApplyOverlay));
-        settings.Items.Add(new TimerSettingsViewModel(_config.Timer, ApplyTimer));
+
+        // Kept, because it shows a running figure and so needs the fast tick. Everything else on
+        // these pages only changes when something is clicked.
+        _timerPage = new TimerSettingsViewModel(
+            _config.Timer, Instances, TimerIsFed, ApplyTimer);
+
+        settings.Items.Add(_timerPage);
 
         foreach (var category in new[] { traffic, system, settings })
         {
@@ -271,6 +330,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             module.RaiseLive();
         }
+
+        _timerPage?.Tick();
+
+        // Silence cannot be noticed from a packet, there being none, so something has to ask.
+        // Leaving this out of the measurement command once made the backstop dead code: an error
+        // code followed by seventy seconds of nothing ended no instance at all.
+        Instances.Tick(DateTimeOffset.UtcNow);
 
         RaiseShared();
         OverlayTick?.Invoke();
@@ -390,6 +456,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private void ApplyTimer(TimerConfig timer)
     {
         _config = _config with { Timer = timer };
+
+        // Retuned rather than rebuilt. A running activity is exactly when someone would go and
+        // adjust these, and rebuilding would reset the timer the moment the number changed.
+        Instances.Retune(
+            TimeSpan.FromSeconds(timer.EndAfterS),
+            TimeSpan.FromSeconds(timer.HideAfterS));
+
         TimerChanged?.Invoke(timer);
         Save();
     }

@@ -1,4 +1,5 @@
-using D2Vpn.Core.Hosting;
+﻿using D2Vpn.Core.Hosting;
+using D2Vpn.Core.Network;
 
 namespace D2Vpn.Ui.ViewModels;
 
@@ -14,14 +15,86 @@ namespace D2Vpn.Ui.ViewModels;
 public sealed class TimerSettingsViewModel : SidebarItem
 {
     private readonly Action<TimerConfig> _apply;
+    private readonly InstanceWatcher _watcher;
+    private readonly bool _fed;
     private TimerConfig _config;
 
     /// <summary>Creates the page over the current settings.</summary>
-    public TimerSettingsViewModel(TimerConfig config, Action<TimerConfig> apply)
+    /// <param name="config">The waits as they stand.</param>
+    /// <param name="watcher">What is being timed, so the page can show it running.</param>
+    /// <param name="fed">
+    /// Whether a hosted handle is reporting 30k traffic. False means the numbers below are
+    /// settings for something that is not watching, which is worth saying rather than showing a
+    /// timer that will never move.
+    /// </param>
+    /// <param name="apply">Called with every change, to save it and retune the watcher.</param>
+    public TimerSettingsViewModel(
+        TimerConfig config, InstanceWatcher watcher, bool fed, Action<TimerConfig> apply)
     {
         _config = config;
+        _watcher = watcher;
+        _fed = fed;
         _apply = apply;
     }
+
+    /// <summary>
+    /// The instance timer as it stands, for the one place it can be read without the game in front.
+    /// </summary>
+    /// <remarks>
+    /// The overlay is where this is actually read, since the game is what you are looking at. This
+    /// is here so the thing can be seen working at all - and so a timer that says nothing can be
+    /// told apart from a timer that is not running.
+    /// </remarks>
+    public string Elapsed
+    {
+        get
+        {
+            var held = _watcher.Elapsed(DateTimeOffset.UtcNow);
+
+            return _watcher.InInstance
+                ? held.TotalHours >= 1
+                    ? $"{(int)held.TotalHours}:{held.Minutes:00}:{held.Seconds:00}"
+                    : $"{(int)held.TotalMinutes}:{held.Seconds:00}"
+                : "--:--";
+        }
+    }
+
+    /// <summary>What the timer is doing, in a few words.</summary>
+    public string State
+    {
+        get
+        {
+            var now = DateTimeOffset.UtcNow;
+
+            if (!_fed)
+            {
+                return "not watching - needs a 30k module hosted";
+            }
+
+            if (!_config.Enabled)
+            {
+                return "turned off";
+            }
+
+            if (!_watcher.InInstance)
+            {
+                return "not in an activity";
+            }
+
+            return _watcher.IsDormant(now)
+                ? $"quiet for {_watcher.Quiet(now).TotalSeconds:F0}s - "
+                    + $"over in {_watcher.UntilEnd(now).TotalSeconds:F0}s unless traffic returns"
+                : "in an activity";
+        }
+    }
+
+    /// <summary>How many activities have been seen and how many have ended.</summary>
+    public string Counts =>
+        $"{_watcher.Changes} seen  ·  {_watcher.Ends} ended  "
+        + $"({_watcher.QuietEnds} by silence)  ·  {_watcher.Suppressed} reconnects ignored";
+
+    /// <summary>Re-reads the running figures. Rides the window's fast tick.</summary>
+    public void Tick() => RaiseAll(nameof(Elapsed), nameof(State), nameof(Counts));
 
     /// <inheritdoc/>
     public override string Name => "Timer";

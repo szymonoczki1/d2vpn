@@ -1,4 +1,4 @@
-using D2Vpn.Core.Hosting;
+﻿using D2Vpn.Core.Hosting;
 
 namespace D2Vpn.Ui.ViewModels;
 
@@ -94,29 +94,147 @@ public sealed class OverlaySettingsViewModel : SidebarItem
         set => Change(_config with { Opacity = Math.Round(Math.Clamp(value, 0, 1), 2) });
     }
 
+    /// <summary>
+    /// Which panel the position controls are editing.
+    /// </summary>
+    /// <remarks>
+    /// Both are placed from the one preview, because that preview is the screen - two things that
+    /// appear on it, positioned from two different pages, is how they end up overlapping with
+    /// nowhere showing why.
+    /// </remarks>
+    public OverlayPanelKind Editing
+    {
+        get => _editing;
+        set
+        {
+            if (!Set(ref _editing, value))
+            {
+                return;
+            }
+
+            RaiseAll(
+                nameof(MarginX), nameof(MarginY), nameof(Corner), nameof(CornerLabel),
+                nameof(EditingModules), nameof(EditingTimer));
+        }
+    }
+
+    private OverlayPanelKind _editing = OverlayPanelKind.Modules;
+
+    /// <summary>
+    /// True while the module panel is the one being placed.
+    /// </summary>
+    /// <remarks>
+    /// Settable, so a radio button can bind to it two ways and keep its own selected look. Ignores
+    /// being set to false: that arrives as the other button takes the selection, and acting on it
+    /// would mean a moment with neither panel being edited.
+    /// </remarks>
+    public bool EditingModules
+    {
+        get => _editing == OverlayPanelKind.Modules;
+        set
+        {
+            if (value)
+            {
+                Editing = OverlayPanelKind.Modules;
+            }
+        }
+    }
+
+    /// <inheritdoc cref="EditingModules"/>
+    public bool EditingTimer
+    {
+        get => _editing == OverlayPanelKind.Timer;
+        set
+        {
+            if (value)
+            {
+                Editing = OverlayPanelKind.Timer;
+            }
+        }
+    }
+
+    /// <summary>The panel currently being placed.</summary>
+    private OverlayPanel Panel =>
+        _editing == OverlayPanelKind.Timer ? _config.Timer : _config.Modules;
+
+    /// <summary>
+    /// One named panel's placement, whichever is being edited.
+    /// </summary>
+    /// <remarks>
+    /// The preview draws both chips at once, each from its own settings, so it needs the panel it
+    /// is not editing as well. Everything else here goes through <see cref="Panel"/>.
+    /// </remarks>
+    public OverlayPanel PanelFor(OverlayPanelKind kind) =>
+        kind == OverlayPanelKind.Timer ? _config.Timer : _config.Modules;
+
+    /// <summary>Whether the module panel is drawn.</summary>
+    public bool ShowModules
+    {
+        get => _config.Modules.Show;
+        set => Change(_config with { Modules = _config.Modules with { Show = value } });
+    }
+
+    /// <summary>Whether the timer panel is drawn.</summary>
+    public bool ShowTimerPanel
+    {
+        get => _config.Timer.Show;
+        set => Change(_config with { Timer = _config.Timer with { Show = value } });
+    }
+
+    /// <summary>
+    /// Draw the timer as a row of the module panel rather than as a panel of its own.
+    /// </summary>
+    /// <remarks>
+    /// Attached, the timer has no position of its own, so the preview stops offering one.
+    /// </remarks>
+    public bool TimerAttached
+    {
+        get => _config.TimerAttached;
+        set
+        {
+            Change(_config with { TimerAttached = value });
+
+            if (value && _editing == OverlayPanelKind.Timer)
+            {
+                Editing = OverlayPanelKind.Modules;
+            }
+
+            RaiseAll(nameof(TimerAttached), nameof(TimerHasOwnPlace));
+        }
+    }
+
+    /// <summary>True when the timer is a panel in its own right, and so has somewhere to be.</summary>
+    public bool TimerHasOwnPlace => !_config.TimerAttached && _config.Timer.Show;
+
     /// <summary>Distance from the nearer vertical edge, in pixels.</summary>
     public int MarginX
     {
-        get => _config.MarginX;
-        set => Change(_config with { MarginX = Math.Clamp(value, 0, 1200) });
+        get => Panel.MarginX;
+        set => ChangePanel(Panel with { MarginX = Math.Clamp(value, 0, 1200) });
     }
 
     /// <summary>Distance from the nearer horizontal edge, in pixels.</summary>
     public int MarginY
     {
-        get => _config.MarginY;
-        set => Change(_config with { MarginY = Math.Clamp(value, 0, 800) });
+        get => Panel.MarginY;
+        set => ChangePanel(Panel with { MarginY = Math.Clamp(value, 0, 800) });
     }
 
     /// <summary>Which corner it is anchored to.</summary>
     public OverlayCorner Corner
     {
-        get => _config.Corner;
-        set => Change(_config with { Corner = value });
+        get => Panel.Corner;
+        set => ChangePanel(Panel with { Corner = value });
     }
 
+    /// <summary>Puts the edited panel back into the configuration.</summary>
+    private void ChangePanel(OverlayPanel panel) =>
+        Change(_editing == OverlayPanelKind.Timer
+            ? _config with { Timer = panel }
+            : _config with { Modules = panel });
+
     /// <summary>The corner in words, for the preview caption.</summary>
-    public string CornerLabel => _config.Corner switch
+    public string CornerLabel => Panel.Corner switch
     {
         OverlayCorner.TopLeft => "anchored top left",
         OverlayCorner.TopRight => "anchored top right",
@@ -161,7 +279,7 @@ public sealed class OverlaySettingsViewModel : SidebarItem
         var marginX = right ? ReferenceWidth - (x + width) : x;
         var marginY = bottom ? ReferenceHeight - (y + height) : y;
 
-        Change(_config with
+        ChangePanel(Panel with
         {
             Corner = corner,
             MarginX = (int)Math.Clamp(Math.Round(marginX), 0, 1200),
@@ -183,6 +301,7 @@ public sealed class OverlaySettingsViewModel : SidebarItem
             nameof(Config), nameof(IsEnabledSetting), nameof(Process), nameof(ShowTimers),
             nameof(ShowIdle), nameof(HideWhenIdle), nameof(Scale), nameof(Opacity),
             nameof(MarginX), nameof(MarginY), nameof(Corner), nameof(CornerLabel),
-            nameof(SidebarDetail));
+            nameof(ShowModules), nameof(ShowTimerPanel), nameof(TimerAttached),
+            nameof(TimerHasOwnPlace), nameof(SidebarDetail));
     }
 }

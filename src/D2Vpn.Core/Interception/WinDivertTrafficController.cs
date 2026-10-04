@@ -63,6 +63,13 @@ public sealed class WinDivertTrafficController : IDisposable
     /// <summary>True while any slot is holding.</summary>
     public bool AnyHolding => _slots.Any(s => s.Module.IsActive);
 
+    /// <summary>The port group this handle matches.</summary>
+    /// <remarks>
+    /// Every module on one handle acts on the same group - the constructor refuses a set that does
+    /// not - so the handle has exactly one, and a watcher can pick out the group it cares about.
+    /// </remarks>
+    public PortGroup Group { get; }
+
     /// <summary>The filter string handed to the driver.</summary>
     public string FilterExpression { get; }
 
@@ -133,6 +140,28 @@ public sealed class WinDivertTrafficController : IDisposable
     /// Only fires while holding, so it stays quiet during a warmup or after a release.
     /// </remarks>
     public event Action<PacketInfo>? PacketPassedWhileHolding;
+
+    /// <summary>
+    /// Raised for every packet on the group, before any module has had a verdict on it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// For something that only wants to watch - the instance timer is the case. Before the verdict
+    /// on purpose: a watcher that saw only what was passed would go blind for exactly as long as a
+    /// hold lasted, and a watcher whose rule is "silence means it ended" would then end the
+    /// instance in the middle of one.
+    /// </para>
+    /// <para>
+    /// It has to come from in here rather than from a second handle. A filter is built from the
+    /// port group alone, so another handle on the same group sits behind this one by priority and
+    /// sees only what this one chose to reinject. There is no vantage point outside the handle from
+    /// which a withheld packet is visible.
+    /// </para>
+    /// <para>
+    /// Raised on the receive loop. A handler must be quick and must not touch a UI directly.
+    /// </para>
+    /// </remarks>
+    public event Action<PacketInfo>? PacketObserved;
 
     /// <summary>
     /// Raised after a drain, with how many packets went out and how long the drain took.
@@ -224,6 +253,7 @@ public sealed class WinDivertTrafficController : IDisposable
         _slots = slots;
         _rewriter = rewriter;
         _sampler = sampler;
+        Group = group;
 
         var filter = WinDivertFilterBuilder.Build(group);
         FilterExpression = filter.ToString() ?? string.Empty;
@@ -622,6 +652,21 @@ public sealed class WinDivertTrafficController : IDisposable
             // have one is to have been watching all along.
             _rewriter?.Observe(info.Value);
             _sampler?.Observe(info.Value, packet, addr);
+
+            // Wrapped separately from the verdict below rather than sharing the outer catch. That
+            // one passes the packet, which is the right answer to a module bug, but it would also
+            // skip every module's verdict because something that merely watches had thrown.
+            if (PacketObserved is { } observer)
+            {
+                try
+                {
+                    observer(info.Value);
+                }
+                catch
+                {
+                    // Nothing that only watches is worth a dropped hold.
+                }
+            }
 
             // First non-passing verdict wins, in declared order. A packet can only be handled
             // once, and the slot that withheld it has to be the one whose buffer keeps it -

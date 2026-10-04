@@ -27,7 +27,7 @@ public readonly record struct OverlayLine(string Name, string Held, Brush Dot);
 /// something that wants the frame budget.
 /// </para>
 /// </remarks>
-public sealed class OverlayViewModel : ObservableObject
+public sealed class OverlayViewModel : OverlayContent
 {
     private readonly IReadOnlyList<ModuleViewModel> _modules;
     private OverlayConfig _config;
@@ -49,12 +49,6 @@ public sealed class OverlayViewModel : ObservableObject
         _config = config;
     }
 
-    /// <summary>The rows, in host order.</summary>
-    public ObservableCollection<OverlayLine> Lines { get; } = [];
-
-    /// <summary>True when there is anything to show.</summary>
-    public bool HasLines => Lines.Count > 0;
-
     /// <summary>Applies changed settings.</summary>
     public void Apply(OverlayConfig config)
     {
@@ -63,8 +57,8 @@ public sealed class OverlayViewModel : ObservableObject
         Refresh();
     }
 
-    /// <summary>Rebuilds the rows if what they would say has changed.</summary>
-    public void Refresh()
+    /// <inheritdoc/>
+    public override void Refresh()
     {
         var wanted = _modules
             .Where(m => m.IsEnabled && (m.IsActive || _config.ShowIdle))

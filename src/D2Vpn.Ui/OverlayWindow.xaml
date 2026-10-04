@@ -23,7 +23,7 @@
         unscaled units and so did not shrink with the size setting - below 1.0x that left a growing
         gap between the module name and its timer.
     -->
-    <Border x:Name="Panel"
+    <Border x:Name="Backdrop"
             CornerRadius="8"
             Padding="14,10">
         <Border.Background>

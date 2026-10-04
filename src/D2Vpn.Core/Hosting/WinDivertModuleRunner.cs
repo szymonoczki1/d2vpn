@@ -2,6 +2,7 @@
 
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
+using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Hosting;
 
@@ -22,7 +23,7 @@ namespace D2Vpn.Core.Hosting;
 /// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
-public sealed class WinDivertModuleRunner : IModuleRunner
+public sealed class WinDivertModuleRunner : IModuleRunner, IPacketFeed
 {
     private readonly WinDivertTrafficController _controller;
     private readonly ConnectionSampler? _sampler;
@@ -88,6 +89,27 @@ public sealed class WinDivertModuleRunner : IModuleRunner
 
     /// <summary>The filter this handle was opened with.</summary>
     public string FilterExpression => _controller.FilterExpression;
+
+    /// <inheritdoc/>
+    public PortGroup Group => _controller.Group;
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Forwarded rather than re-raised, so a subscriber is handed the controller's own invocation
+    /// list and there is no second place a packet could be dropped.
+    /// </remarks>
+    public event Action<PacketInfo>? PacketObserved
+    {
+        add => _controller.PacketObserved += value;
+        remove => _controller.PacketObserved -= value;
+    }
+
+    /// <inheritdoc/>
+    public event Action<int, int>? ResetsSent
+    {
+        add => _controller.ResetsSent += value;
+        remove => _controller.ResetsSent -= value;
+    }
 
     /// <inheritdoc/>
     public string? HandleKey => _controller.FilterExpression;

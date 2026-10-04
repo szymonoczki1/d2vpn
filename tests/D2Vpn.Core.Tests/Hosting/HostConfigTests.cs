@@ -691,4 +691,65 @@ public class HostConfigTests
         Assert.Equal("f12", again.ReleaseBind);
         Assert.Equal(8000, again.Resolve()[0].Tuning.SlowMs);
     }
+
+    [Fact]
+    public void The_overlay_panels_start_in_different_corners()
+    {
+        // Two panels in the same corner would be on top of each other on first run, which reads as
+        // the overlay being broken rather than as something to go and move.
+        var config = HostConfig.Parse("""
+        { "modules": [ { "name": "30k" } ] }
+        """);
+
+        Assert.True(config.Overlay.Modules.Show);
+        Assert.True(config.Overlay.Timer.Show);
+        Assert.False(config.Overlay.TimerAttached);
+        Assert.NotEqual(config.Overlay.Modules.Corner, config.Overlay.Timer.Corner);
+    }
+
+    [Fact]
+    public void An_overlay_position_written_before_there_were_panels_is_carried_across()
+    {
+        // The overlay had one corner and one pair of margins before it had two panels. Without the
+        // migration an existing file would quietly revert to the default corner on the first load
+        // after an update - a setting silently lost, which is worse than one that fails loudly.
+        var config = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "overlay": { "corner": "BottomLeft", "marginX": 64, "marginY": 90 }
+        }
+        """);
+
+        Assert.Equal(OverlayCorner.BottomLeft, config.Overlay.Modules.Corner);
+        Assert.Equal(64, config.Overlay.Modules.MarginX);
+        Assert.Equal(90, config.Overlay.Modules.MarginY);
+
+        // Cleared, so the move happens once and the old shape is not written back.
+        Assert.Null(config.Overlay.Corner);
+        Assert.Null(config.Overlay.MarginX);
+        Assert.Null(config.Overlay.MarginY);
+
+        // The timer keeps its own default rather than being dragged to the same corner.
+        Assert.Equal(OverlayCorner.TopLeft, config.Overlay.Timer.Corner);
+    }
+
+    [Fact]
+    public void A_config_written_with_panels_is_left_alone()
+    {
+        var config = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "overlay": {
+            "modules": { "corner": "TopLeft", "marginX": 10, "marginY": 10 },
+            "timer": { "corner": "BottomRight", "marginX": 20, "marginY": 20 },
+            "timerAttached": true
+          }
+        }
+        """);
+
+        Assert.Equal(OverlayCorner.TopLeft, config.Overlay.Modules.Corner);
+        Assert.Equal(OverlayCorner.BottomRight, config.Overlay.Timer.Corner);
+        Assert.Equal(20, config.Overlay.Timer.MarginX);
+        Assert.True(config.Overlay.TimerAttached);
+    }
 }

@@ -94,18 +94,20 @@ public partial class MainWindow : Window
             ? WindowState.Normal
             : WindowState.Maximized;
 
-    private OverlayWindow? _overlay;
+    private readonly List<OverlayWindow> _overlays = [];
 
     /// <summary>
-    /// Takes ownership of the overlay, so it closes with this window.
+    /// Takes ownership of an overlay panel, so it closes with this window.
     /// </summary>
     /// <remarks>
     /// Owner rather than a second top-level window: without it the application would keep running
     /// with an invisible overlay after the main window closed, since something would still be open.
+    /// A list because there are two panels - the modules and the instance timer - which can sit in
+    /// different corners, and each is its own window so each can be placed on its own.
     /// </remarks>
     public void AttachOverlay(OverlayWindow overlay)
     {
-        _overlay = overlay;
+        _overlays.Add(overlay);
         overlay.Owner = this;
         overlay.Begin();
     }
@@ -125,43 +127,115 @@ public partial class MainWindow : Window
     /// </remarks>
     private const double PreviewScale = OverlaySettingsViewModel.ReferenceWidth / 384.0;
 
-    private static Border? Chip(object sender) =>
-        sender is Canvas canvas && canvas.Children.Count > 0
-            ? canvas.Children[0] as Border
-            : null;
+    /// <summary>
+    /// One of the preview's chips, by the panel it stands for.
+    /// </summary>
+    /// <remarks>
+    /// Found by tag rather than by index. There are two, and which is declared first is a drawing
+    /// order decision that should not also decide which one a drag moves.
+    /// </remarks>
+    private static Border? Chip(Canvas canvas, OverlayPanelKind kind) =>
+        canvas.Children.OfType<Border>()
+            .FirstOrDefault(b => Equals(b.Tag, kind.ToString()));
 
-    /// <summary>Puts the chip where the current settings say, when the page first appears.</summary>
+    /// <summary>Puts both chips where their own settings say.</summary>
+    /// <remarks>
+    /// Both, every time, rather than only the one being edited: they are two things on one screen,
+    /// and the point of showing them together is seeing whether they overlap.
+    /// </remarks>
     private void OnPreviewLoaded(object sender, RoutedEventArgs e)
     {
         if (sender is not Canvas canvas
-            || Chip(canvas) is not { } chip
             || _model.Selected is not OverlaySettingsViewModel settings)
         {
             return;
         }
 
-        var right = settings.Corner is OverlayCorner.TopRight or OverlayCorner.BottomRight;
-        var bottom = settings.Corner is OverlayCorner.BottomLeft or OverlayCorner.BottomRight;
+        foreach (var kind in Panels)
+        {
+            if (Chip(canvas, kind) is not { } chip)
+            {
+                continue;
+            }
 
-        Canvas.SetLeft(chip, right
-            ? canvas.Width - chip.Width - (settings.MarginX / PreviewScale)
-            : settings.MarginX / PreviewScale);
+            var panel = settings.PanelFor(kind);
+            var right = panel.Corner is OverlayCorner.TopRight or OverlayCorner.BottomRight;
+            var bottom = panel.Corner is OverlayCorner.BottomLeft or OverlayCorner.BottomRight;
 
-        Canvas.SetTop(chip, bottom
-            ? canvas.Height - chip.Height - (settings.MarginY / PreviewScale)
-            : settings.MarginY / PreviewScale);
+            Canvas.SetLeft(chip, right
+                ? canvas.Width - chip.Width - (panel.MarginX / PreviewScale)
+                : panel.MarginX / PreviewScale);
+
+            Canvas.SetTop(chip, bottom
+                ? canvas.Height - chip.Height - (panel.MarginY / PreviewScale)
+                : panel.MarginY / PreviewScale);
+        }
     }
 
+    private static readonly OverlayPanelKind[] Panels =
+        [OverlayPanelKind.Modules, OverlayPanelKind.Timer];
+
+    /// <summary>
+    /// Starts a drag, on whichever chip was grabbed.
+    /// </summary>
+    /// <remarks>
+    /// Clicking a chip selects its panel as well as picking it up, so the obvious gesture - grab
+    /// the thing you want to move - works without having to find the right button first. A click on
+    /// bare canvas moves the panel already selected, which is what keeps placing by single clicks
+    /// working.
+    /// </remarks>
     private void OnPreviewDown(object sender, MouseButtonEventArgs e)
     {
-        if (sender is not Canvas canvas)
+        if (sender is not Canvas canvas
+            || _model.Selected is not OverlaySettingsViewModel settings)
         {
             return;
         }
 
+        var at = e.GetPosition(canvas);
+
+        if (Grabbed(canvas, settings, at) is { } grabbed)
+        {
+            settings.Editing = grabbed;
+        }
+
         _draggingChip = true;
         canvas.CaptureMouse();
-        MoveChip(canvas, e.GetPosition(canvas));
+        MoveChip(canvas, at);
+    }
+
+    /// <summary>Which chip the pointer is over, or null for bare canvas.</summary>
+    /// <remarks>
+    /// The timer's chip can only be grabbed while it has a place of its own. Attached, it is drawn
+    /// as a row of the module panel and has no position to drag. Tested before the module chip
+    /// because it is the smaller of the two and is drawn over it.
+    /// </remarks>
+    private static OverlayPanelKind? Grabbed(
+        Canvas canvas, OverlaySettingsViewModel settings, Point at)
+    {
+        foreach (var kind in Panels.Reverse())
+        {
+            if (kind == OverlayPanelKind.Timer && !settings.TimerHasOwnPlace)
+            {
+                continue;
+            }
+
+            if (Chip(canvas, kind) is not { } chip)
+            {
+                continue;
+            }
+
+            var left = Canvas.GetLeft(chip);
+            var top = Canvas.GetTop(chip);
+
+            if (at.X >= left && at.X <= left + chip.Width
+                && at.Y >= top && at.Y <= top + chip.Height)
+            {
+                return kind;
+            }
+        }
+
+        return null;
     }
 
     private void OnPreviewMove(object sender, MouseEventArgs e)
@@ -184,10 +258,11 @@ public partial class MainWindow : Window
         Commit(canvas);
     }
 
-    /// <summary>Centres the chip on the pointer, kept inside the preview.</summary>
-    private static void MoveChip(Canvas canvas, Point at)
+    /// <summary>Centres the selected panel's chip on the pointer, kept inside the preview.</summary>
+    private void MoveChip(Canvas canvas, Point at)
     {
-        if (Chip(canvas) is not { } chip)
+        if (_model.Selected is not OverlaySettingsViewModel settings
+            || Chip(canvas, settings.Editing) is not { } chip)
         {
             return;
         }
@@ -199,8 +274,8 @@ public partial class MainWindow : Window
     /// <summary>Turns where the chip ended up into a corner and a pair of margins.</summary>
     private void Commit(Canvas canvas)
     {
-        if (Chip(canvas) is not { } chip
-            || _model.Selected is not OverlaySettingsViewModel settings)
+        if (_model.Selected is not OverlaySettingsViewModel settings
+            || Chip(canvas, settings.Editing) is not { } chip)
         {
             return;
         }
@@ -420,7 +495,11 @@ public partial class MainWindow : Window
         CancelCapture();
         _live.Stop();
         _refresh.Stop();
-        _overlay?.Close();
+        foreach (var overlay in _overlays)
+        {
+            overlay.Close();
+        }
+
         _model.Dispose();
         base.OnClosed(e);
     }

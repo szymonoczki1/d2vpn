@@ -121,10 +121,13 @@ public sealed class InstanceWatcher
     /// </para>
     /// </remarks>
     private readonly Dictionary<IPAddress, Dictionary<int, DateTimeOffset>> _live = [];
-    private readonly TimeSpan _forget;
-    private readonly TimeSpan _silence;
-    private readonly TimeSpan _dormantAfter;
     private readonly TimeSpan _portIdle;
+
+    // Not readonly: the two waits are settings, changeable while this is watching. See Retune.
+    private TimeSpan _forget;
+    private TimeSpan _silence;
+    private TimeSpan _dormantAfter;
+    private TimeSpan _asked;
     private readonly Lock _gate = new();
 
     private DateTimeOffset _lastTraffic;
@@ -158,16 +161,41 @@ public sealed class InstanceWatcher
         TimeSpan? portIdle = null,
         TimeSpan? dormantAfter = null)
     {
-        _silence = silence ?? TimeSpan.FromSeconds(45);
-        _dormantAfter = dormantAfter ?? TimeSpan.FromSeconds(15);
         _portIdle = portIdle ?? TimeSpan.FromSeconds(10);
+        _asked = forget ?? TimeSpan.FromSeconds(20);
 
-        // Never shorter than the silence window, whatever is asked for. A server dropped from the
-        // known set reads as new when it is next heard from, which restarts the timer - so a forget
-        // shorter than the wait would reset the very instance the wait exists to preserve, and only
-        // when a load screen happened to run long. Invisible until it is not.
-        var asked = forget ?? TimeSpan.FromSeconds(20);
-        _forget = asked > _silence ? asked : _silence + TimeSpan.FromSeconds(5);
+        Retune(
+            silence ?? TimeSpan.FromSeconds(45),
+            dormantAfter ?? TimeSpan.FromSeconds(15));
+    }
+
+    /// <summary>
+    /// Changes the two waits without disturbing the instance being timed.
+    /// </summary>
+    /// <remarks>
+    /// Because they are settings, and a running activity is exactly when someone would go and
+    /// adjust them. Rebuilding the watcher instead would be simpler and would reset the timer the
+    /// moment the slider moved, which is the one outcome worth avoiding here.
+    /// </remarks>
+    /// <param name="silence">How long with nothing at all before the instance is taken to be over.</param>
+    /// <param name="dormantAfter">
+    /// How long with nothing before the timer is hidden but kept running. Taken as given: one
+    /// longer than <paramref name="silence"/> simply means the timer is never hidden, since the
+    /// instance ends first. The settings page is what keeps the pair in order, and it does.
+    /// </param>
+    public void Retune(TimeSpan silence, TimeSpan dormantAfter)
+    {
+        lock (_gate)
+        {
+            _silence = silence;
+            _dormantAfter = dormantAfter;
+
+            // Never shorter than the silence window, whatever was asked for. A server dropped from
+            // the known set reads as new when it is next heard from, which restarts the timer - so
+            // a forget shorter than the wait would reset the very instance the wait exists to
+            // preserve, and only when a load screen happened to run long. Invisible until it is not.
+            _forget = _asked > _silence ? _asked : _silence + TimeSpan.FromSeconds(5);
+        }
     }
 
     /// <summary>When the current instance started, or null if nothing has been seen yet.</summary>

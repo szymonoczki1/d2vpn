@@ -36,20 +36,25 @@ public partial class OverlayWindow : Window
     private const int WsExToolWindow = 0x00000080;
     private const int WsExNoActivate = 0x08000000;
 
-    private readonly OverlayViewModel _model;
+    private readonly OverlayContent _model;
     private readonly ForegroundWatcher _watcher;
+    private readonly OverlayPanelKind _kind;
     private OverlayConfig _config;
 
-    /// <summary>Creates the overlay over a model, following a process.</summary>
-    public OverlayWindow(OverlayViewModel model, OverlayConfig config)
+    /// <summary>Creates one panel of the overlay, following a process.</summary>
+    /// <param name="model">What this panel shows - modules, or the instance timer.</param>
+    /// <param name="config">The overlay settings, shared across panels.</param>
+    /// <param name="kind">Which panel this is, and so which position it takes.</param>
+    public OverlayWindow(OverlayContent model, OverlayConfig config, OverlayPanelKind kind)
     {
         _model = model;
         _config = config;
+        _kind = kind;
 
         InitializeComponent();
         DataContext = model;
 
-        Panel.Background = new SolidColorBrush((Color)FindResource("RailColor"))
+        Backdrop.Background = new SolidColorBrush((Color)FindResource("RailColor"))
         {
             Opacity = config.Opacity
         };
@@ -57,7 +62,7 @@ public partial class OverlayWindow : Window
         // The whole panel, not only the text inside it: scaling the contents alone left the
         // padding and the corner radius at full size, so a small overlay looked like a large one
         // with small writing in it.
-        Panel.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
+        Backdrop.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
 
         _model.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(Reposition);
         SizeChanged += OnSizeChanged;
@@ -66,6 +71,36 @@ public partial class OverlayWindow : Window
         _watcher.Changed += (inFront, bounds) =>
             Dispatcher.BeginInvoke(() => OnForegroundChanged(inFront, bounds));
     }
+
+    /// <summary>This panel's own position, from the shared settings.</summary>
+    private OverlayPanel Panel =>
+        _kind == OverlayPanelKind.Timer ? _config.Timer : _config.Modules;
+
+    /// <summary>
+    /// Whether this panel is wanted at all.
+    /// </summary>
+    /// <remarks>
+    /// Attaching the timer is what takes the timer's own window away. The row itself does not
+    /// disappear - it moves into the module panel, which draws it instead - so this is the one
+    /// place that has to know, and both windows are built either way so the setting takes effect
+    /// without a restart.
+    /// </remarks>
+    private bool PanelWanted => _kind == OverlayPanelKind.Timer
+        ? _config.Timer.Show && !_config.TimerAttached
+        : _config.Modules.Show;
+
+    /// <summary>
+    /// Whether this panel has anything worth drawing.
+    /// </summary>
+    /// <remarks>
+    /// The module panel may deliberately be left on screen with nothing in it - that is what
+    /// turning off "disappear entirely when nothing is held" asks for, and it keeps the thing
+    /// visible so you can see where it is. The timer has no equivalent: outside an activity there
+    /// is no figure, so what would be left is an empty box over the game.
+    /// </remarks>
+    private bool HasSomethingToSay => _kind == OverlayPanelKind.Timer
+        ? _model.HasLines
+        : !_config.HideWhenIdle || _model.HasLines;
 
     /// <summary>Where the game window is, as last seen.</summary>
     private ScreenRect _gameBounds;
@@ -108,9 +143,10 @@ public partial class OverlayWindow : Window
     private void Reposition()
     {
         var wanted = _config.Enabled
+            && PanelWanted
             && _gameInFront
             && _gameBounds.IsReal
-            && (!_config.HideWhenIdle || _model.HasLines);
+            && HasSomethingToSay;
 
         if (!wanted)
         {
@@ -159,16 +195,17 @@ public partial class OverlayWindow : Window
         var topLeft = transform.Transform(new Point(_gameBounds.Left, _gameBounds.Top));
         var size = transform.Transform(new Point(_gameBounds.Width, _gameBounds.Height));
 
-        var right = _config.Corner is OverlayCorner.TopRight or OverlayCorner.BottomRight;
-        var bottom = _config.Corner is OverlayCorner.BottomLeft or OverlayCorner.BottomRight;
+        var panel = Panel;
+        var right = panel.Corner is OverlayCorner.TopRight or OverlayCorner.BottomRight;
+        var bottom = panel.Corner is OverlayCorner.BottomLeft or OverlayCorner.BottomRight;
 
         Left = right
-            ? topLeft.X + size.X - ActualWidth - _config.MarginX
-            : topLeft.X + _config.MarginX;
+            ? topLeft.X + size.X - ActualWidth - panel.MarginX
+            : topLeft.X + panel.MarginX;
 
         Top = bottom
-            ? topLeft.Y + size.Y - ActualHeight - _config.MarginY
-            : topLeft.Y + _config.MarginY;
+            ? topLeft.Y + size.Y - ActualHeight - panel.MarginY
+            : topLeft.Y + panel.MarginY;
     }
 
     /// <summary>
@@ -192,12 +229,12 @@ public partial class OverlayWindow : Window
     {
         _config = config;
 
-        Panel.Background = new SolidColorBrush((Color)FindResource("RailColor"))
+        Backdrop.Background = new SolidColorBrush((Color)FindResource("RailColor"))
         {
             Opacity = config.Opacity
         };
 
-        Panel.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
+        Backdrop.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
         Reposition();
     }
 

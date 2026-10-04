@@ -91,20 +91,35 @@ public partial class App : Application
         // hosts nothing would be an empty panel following the game around.
         if (model.Modules.Count > 0)
         {
-            var overlayModel = new OverlayViewModel(model.Modules, config.Overlay);
-            var overlay = new OverlayWindow(overlayModel, config.Overlay);
+            var modules = new OverlayViewModel(model.Modules, config.Overlay);
+            var timer = new TimerOverlayViewModel(model.Instances, config.Timer);
 
-            model.OverlayTick += overlayModel.Refresh;
+            // The module panel's content is always the joined one. Attached, it draws the timer as
+            // its top row; detached, it is the module rows alone and the timer's own window draws
+            // the row instead. Built both ways so the setting takes effect without a restart.
+            var joined = new JoinedOverlayContent(modules, timer, config.Overlay.TimerAttached);
+
+            var modulePanel = new OverlayWindow(joined, config.Overlay, OverlayPanelKind.Modules);
+            var timerPanel = new OverlayWindow(timer, config.Overlay, OverlayPanelKind.Timer);
+
+            // One subscription, because the joined content refreshes both parts. Two would refresh
+            // the timer twice a tick, and the two panels could disagree about the same second.
+            model.OverlayTick += joined.Refresh;
 
             // Created even when disabled, so turning it on in the settings page takes effect
-            // without restarting; the window itself stays hidden until it is wanted.
+            // without restarting; the windows themselves stay hidden until they are wanted.
             model.OverlayChanged += updated =>
             {
-                overlayModel.Apply(updated);
-                overlay.Apply(updated);
+                modules.Apply(updated);
+                joined.Attached = updated.TimerAttached;
+                modulePanel.Apply(updated);
+                timerPanel.Apply(updated);
             };
 
-            main.AttachOverlay(overlay);
+            model.TimerChanged += timer.Apply;
+
+            main.AttachOverlay(modulePanel);
+            main.AttachOverlay(timerPanel);
         }
     }
 }

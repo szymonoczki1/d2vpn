@@ -136,6 +136,39 @@ public sealed record TimerConfig
     public int EndAfterS { get; init; } = 45;
 }
 
+/// <summary>
+/// One panel of the overlay: whether it is drawn, and where.
+/// </summary>
+/// <remarks>
+/// The modules and the instance timer are separate panels so they can sit in different corners -
+/// or in the same one, by attaching the timer to the modules. Size and transparency are not here:
+/// two panels at different scales on one screen read as a mistake rather than a choice.
+/// </remarks>
+public sealed record OverlayPanel
+{
+    /// <summary>Whether this panel is drawn at all.</summary>
+    public bool Show { get; init; } = true;
+
+    /// <summary>Which corner of the game window it sits in.</summary>
+    public OverlayCorner Corner { get; init; } = OverlayCorner.TopRight;
+
+    /// <summary>Gap from the window's vertical edge, in pixels.</summary>
+    public int MarginX { get; init; } = 28;
+
+    /// <summary>Gap from the window's horizontal edge, in pixels.</summary>
+    public int MarginY { get; init; } = 28;
+}
+
+/// <summary>Which of the overlay's panels something refers to.</summary>
+public enum OverlayPanelKind
+{
+    /// <summary>The panel listing held modules.</summary>
+    Modules,
+
+    /// <summary>The panel showing the instance timer.</summary>
+    Timer
+}
+
 /// <summary>Which corner of the game window the overlay sits in.</summary>
 public enum OverlayCorner
 {
@@ -176,14 +209,36 @@ public sealed record OverlayConfig
     /// <summary>The process it follows, without the extension.</summary>
     public string Process { get; init; } = "destiny2";
 
-    /// <summary>Which corner of that window it sits in.</summary>
-    public OverlayCorner Corner { get; init; } = OverlayCorner.TopRight;
+    /// <summary>The panel listing held modules.</summary>
+    public OverlayPanel Modules { get; init; } = new() { Corner = OverlayCorner.TopRight };
 
-    /// <summary>Gap from the window's vertical edge, in pixels.</summary>
-    public int MarginX { get; init; } = 28;
+    /// <summary>The panel showing how long the current instance has lasted.</summary>
+    public OverlayPanel Timer { get; init; } = new() { Corner = OverlayCorner.TopLeft };
 
-    /// <summary>Gap from the window's horizontal edge, in pixels.</summary>
-    public int MarginY { get; init; } = 28;
+    /// <summary>
+    /// Draw the timer as a row of the module panel rather than as a panel of its own.
+    /// </summary>
+    /// <remarks>
+    /// One panel in one corner when set, two independently placed panels when not. Attached, the
+    /// timer's own corner and margins stop meaning anything and it is not drawn separately.
+    /// </remarks>
+    public bool TimerAttached { get; init; }
+
+    /// <summary>
+    /// Where the module panel used to be placed, before there were two of them.
+    /// </summary>
+    /// <remarks>
+    /// Kept only so an existing config is carried across rather than silently reset to the
+    /// defaults. <see cref="HostConfig"/> moves these into <see cref="Modules"/> on load and leaves
+    /// them null, so they disappear the next time the file is written.
+    /// </remarks>
+    public OverlayCorner? Corner { get; init; }
+
+    /// <inheritdoc cref="Corner"/>
+    public int? MarginX { get; init; }
+
+    /// <inheritdoc cref="Corner"/>
+    public int? MarginY { get; init; }
 
     /// <summary>Text size multiplier, for a 1440p screen or a small one.</summary>
     public double Scale { get; init; } = 1.0;
@@ -310,6 +365,7 @@ public sealed record HostConfig
             throw new ArgumentException("config is empty");
         }
 
+        config = config.Migrated();
         config.Validate();
         return config;
     }
@@ -354,7 +410,7 @@ public sealed record HostConfig
             throw new ArgumentException("config is empty");
         }
 
-        var repaired = parsed.Repair(out warnings);
+        var repaired = parsed.Migrated().Repair(out warnings);
 
         // Whatever is left still has to be hostable; repair only removes things.
         repaired.Validate();
@@ -483,6 +539,40 @@ public sealed record HostConfig
     /// <see cref="ConfigTemplate"/> via <c>d2vpn config init</c>.
     /// </remarks>
     public string ToJson() => JsonSerializer.Serialize(this, WriteOptions);
+
+    /// <summary>
+    /// Moves settings written in an older shape into the current one.
+    /// </summary>
+    /// <remarks>
+    /// The overlay had a single corner and margin before it had two panels. Reading them into the
+    /// module panel means an existing file keeps the position it was given, rather than quietly
+    /// reverting to the top right the first time it is loaded.
+    /// </remarks>
+    public HostConfig Migrated()
+    {
+        if (Overlay.Corner is null && Overlay.MarginX is null && Overlay.MarginY is null)
+        {
+            return this;
+        }
+
+        return this with
+        {
+            Overlay = Overlay with
+            {
+                Modules = Overlay.Modules with
+                {
+                    Corner = Overlay.Corner ?? Overlay.Modules.Corner,
+                    MarginX = Overlay.MarginX ?? Overlay.Modules.MarginX,
+                    MarginY = Overlay.MarginY ?? Overlay.Modules.MarginY
+                },
+
+                // Cleared, so they are not written back and the move happens once.
+                Corner = null,
+                MarginX = null,
+                MarginY = null
+            }
+        };
+    }
 
     /// <summary>
     /// Checks the config can actually be hosted, throwing with what to fix.
