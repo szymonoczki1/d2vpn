@@ -209,6 +209,79 @@ public class InstanceWatcherTests
         Assert.Equal(TimeSpan.FromSeconds(60), watcher.LastDuration);
     }
 
+    [Fact]
+    public void Silence_ends_the_instance_when_nothing_closed_it()
+    {
+        // The backstop for an error code, which drops the connection without the server closing it
+        // politely - so no FIN arrives and the timer would otherwise count on for ever. Thirty
+        // seconds is ten of the 3.02s heartbeats this port carries.
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+        InstanceEndReason? reason = null;
+        watcher.Ended += (_, r) => reason = r;
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Data(ServerA, T0.AddSeconds(10)));
+
+        Assert.False(watcher.Tick(T0.AddSeconds(39)));
+        Assert.True(watcher.InInstance);
+
+        Assert.True(watcher.Tick(T0.AddSeconds(41)));
+        Assert.False(watcher.InInstance);
+        Assert.Equal(InstanceEndReason.WentQuiet, reason);
+        Assert.Equal(1, watcher.QuietEnds);
+    }
+
+    [Fact]
+    public void A_quiet_ending_is_dated_from_the_last_packet()
+    {
+        // The instance stopped when the traffic did, not when something got round to noticing.
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Data(ServerA, T0.AddSeconds(10)));
+        watcher.Tick(T0.AddSeconds(90));
+
+        Assert.Equal(TimeSpan.FromSeconds(10), watcher.LastDuration);
+    }
+
+    [Fact]
+    public void Traffic_keeps_the_instance_alive_indefinitely()
+    {
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+        watcher.Observe(Syn(ServerA, T0));
+
+        for (var second = 3; second <= 300; second += 3)
+        {
+            watcher.Observe(Data(ServerA, T0.AddSeconds(second)));
+            Assert.False(watcher.Tick(T0.AddSeconds(second)));
+        }
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(0, watcher.Ends);
+    }
+
+    [Fact]
+    public void Silence_does_not_end_an_instance_that_already_ended()
+    {
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(20)));
+
+        Assert.False(watcher.Tick(T0.AddSeconds(120)));
+        Assert.Equal(1, watcher.Ends);
+        Assert.Equal(0, watcher.QuietEnds);
+    }
+
+    [Fact]
+    public void Silence_before_anything_was_seen_ends_nothing()
+    {
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+
+        Assert.False(watcher.Tick(T0.AddSeconds(600)));
+        Assert.Equal(0, watcher.Ends);
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 

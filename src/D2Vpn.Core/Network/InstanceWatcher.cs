@@ -25,7 +25,20 @@ public enum InstanceEndReason
     /// port 30000. A reset does not - it produces RST, which is what this tool's own reconnect
     /// injects, and is the reason the two can be told apart at all.
     /// </remarks>
-    ServerClosed
+    ServerClosed,
+
+    /// <summary>
+    /// The group went silent for long enough that the connection cannot still be live.
+    /// </summary>
+    /// <remarks>
+    /// The backstop for an ending that is not polite about it. An error code drops the connection
+    /// without the server saying goodbye, so nothing closes gracefully and the timer would
+    /// otherwise count on for ever.
+    ///
+    /// The threshold has measurement behind it rather than being a guess: 30k carries a 73-byte
+    /// heartbeat every 3.02 s (finding 50), so half a minute of nothing is ten missed beats.
+    /// </remarks>
+    WentQuiet
 }
 
 /// <summary>What happened when the instance changed.</summary>
@@ -65,7 +78,10 @@ public sealed class InstanceWatcher
 {
     private readonly Dictionary<IPAddress, DateTimeOffset> _lastSeen = [];
     private readonly TimeSpan _forget;
+    private readonly TimeSpan _silence;
     private readonly Lock _gate = new();
+
+    private DateTimeOffset _lastTraffic;
 
     private DateTimeOffset _suppressUntil;
     private IPAddress? _current;
@@ -76,8 +92,15 @@ public sealed class InstanceWatcher
     /// How long a server may go unheard from before talking to it again counts as new. Long enough
     /// that a brief stall is not a change, short enough that returning to a previous instance is.
     /// </param>
-    public InstanceWatcher(TimeSpan? forget = null) =>
+    /// <param name="silence">
+    /// How long the group may carry nothing at all before the instance is taken to have ended.
+    /// Defaults to 30 s, which is ten of the 3.02 s heartbeats measured in finding 50.
+    /// </param>
+    public InstanceWatcher(TimeSpan? forget = null, TimeSpan? silence = null)
+    {
         _forget = forget ?? TimeSpan.FromSeconds(20);
+        _silence = silence ?? TimeSpan.FromSeconds(30);
+    }
 
     /// <summary>When the current instance started, or null if nothing has been seen yet.</summary>
     public DateTimeOffset? Since { get; private set; }
@@ -100,8 +123,15 @@ public sealed class InstanceWatcher
     /// <summary>How many were ignored because a reset had just been injected.</summary>
     public int Suppressed { get; private set; }
 
-    /// <summary>How many instances ended with the server closing the connection.</summary>
+    /// <summary>How many instances ended, by either route.</summary>
     public int Ends { get; private set; }
+
+    /// <summary>How many of those ended because the group went quiet rather than closed.</summary>
+    public int QuietEnds { get; private set; }
+
+    /// <summary>How long the group has carried nothing, for a front end to show.</summary>
+    public TimeSpan Quiet(DateTimeOffset now) =>
+        _lastTraffic == default ? TimeSpan.Zero : now - _lastTraffic;
 
     /// <summary>
     /// True while the game is in an instance, as far as the traffic shows.
@@ -158,6 +188,8 @@ public sealed class InstanceWatcher
 
         lock (_gate)
         {
+            _lastTraffic = packet.Timestamp;
+
             var known = _lastSeen.TryGetValue(packet.RemoteAddress, out var seen)
                 && packet.Timestamp - seen <= _forget;
 
@@ -166,7 +198,7 @@ public sealed class InstanceWatcher
 
             if (closing && _current is not null && packet.RemoteAddress.Equals(_current))
             {
-                End(packet.Timestamp);
+                End(packet.Timestamp, InstanceEndReason.ServerClosed);
                 return;
             }
 
@@ -196,10 +228,43 @@ public sealed class InstanceWatcher
         }
     }
 
+    /// <summary>
+    /// Ends the instance if the group has gone quiet. Call on a timer.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Silence cannot be noticed from a packet, there being none, so something has to ask.
+    /// </para>
+    /// <para>
+    /// <b>Only sound where the watcher sees traffic the modules withhold.</b> A WinDivert handle
+    /// that drops a packet removes it before lower-priority handles see it, so a watcher sniffing
+    /// behind a 30k hold would see the silence that hold is creating and call it an ending. Fed
+    /// from the module's own observation point - as <c>ConnectionSampler</c> is, before the module
+    /// rules on the packet - that cannot happen.
+    /// </para>
+    /// </remarks>
+    /// <returns>True if this call ended the instance.</returns>
+    public bool Tick(DateTimeOffset now)
+    {
+        lock (_gate)
+        {
+            if (Since is null || _lastTraffic == default || now - _lastTraffic < _silence)
+            {
+                return false;
+            }
+
+            // Dated from the last packet rather than from now: the instance stopped when the
+            // traffic did, not when this happened to notice.
+            QuietEnds++;
+            End(_lastTraffic, InstanceEndReason.WentQuiet);
+            return true;
+        }
+    }
+
     private void Raise(InstanceChange change) => Changed?.Invoke(change);
 
-    /// <summary>Stops the timer, the instance server having closed its connection.</summary>
-    private void End(DateTimeOffset at)
+    /// <summary>Stops the timer.</summary>
+    private void End(DateTimeOffset at, InstanceEndReason reason)
     {
         if (Since is not { } since)
         {
@@ -212,7 +277,7 @@ public sealed class InstanceWatcher
         _current = null;
         Ends++;
 
-        Ended?.Invoke(LastDuration, InstanceEndReason.ServerClosed);
+        Ended?.Invoke(LastDuration, reason);
     }
 
     /// <summary>When the last instance ended, for anything wanting to show how long ago.</summary>

@@ -54,9 +54,20 @@ internal static class InstanceCommand
         Console.WriteLine("  2. travel somewhere - a patrol zone, a strike, back to orbit");
         Console.WriteLine("  3. do that two or three more times, and say roughly when");
         Console.WriteLine();
-        Console.WriteLine("The timer should reset as each new area finishes loading, and at no");
-        Console.WriteLine("other time. A reset that fires while you are standing still, or one");
-        Console.WriteLine("that fails to fire on a change, is what this is looking for.");
+        Console.WriteLine("The timer should restart as each new area finishes loading, and stop");
+        Console.WriteLine("when you leave one. Either firing while you stand still, or failing to");
+        Console.WriteLine("fire on a real change, is what this is looking for.");
+        Console.WriteLine();
+        Console.WriteLine("Three ways it can end:");
+        Console.WriteLine("  the server closing its connection   - leaving an activity");
+        Console.WriteLine("  30s of silence on the group         - the backstop, for an error");
+        Console.WriteLine("    code, which drops the connection without closing it politely.");
+        Console.WriteLine("    30s is ten of the 3.02s heartbeats this port carries.");
+        Console.WriteLine("  nothing at all for a reconnect      - that is an RST, not a close");
+        Console.WriteLine();
+        Console.WriteLine("Press your reconnect key during the run as well: it must NOT end the");
+        Console.WriteLine("instance. This is sniff mode, so it runs alongside 'd2vpn reconnect");
+        Console.WriteLine("30k' - a sniffing handle takes nothing away from a diverting one.");
         Console.WriteLine();
 
         if (log is not null)

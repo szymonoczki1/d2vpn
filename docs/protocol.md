@@ -2938,6 +2938,23 @@ when you leave an activity without stopping every time you press reconnect.
 
 So: FIN inbound from the current server ends the instance; RST explicitly does not.
 
+### A silence backstop, for the ending that is not polite
+
+A FIN only arrives when the game leaves deliberately. An **error code** drops the connection
+without one, so nothing closes and the timer would count on indefinitely.
+
+So the instance also ends after **30 s with no 30k traffic at all**. That threshold is not a guess:
+finding 50 measured a **73-byte heartbeat every 3.02 s** on this group, so half a minute of nothing
+is ten missed beats. It is dated from the last packet rather than from when it was noticed - the
+instance stopped when the traffic did.
+
+**This only works where the watcher sees traffic the modules withhold.** A WinDivert handle that
+drops a packet removes it before lower-priority handles see it, so a watcher sniffing from behind a
+30k hold would see the silence that hold is creating and call it an ending. Fed from the module's
+own observation point - where `ConnectionSampler` already sits, before the module rules on the
+packet - that cannot happen. The standalone `d2vpn instance` command is a sniffer and does have
+this blind spot; it is a measurement tool, not the shipped path.
+
 ### Still unknown
 
 Whether a FIN from the instance server ever arrives during ordinary play - a connection cycling for
