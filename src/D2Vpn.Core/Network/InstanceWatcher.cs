@@ -11,17 +11,7 @@ public enum InstanceChangeReason
     First,
 
     /// <summary>A connection opened to a server this session had not been talking to.</summary>
-    NewServer,
-
-    /// <summary>
-    /// Traffic came back after the group had gone quiet, so an instance is running again.
-    /// </summary>
-    /// <remarks>
-    /// Without this, ending on silence could not be undone by anything but a fresh connection:
-    /// traffic resuming on a connection that was never re-opened would leave the timer stopped for
-    /// good. It only applies while not in an instance, so it cannot fire during one.
-    /// </remarks>
-    ResumedAfterQuiet
+    NewServer
 }
 
 /// <summary>Why the instance ended.</summary>
@@ -313,39 +303,30 @@ public sealed class InstanceWatcher
             //
             // Safe only because it is limited to not being in one. During an instance, a packet to
             // a server already in use says nothing about having moved.
-            if (Since is null && _current is null)
-            {
-                // Resumed only if there was something to resume from - the first packet of a
-                // session has not come back from anywhere - and only after actual quiet.
-                //
-                // The quiet is the part that was missing. Closing a TCP connection takes more than
-                // the FIN: the acknowledgements finishing the teardown arrive milliseconds later,
-                // and with no gap required they read as traffic returning, so leaving an activity
-                // ended the instance and immediately started another one. HarryWatch's rule has
-                // always been a packet *after a gap*; this had kept the packet and dropped the gap.
-                var resumed = _endedAt is not null
-                    && packet.Timestamp - priorTraffic >= _dormantAfter;
-
-                if (_endedAt is null || resumed)
-                {
-                    Start(
-                        packet,
-                        _endedAt is null
-                            ? InstanceChangeReason.First
-                            : InstanceChangeReason.ResumedAfterQuiet,
-                        priorTraffic);
-
-                    return;
-                }
-
-                // Not a resume, but a connection opening to somewhere new still is an instance, so
-                // this falls through rather than returning.
-            }
+            // No rule here for "traffic came back, so an instance must have started".
+            //
+            // There was one, copied from HarryWatch, and it was wrong on this port twice. First it
+            // restarted the instance from the acknowledgements finishing its own close. Then, with
+            // a gap required, it manufactured an instance out of every burst of 30k chatter in
+            // orbit - a measured run produced two of them, each ending moments after it began.
+            //
+            // HarryWatch watches 3074, which is peer traffic and genuinely silent outside an
+            // activity. 30k talks to servers in menus and in orbit, so traffic arriving says
+            // nothing on its own. A connection *opening* to a server not already in use still does,
+            // and that is the rule below - which is what the first three measured runs used, and
+            // they were right every time.
+            //
+            // The case this gives up: an instance ending on silence and traffic resuming on a
+            // connection that was never re-opened stays ended. That is hypothetical, and a
+            // hypothetical hole is a better thing to carry than two real ones.
 
             if (!opening || known)
             {
                 return;
             }
+
+            // First is only ever the first connection of a session; everything after it is a move.
+
 
             if (packet.Timestamp < _suppressUntil)
             {
@@ -353,7 +334,12 @@ public sealed class InstanceWatcher
                 return;
             }
 
-            Start(packet, InstanceChangeReason.NewServer, priorTraffic);
+            Start(
+                packet,
+                _endedAt is null && Changes == 0
+                    ? InstanceChangeReason.First
+                    : InstanceChangeReason.NewServer,
+                priorTraffic);
         }
     }
 

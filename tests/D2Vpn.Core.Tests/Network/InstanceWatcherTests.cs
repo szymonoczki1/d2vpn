@@ -413,40 +413,6 @@ public class InstanceWatcherTests
     }
 
     [Fact]
-    public void Traffic_returning_after_a_quiet_ending_starts_a_new_instance()
-    {
-        // The hole comparing this with HarryWatch exposed. Their whole rule is any packet after a
-        // gap, so resuming always starts one. Ours started only on a connection opening, so ending
-        // on silence and then having traffic come back on a connection that was never re-opened
-        // left the timer stopped with nothing able to restart it.
-        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
-
-        watcher.Observe(Syn(ServerA, T0));
-        Assert.True(watcher.Tick(T0.AddSeconds(45)));
-        Assert.False(watcher.InInstance);
-
-        // Not a SYN: an existing connection carrying on.
-        watcher.Observe(Data(ServerA, T0.AddSeconds(50)));
-
-        Assert.True(watcher.InInstance);
-        Assert.Equal(T0.AddSeconds(50), watcher.Since);
-    }
-
-    [Fact]
-    public void Resuming_is_reported_as_such()
-    {
-        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
-        InstanceChangeReason? reason = null;
-        watcher.Changed += c => reason = c.Reason;
-
-        watcher.Observe(Syn(ServerA, T0));
-        watcher.Tick(T0.AddSeconds(45));
-        watcher.Observe(Data(ServerA, T0.AddSeconds(50)));
-
-        Assert.Equal(InstanceChangeReason.ResumedAfterQuiet, reason);
-    }
-
-    [Fact]
     public void Ordinary_traffic_during_an_instance_still_changes_nothing()
     {
         // The resume rule is limited to not being in one, or every packet would restart the timer.
@@ -552,6 +518,44 @@ public class InstanceWatcherTests
     }
 
     [Fact]
+    public void Traffic_alone_never_starts_an_instance()
+    {
+        // There was a rule that it did, copied from HarryWatch, and it was wrong on this port
+        // twice: it restarted an instance from its own teardown, and then manufactured one out of
+        // every burst of 30k chatter in orbit. 3074 is peer traffic and genuinely silent outside an
+        // activity; 30k talks to servers in menus, so traffic arriving says nothing on its own.
+        var watcher = new InstanceWatcher(dormantAfter: TimeSpan.FromSeconds(15));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(60)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Changes);
+
+        // Chatter long afterwards, on a connection that was never re-opened.
+        watcher.Observe(Data(ServerA, T0.AddSeconds(200)));
+        watcher.Observe(Data(ServerB, T0.AddSeconds(260)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Changes);
+    }
+
+    [Fact]
+    public void A_connection_opening_after_a_close_does_start_one()
+    {
+        // What entering actually looks like, and the only thing that counts.
+        var watcher = new InstanceWatcher(dormantAfter: TimeSpan.FromSeconds(15));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(60)));
+        watcher.Observe(Syn(ServerB, T0.AddSeconds(200)));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(ServerB, watcher.Server);
+        Assert.Equal(2, watcher.Changes);
+    }
+
+    [Fact]
     public void The_tail_of_a_close_does_not_start_a_new_instance()
     {
         // Reported from a run: leaving an activity ended the instance and immediately began
@@ -572,22 +576,6 @@ public class InstanceWatcherTests
 
         Assert.False(watcher.InInstance);
         Assert.Equal(1, watcher.Changes);
-    }
-
-    [Fact]
-    public void Traffic_long_after_a_close_does_start_one()
-    {
-        // The gap is what makes it a resume rather than a teardown.
-        var watcher = new InstanceWatcher(dormantAfter: TimeSpan.FromSeconds(15));
-
-        watcher.Observe(Syn(ServerA, T0));
-        watcher.Observe(Fin(ServerA, T0.AddSeconds(60)));
-        watcher.Observe(Data(ServerA, T0.AddSeconds(60.1)));
-
-        watcher.Observe(Data(ServerA, T0.AddSeconds(200)));
-
-        Assert.True(watcher.InInstance);
-        Assert.Equal(T0.AddSeconds(200), watcher.Since);
     }
 
     [Fact]

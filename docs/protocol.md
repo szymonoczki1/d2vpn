@@ -2967,6 +2967,31 @@ own observation point - where `ConnectionSampler` already sits, before the modul
 packet - that cannot happen. The standalone `d2vpn instance` command is a sniffer and does have
 this blind spot; it is a measurement tool, not the shipped path.
 
+### Traffic alone does not mean an instance - on 30k
+
+A rule saying it did was copied from HarryWatch and was wrong here twice.
+
+First it restarted the instance from its own teardown: a FIN ended one and the acknowledgements
+finishing that same close began another, two packets old. Requiring a gap before the resume fixed
+that and exposed the real problem - a measured run then **manufactured two instances out of 30k
+chatter in orbit**, each ending moments after it began:
+
+```
+changes 4  ends 4   -> instance changed - ResumedAfterQuiet
+changes 5  ends 5   -> instance changed - ResumedAfterQuiet
+changes 6  ends 6
+```
+
+The rule transplanted badly because the ports are not alike. **3074 is peer traffic and genuinely
+silent outside an activity**, so a packet after a gap there can only mean a new one has started.
+**30k talks to servers in menus and in orbit**, so traffic arriving says nothing on its own.
+
+Entering is a connection *opening* to a server not already in use, and nothing else - which is what
+the first three measured runs used, and they were right every time. What this gives up is an
+instance that ended on silence and then had traffic resume on a connection never re-opened: it
+stays ended. That case is hypothetical, and one hypothetical hole is a better thing to carry than
+two measured ones.
+
 ### Comparing with HarryWatch exposed a hole in entering
 
 Its rule is a gap of more than ten seconds in UDP 3074, and **the same rule covers both
