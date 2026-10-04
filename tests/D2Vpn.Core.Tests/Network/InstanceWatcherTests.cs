@@ -412,6 +412,57 @@ public class InstanceWatcherTests
         Assert.Equal(0, watcher.Ends);
     }
 
+    [Fact]
+    public void Traffic_returning_after_a_quiet_ending_starts_a_new_instance()
+    {
+        // The hole comparing this with HarryWatch exposed. Their whole rule is any packet after a
+        // gap, so resuming always starts one. Ours started only on a connection opening, so ending
+        // on silence and then having traffic come back on a connection that was never re-opened
+        // left the timer stopped with nothing able to restart it.
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+
+        watcher.Observe(Syn(ServerA, T0));
+        Assert.True(watcher.Tick(T0.AddSeconds(45)));
+        Assert.False(watcher.InInstance);
+
+        // Not a SYN: an existing connection carrying on.
+        watcher.Observe(Data(ServerA, T0.AddSeconds(50)));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(T0.AddSeconds(50), watcher.Since);
+    }
+
+    [Fact]
+    public void Resuming_is_reported_as_such()
+    {
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(30));
+        InstanceChangeReason? reason = null;
+        watcher.Changed += c => reason = c.Reason;
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Tick(T0.AddSeconds(45));
+        watcher.Observe(Data(ServerA, T0.AddSeconds(50)));
+
+        Assert.Equal(InstanceChangeReason.ResumedAfterQuiet, reason);
+    }
+
+    [Fact]
+    public void Ordinary_traffic_during_an_instance_still_changes_nothing()
+    {
+        // The resume rule is limited to not being in one, or every packet would restart the timer.
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Syn(ServerA, T0));
+
+        for (var second = 3; second <= 30; second += 3)
+        {
+            watcher.Observe(Data(ServerA, T0.AddSeconds(second)));
+        }
+
+        Assert.Equal(T0, watcher.Since);
+        Assert.Equal(1, watcher.Changes);
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 

@@ -2967,6 +2967,34 @@ own observation point - where `ConnectionSampler` already sits, before the modul
 packet - that cannot happen. The standalone `d2vpn instance` command is a sniffer and does have
 this blind spot; it is a measurement tool, not the shipped path.
 
+### Comparing with HarryWatch exposed a hole in entering
+
+Its rule is a gap of more than ten seconds in UDP 3074, and **the same rule covers both
+directions** - any packet after the gap starts an instance, and the gap itself ends one. See
+`docs/prior-art.md`.
+
+Here, silence only ever *ended* an instance. Entering needed a connection opening to a server not
+already in use, so there was a sequence with no way out: end on silence, have traffic resume on a
+connection that was never re-opened, and the timer stays stopped with nothing able to restart it.
+
+Traffic arriving while not in an instance now starts one, which is their rule exactly. It is safe
+only because it is limited to that: during an instance, a packet to a server already in use says
+nothing about having moved.
+
+### Thresholds are not comparable in seconds
+
+Ten seconds there and thirty here is not a disagreement about how long to wait. The ports carry
+different amounts:
+
+| | rate | threshold | missing evidence |
+|---|---|---|---|
+| 3074 | ~10/s each way | 10 s | ~100+ packets |
+| 30k | heartbeat every 3.02 s | 30 s | ~10 beats |
+
+Theirs is the more conclusive test despite being shorter in wall-clock. Thirty seconds on 30k could
+come down - fifteen is still five missed beats - at the cost of being wrong sooner if the game ever
+stalls that long. Not changed without measuring what a real stall looks like.
+
 ### Not every departure sends a FIN
 
 Confirmed working end to end: the quiet countdown ends the instance, a reconnect does not, and a

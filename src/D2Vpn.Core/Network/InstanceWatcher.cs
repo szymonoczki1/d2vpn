@@ -11,7 +11,17 @@ public enum InstanceChangeReason
     First,
 
     /// <summary>A connection opened to a server this session had not been talking to.</summary>
-    NewServer
+    NewServer,
+
+    /// <summary>
+    /// Traffic came back after the group had gone quiet, so an instance is running again.
+    /// </summary>
+    /// <remarks>
+    /// Without this, ending on silence could not be undone by anything but a fresh connection:
+    /// traffic resuming on a connection that was never re-opened would leave the timer stopped for
+    /// good. It only applies while not in an instance, so it cannot fire during one.
+    /// </remarks>
+    ResumedAfterQuiet
 }
 
 /// <summary>Why the instance ended.</summary>
@@ -254,6 +264,27 @@ public sealed class InstanceWatcher
                 return;
             }
 
+            // Traffic resuming after the instance ended starts a new one, whether or not it is a
+            // connection opening. HarryWatch's whole rule is this and nothing else - any packet
+            // after a gap - and without it there is a hole here: end on silence, have traffic come
+            // back on a connection that was never re-opened, and the timer would stay stopped with
+            // nothing able to restart it.
+            //
+            // Safe only because it is limited to not being in one. During an instance, a packet to
+            // a server already in use says nothing about having moved.
+            if (Since is null && _current is null)
+            {
+                // Resumed only if there was something to resume from. The very first packet of a
+                // session has not come back from anywhere.
+                Start(
+                    packet,
+                    _endedAt is null
+                        ? InstanceChangeReason.First
+                        : InstanceChangeReason.ResumedAfterQuiet);
+
+                return;
+            }
+
             if (!opening || known)
             {
                 return;
@@ -265,26 +296,7 @@ public sealed class InstanceWatcher
                 return;
             }
 
-            var reason = _current is null
-                ? InstanceChangeReason.First
-                : InstanceChangeReason.NewServer;
-
-            var previous = _current;
-
-            _current = packet.RemoteAddress;
-            Since = packet.Timestamp;
-            _endedAt = null;
-            Changes++;
-
-            // A server being talked to again starts with a clean slate; anything left over belongs
-            // to the instance that has just been replaced.
-            _live.Remove(packet.RemoteAddress);
-            _live[packet.RemoteAddress] = new Dictionary<int, DateTimeOffset>
-            {
-                [packet.LocalPort] = packet.Timestamp
-            };
-
-            Raise(new InstanceChange(packet.Timestamp, packet.RemoteAddress, previous, reason));
+            Start(packet, InstanceChangeReason.NewServer);
         }
     }
 
@@ -336,6 +348,27 @@ public sealed class InstanceWatcher
                 ports.Remove(port);
             }
         }
+    }
+
+    /// <summary>Begins an instance on this packet's server.</summary>
+    private void Start(PacketInfo packet, InstanceChangeReason reason)
+    {
+        var previous = _current;
+
+        _current = packet.RemoteAddress;
+        Since = packet.Timestamp;
+        _endedAt = null;
+        Changes++;
+
+        // A server being talked to again starts with a clean slate; anything left over belongs to
+        // the instance that has just been replaced.
+        _live.Remove(packet.RemoteAddress);
+        _live[packet.RemoteAddress] = new Dictionary<int, DateTimeOffset>
+        {
+            [packet.LocalPort] = packet.Timestamp
+        };
+
+        Raise(new InstanceChange(packet.Timestamp, packet.RemoteAddress, previous, reason));
     }
 
     private void Raise(InstanceChange change) => Changed?.Invoke(change);
