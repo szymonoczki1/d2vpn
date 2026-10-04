@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Input;
+using D2Vpn.Core.Interception;
 using D2Vpn.Core.Network;
 using D2Vpn.Core.Processes;
 
@@ -176,7 +177,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             foreach (var feed in _runners.OfType<IPacketFeed>()
                 .Where(f => f.Group == DestinyPorts.Instance))
             {
-                feed.PacketObserved += Instances.Observe;
+                feed.PacketObserved += OnInstanceTraffic;
                 TimerIsFed = true;
             }
         }
@@ -236,6 +237,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Status = $"hosting {Modules.Count} module{(Modules.Count == 1 ? "" : "s")} "
             + $"across {_runners.Count} handle{(_runners.Count == 1 ? "" : "s")}";
         return true;
+    }
+
+    /// <summary>
+    /// Hands a 30k packet to the instance watcher, unless the timer is turned off.
+    /// </summary>
+    /// <remarks>
+    /// Checked here rather than by unsubscribing, so the setting takes effect at once and in both
+    /// directions. Turning the timer off has to actually stop it: it has a figure of its own in
+    /// the Timer tab, and one still counting under a label saying it was off would be the window
+    /// lying about its own state.
+    /// </remarks>
+    private void OnInstanceTraffic(PacketInfo packet)
+    {
+        if (_config.Timer.Enabled)
+        {
+            Instances.Observe(packet);
+        }
     }
 
     /// <summary>
@@ -325,7 +343,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         // Silence cannot be noticed from a packet, there being none, so something has to ask.
         // Leaving this out of the measurement command once made the backstop dead code: an error
         // code followed by seventy seconds of nothing ended no instance at all.
-        Instances.Tick(DateTimeOffset.UtcNow);
+        if (_config.Timer.Enabled)
+        {
+            Instances.Tick(DateTimeOffset.UtcNow);
+        }
 
         RaiseShared();
         OverlayTick?.Invoke();
@@ -444,7 +465,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// <summary>Takes a change from the timer settings page: saves it, and applies it live.</summary>
     private void ApplyTimer(TimerConfig timer)
     {
+        var wasEnabled = _config.Timer.Enabled;
+
         _config = _config with { Timer = timer };
+
+        // Turned off, so there is nothing being timed any more. Left alone it would keep showing
+        // the instance it was in when it stopped, and switching back on hours later would carry
+        // that stale server set in - which reads as having never left.
+        if (wasEnabled && !timer.Enabled)
+        {
+            Instances.Clear();
+        }
 
         // Retuned rather than rebuilt. A running activity is exactly when someone would go and
         // adjust these, and rebuilding would reset the timer the moment the number changed.

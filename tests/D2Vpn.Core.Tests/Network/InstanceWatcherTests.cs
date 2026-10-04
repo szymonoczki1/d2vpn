@@ -704,6 +704,42 @@ public class InstanceWatcherTests
         Assert.True(watcher.InInstance);
     }
 
+    [Fact]
+    public void Clearing_forgets_the_instance_and_the_servers()
+    {
+        // What turning the timer off has to do. Left alone it would keep showing the instance it
+        // was in when it stopped.
+        var watcher = new InstanceWatcher();
+        var ended = 0;
+        watcher.Ended += (_, _) => ended++;
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Clear();
+
+        Assert.False(watcher.InInstance);
+        Assert.Null(watcher.Server);
+        Assert.Equal(0, watcher.Changes);
+
+        // Not an ending. Nothing finished - it stopped being followed.
+        Assert.Equal(0, ended);
+        Assert.Equal(0, watcher.Ends);
+    }
+
+    [Fact]
+    public void Watching_again_after_a_clear_starts_from_the_next_connection()
+    {
+        // The stale server set is the thing to avoid: switching back on hours later and finding
+        // the old server still "known" would read as having never left it.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Clear();
+
+        watcher.Observe(Syn(ServerA, T0.AddSeconds(5)));
+
+        Assert.Equal(T0.AddSeconds(5), watcher.Since);
+        Assert.Equal(1, watcher.Changes);
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 

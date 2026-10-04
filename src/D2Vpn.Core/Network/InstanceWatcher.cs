@@ -274,6 +274,34 @@ public sealed class InstanceWatcher
     public TimeSpan Elapsed(DateTimeOffset now) =>
         Since is { } since ? now - since : TimeSpan.Zero;
 
+    /// <summary>
+    /// Forgets everything: the instance being timed, the servers seen, the tallies.
+    /// </summary>
+    /// <remarks>
+    /// For when watching stops. Nothing is raised on the way out - <see cref="Ended"/> is for an
+    /// instance that finished, and this is one that is no longer being followed. Starting again
+    /// later picks up from the next connection rather than from a server set that may be hours
+    /// stale, which would otherwise read as having never left.
+    /// </remarks>
+    public void Clear()
+    {
+        lock (_gate)
+        {
+            _lastSeen.Clear();
+            _live.Clear();
+            _lastTraffic = default;
+            _current = null;
+            _endedAt = null;
+
+            Since = null;
+            LastDuration = TimeSpan.Zero;
+            Changes = 0;
+            Ends = 0;
+            QuietEnds = 0;
+            Superseded = 0;
+        }
+    }
+
     /// <summary>Feeds in a packet. Call for every packet on the group, held or not.</summary>
     public void Observe(PacketInfo packet)
     {

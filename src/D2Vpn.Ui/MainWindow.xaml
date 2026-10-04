@@ -228,6 +228,8 @@
                         <TextBlock Text="Timer" Style="{StaticResource Heading}" />
                         <TextBlock Style="{StaticResource Subtle}" Margin="0,4,0,0"
                                    Text="How long you have been in the current instance, worked out from 30k traffic. It starts when the game connects to a new server and stops when that server closes, or when the group falls silent." />
+                        <TextBlock Style="{StaticResource Subtle}" Margin="0,6,0,0"
+                                   Text="Turning this off stops the watching entirely. To keep timing but hide it over the game, use Show the instance timer on the Overlay page instead." />
                     </StackPanel>
 
                     <CheckBox Grid.Column="1" Style="{StaticResource Switch}"

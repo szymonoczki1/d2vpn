@@ -66,14 +66,16 @@ public sealed class TimerSettingsViewModel : SidebarItem
         {
             var now = DateTimeOffset.UtcNow;
 
+            // The switch first. Turned off is something that was just done on this page, and it
+            // makes the hosting question moot - there would be nothing to watch with either way.
+            if (!_config.Enabled)
+            {
+                return "turned off - nothing is being timed";
+            }
+
             if (!_fed)
             {
                 return "not watching - needs a 30k module hosted";
-            }
-
-            if (!_config.Enabled)
-            {
-                return "turned off";
             }
 
             if (!_watcher.InInstance)
@@ -102,7 +104,14 @@ public sealed class TimerSettingsViewModel : SidebarItem
     /// <inheritdoc/>
     public override string SidebarDetail => IsEnabledSetting ? $"{EndAfterS}s" : "off";
 
-    /// <summary>Whether the instance timer runs at all.</summary>
+    /// <summary>
+    /// Whether the instance timer runs at all.
+    /// </summary>
+    /// <remarks>
+    /// Not whether it is drawn - that is the overlay's own "show the instance timer", and this
+    /// switch used to mean the same thing, which left the figure on this page counting away under
+    /// a label saying it was off. Off here stops the watching.
+    /// </remarks>
     public bool IsEnabledSetting
     {
         get => _config.Enabled;
