@@ -401,3 +401,84 @@ targets `net9.0-windows` unless we install the .NET 10 SDK. Nothing in the plan 
 Also: BitcoinMiner holds a WinDivert handle while running. Two handles with overlapping filters
 both receive every matching packet and can each drop or reinject it independently, so
 **BitcoinMiner must be fully exited during any d2vpn test**, not merely idle.
+
+## HarryWatch's instance timer - read from source
+
+Read out of `HarryWatch-1.2`: `Interception/PacketProviders/XboxProvider.cs` and
+`Utility/D2CharacterTracker.cs`. **Not verified by measurement here**, like everything else in this
+file - but it is read from the implementation rather than inferred from a dependency list.
+
+It is a hybrid, and the traffic half comes first.
+
+### Traffic: a ten-second gap on 3074
+
+`XboxProvider.StorePacket` is called for every packet the provider sees, and the whole rule is one
+comparison:
+
+```
+if ((DateTime.Now - last).TotalSeconds > 10)
+    InstanceStarted = DateTime.Now;
+last = p.CreatedAt;
+```
+
+A gap of more than ten seconds in **UDP 3074** traffic starts a new instance, dated from the packet
+that broke the silence. No connection tracking, no addresses, no flags.
+
+Leaving is the same rule read the other way, in `InstanceDuration()`: more than ten seconds since
+the last packet returns `TimeSpan.Zero`, meaning not in one. A gap between one and ten seconds
+returns the previous value rather than recomputing, so a brief stall does not make the figure
+stutter.
+
+### API: the server's own start time, as a correction
+
+`D2CharacterTracker` resolves a Bungie name typed into settings - `Name#1234`, via
+`SearchDestinyPlayerByBungieName` - then polls `GetProfile` for the `CharacterActivities`
+component and reads **`DateActivityStarted`**.
+
+```
+var savedTime = UserActivities.First().Period.ToLocalTime().AddSeconds(5);
+var apiTime   = ActiveCharacter.DateActivityStarted.ToLocalTime();
+
+if (savedTime > apiTime) return;        // history newer than "current" - stale, ignore
+if (InstanceStarted != apiTime && !usedStarts.Contains(apiTime))
+    InstanceStarted = apiTime;          // overwrite the traffic guess
+```
+
+So the traffic detects the change at once and sets an approximate start; the API then replaces it
+with the server's authoritative time. `GetActivityHistory` is cross-checked against it so a stale
+`CurrentActivity` cannot drag the timer backwards, and `usedStarts` stops one timestamp being
+applied twice.
+
+**No OAuth.** Public components and an API key are enough, provided the player's privacy settings
+allow it - the code checks for an empty `CharacterActivities` and calls that "private profile".
+
+Polling is bounded rather than continuous: a detected change starts a task that polls twenty times
+at twenty-second intervals and then stops, cancelling and restarting on the next change. Underneath
+that, current activity is rate-limited to once per 15 s and history to once per 30 s.
+
+**An API key is hardcoded in the source.** Not reproduced here - it is someone else's, and
+republishing it would share its rate limit and its liability. Worth knowing as a decision to avoid:
+a shipped key is one revocation away from breaking for every user at once.
+
+### Where d2vpn differs, and why
+
+| | HarryWatch | d2vpn |
+|---|---|---|
+| Port watched | UDP 3074 | TCP 30k |
+| Entering | first packet after a 10 s gap | connection to a server not already in use |
+| Leaving | the same 10 s gap | server closes (FIN), else 30 s silence |
+| API | corrects the start time | not built yet |
+
+Two differences worth stating plainly.
+
+**3074 is peer traffic.** It is busy in both directions during play, which makes a ten-second gap a
+very strong signal - but it is *peer* traffic, so being alone with no peers nearby is the same
+silence as a loading screen. 30k is client-to-server and carries a heartbeat every 3.02 s whatever
+else is happening, which is why d2vpn watches it.
+
+**d2vpn notices leaving sooner, when it notices at all.** A FIN ends the instance immediately where
+HarryWatch waits out ten seconds of quiet. But measurement here found a return to orbit that sent no
+FIN, so that advantage does not hold for every departure - and HarryWatch's single blunt rule covers
+every case the same way, which has something to be said for it.
+
+---
