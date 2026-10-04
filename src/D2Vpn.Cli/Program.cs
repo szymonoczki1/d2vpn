@@ -40,6 +40,7 @@ try
         "host" => await HostAsync(args),
         "config" => ConfigCommand(args),
         "ctl" => await ControlAsync(args),
+        "instance" => await InstanceAsync(args),
         _ => Unknown(args[0])
     };
 }
@@ -275,6 +276,17 @@ static void PrintUsage()
     Console.WriteLine("      first. The live count on the status line says when a press will do");
     Console.WriteLine("      something. --idle-s (10) is how long a silent connection still");
     Console.WriteLine("      counts as live. Trigger defaults to f9.");
+    Console.WriteLine("");
+    Console.WriteLine("  d2vpn instance [group] [--log FILE]");
+    Console.WriteLine("      How long you have been in the current instance, from 30k traffic.");
+    Console.WriteLine("      The timer restarts when a connection opens to a server this session");
+    Console.WriteLine("      was not already talking to - which is what finding 6 saw mark a real");
+    Console.WriteLine("      instance change, while a reconnect reopened to the same server.");
+    Console.WriteLine("");
+    Console.WriteLine("      That rule has ONE observation behind it. This command is how it gets");
+    Console.WriteLine("      more: travel a few times and watch whether the timer restarts when");
+    Console.WriteLine("      each area finishes loading, and at no other moment. Sniff mode, so");
+    Console.WriteLine("      it cannot affect a session.");
     Console.WriteLine("");
     Console.WriteLine("  d2vpn ctl <command ...> [--pipe NAME]");
     Console.WriteLine("      Sends one command to a running host and prints the reply. The same");
@@ -1343,6 +1355,24 @@ static async Task<int> RunAsync(string[] args)
         KeyName.Parse(StringOption(args, "--good-key") ?? "f7"),
         KeyName.Parse(StringOption(args, "--bad-key") ?? "f8"),
         cts.Token);
+}
+
+static async Task<int> InstanceAsync(string[] args)
+{
+    var group = args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal)
+        ? DestinyPorts.ByName(args[1]) ?? throw new ArgumentException($"unknown group '{args[1]}'")
+        : DestinyPorts.Instance;
+
+    if (!Elevation.RequireElevated())
+    {
+        return 1;
+    }
+
+    using var cts = new CancellationTokenSource();
+    using var sigint = SetupInterrupt(cts);
+
+    return await InstanceCommand.ExecuteAsync(
+        group, PriorityOption(args, 0), StringOption(args, "--log"), cts.Token);
 }
 
 static async Task<int> ControlAsync(string[] args)
