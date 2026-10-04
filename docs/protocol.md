@@ -2967,6 +2967,20 @@ own observation point - where `ConnectionSampler` already sits, before the modul
 packet - that cannot happen. The standalone `d2vpn instance` command is a sniffer and does have
 this blind spot; it is a measurement tool, not the shipped path.
 
+### Not every departure sends a FIN
+
+Confirmed working end to end: the quiet countdown ends the instance, a reconnect does not, and a
+FIN does. But **one return to orbit produced no FIN at all** and was caught only by the silence
+backstop.
+
+So the graceful close is not a complete signal for leaving - it happens, but not every time. The
+backstop is not a safety net for the unusual case; it is carrying real traffic. That costs up to
+thirty seconds of accuracy on any departure that goes quiet rather than closing, which is the
+strongest argument for pairing this with a server-authoritative source rather than relying on it
+alone.
+
+Why one departure closes politely and another does not is unmeasured.
+
 ### The silence backstop shipped as dead code
 
 A run that error-coded on purpose and then sat for **over seventy seconds with no packets at all**
