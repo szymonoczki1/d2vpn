@@ -1,4 +1,4 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Diagnostics;
 using D2Vpn.Core.Interception;
@@ -89,8 +89,9 @@ internal static class InstanceCommand
                 var now = DateTimeOffset.UtcNow;
 
                 Console.Write($"\r{(now - started).TotalSeconds,6:N0}s  "
-                    + $"instance {watcher.Elapsed(now).TotalSeconds,7:F1}s  "
+                    + $"{State(watcher, now)}  "
                     + $"changes {watcher.Changes}  "
+                    + $"ends {watcher.Ends}  "
                     + $"packets {packets}   ");
 
                 await Task.Delay(200, cancellationToken).ConfigureAwait(false);
@@ -131,6 +132,12 @@ internal static class InstanceCommand
         _ = module;
         return 0;
     }
+
+    /// <summary>In an instance and for how long, or not in one.</summary>
+    private static string State(InstanceWatcher watcher, DateTimeOffset now) =>
+        watcher.InInstance
+            ? $"instance {watcher.Elapsed(now).TotalSeconds,7:F1}s"
+            : "        not in one";
 
     /// <summary>
     /// A server address with its host part removed.

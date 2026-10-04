@@ -2901,6 +2901,55 @@ is frozen and only the game's own sends stop.
 
 ---
 
+## Finding 62 - the instance timer: a new server starts it, a FIN ends it
+
+Measured with `d2vpn instance`, sniffing 30k while travelling.
+
+### Entering is reliable
+
+Three instance changes over a 353 s run, each one a connection opening to a server this session was
+not already talking to, each firing as the new area finished loading and at no other moment.
+
+```
+[03:13:07] instance changed - First
+[03:14:09] instance changed - NewServer  (previous lasted 97.3s)
+[03:15:27] instance changed - NewServer  (previous lasted 175.6s)
+```
+
+The rule comes from finding 6, where a reconnect reopened to the *same* server 330 ms later and the
+real instance change forty seconds on went to a different one. **The address is the discriminator,
+not the SYN**, which is also why this tool's own reconnect does not trip it.
+
+### Leaving is a graceful close
+
+Entering was never the hard part. Leaving an activity produces **inbound `[FIN, ACK]` from the
+instance server** on port 30000:
+
+```
+205.209.x.x -> 10.x.x.x   TCP   40   30000 -> 62771 [FIN, ACK] Seq=46215 Ack=13288 Win=77824 Len=0
+205.209.x.x -> 10.x.x.x   TCP   40   30000 -> 62933 [FIN, ACK] Seq=42279 Ack=13724 Win=76800 Len=0
+```
+
+Two connections closing, two servers, both from port 30000.
+
+**A reconnect produces no equivalent inbound traffic at all.** This tool's reconnect injects RST,
+and leaving sends FIN - so the two are distinguishable by flag, which is what lets the timer stop
+when you leave an activity without stopping every time you press reconnect.
+
+So: FIN inbound from the current server ends the instance; RST explicitly does not.
+
+### Still unknown
+
+Whether a FIN from the instance server ever arrives during ordinary play - a connection cycling for
+its own reasons - which would stop the timer while you are still standing in the activity. Nothing
+in this run suggested it, but the run was three travels rather than a session.
+
+Reconnect was not tested against this, because the advice at the time was not to run two tools at
+once. That advice was about two *diverting* handles; `instance` is sniff mode and takes nothing
+away, so it can run beside `reconnect`.
+
+---
+
 ## Signatures claimed by prior art — NOT verified here
 
 Everything above this line was measured on this machine. Everything in this section was read out

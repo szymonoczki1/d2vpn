@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Network;
@@ -135,17 +135,98 @@ public class InstanceWatcherTests
         Assert.Equal(1, watcher.Changes);
     }
 
+    [Fact]
+    public void A_graceful_close_from_the_instance_server_ends_it()
+    {
+        // Measured: leaving an activity produced inbound [FIN, ACK] from the instance server on
+        // port 30000, where a reset produces RST instead.
+        var watcher = new InstanceWatcher();
+        TimeSpan? lasted = null;
+        watcher.Ended += (d, _) => lasted = d;
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(90)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Null(watcher.Since);
+        Assert.Equal(TimeSpan.FromSeconds(90), lasted);
+        Assert.Equal(TimeSpan.FromSeconds(90), watcher.LastDuration);
+        Assert.Equal(1, watcher.Ends);
+    }
+
+    [Fact]
+    public void A_reset_does_not_end_the_instance()
+    {
+        // The case this whole distinction exists for: our own reconnect injects RST, and if that
+        // read as leaving then every reconnect would stop the timer.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0));
+
+        watcher.Observe(Packet(ServerA, T0.AddSeconds(30), TcpControlFlags.Reset,
+            PacketDirection.Inbound));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(0, watcher.Ends);
+    }
+
+    [Fact]
+    public void A_close_from_some_other_server_is_ignored()
+    {
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0));
+
+        watcher.Observe(Fin(ServerB, T0.AddSeconds(20)));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(0, watcher.Ends);
+    }
+
+    [Fact]
+    public void An_outbound_close_is_not_the_server_closing()
+    {
+        // The client finishing its side says nothing on its own; the instance ending is the server
+        // closing on us.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0));
+
+        watcher.Observe(Packet(ServerA, T0.AddSeconds(20), TcpControlFlags.Fin,
+            PacketDirection.Outbound));
+
+        Assert.True(watcher.InInstance);
+    }
+
+    [Fact]
+    public void Entering_again_after_leaving_restarts_the_timer()
+    {
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(60)));
+        watcher.Observe(Syn(ServerB, T0.AddSeconds(75)));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(T0.AddSeconds(75), watcher.Since);
+        Assert.Equal(TimeSpan.FromSeconds(60), watcher.LastDuration);
+    }
+
+    private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
+        Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
+
     private static PacketInfo Syn(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Syn);
 
     private static PacketInfo Data(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Ack);
 
-    private static PacketInfo Packet(IPAddress server, DateTimeOffset at, TcpControlFlags flags) =>
+    private static PacketInfo Packet(
+        IPAddress server,
+        DateTimeOffset at,
+        TcpControlFlags flags,
+        PacketDirection direction = PacketDirection.Outbound) =>
         new()
         {
             Timestamp = at,
-            Direction = PacketDirection.Outbound,
+            Direction = direction,
             LocalPort = 50000,
             RemotePort = 30000,
             RemoteAddress = server,

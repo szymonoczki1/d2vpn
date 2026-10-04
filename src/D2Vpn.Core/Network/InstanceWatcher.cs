@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 
 using D2Vpn.Core.Interception;
 
@@ -12,6 +12,20 @@ public enum InstanceChangeReason
 
     /// <summary>A connection opened to a server this session had not been talking to.</summary>
     NewServer
+}
+
+/// <summary>Why the instance ended.</summary>
+public enum InstanceEndReason
+{
+    /// <summary>
+    /// The server closed the connection gracefully, which is what leaving an activity looks like.
+    /// </summary>
+    /// <remarks>
+    /// Measured: leaving an activity produced inbound <c>[FIN, ACK]</c> from the instance server on
+    /// port 30000. A reset does not - it produces RST, which is what this tool's own reconnect
+    /// injects, and is the reason the two can be told apart at all.
+    /// </remarks>
+    ServerClosed
 }
 
 /// <summary>What happened when the instance changed.</summary>
@@ -55,6 +69,7 @@ public sealed class InstanceWatcher
 
     private DateTimeOffset _suppressUntil;
     private IPAddress? _current;
+    private DateTimeOffset? _endedAt;
 
     /// <summary>Creates a watcher.</summary>
     /// <param name="forget">
@@ -85,8 +100,27 @@ public sealed class InstanceWatcher
     /// <summary>How many were ignored because a reset had just been injected.</summary>
     public int Suppressed { get; private set; }
 
+    /// <summary>How many instances ended with the server closing the connection.</summary>
+    public int Ends { get; private set; }
+
+    /// <summary>
+    /// True while the game is in an instance, as far as the traffic shows.
+    /// </summary>
+    /// <remarks>
+    /// False from the moment the instance server closes its connection until a new one opens. The
+    /// timer stops rather than carrying on counting through orbit, which is the difference between
+    /// "how long in here" and "how long since the last load screen".
+    /// </remarks>
+    public bool InInstance => Since is not null;
+
+    /// <summary>How long the last instance lasted, or zero if none has ended.</summary>
+    public TimeSpan LastDuration { get; private set; }
+
     /// <summary>Raised when the instance changes.</summary>
     public event Action<InstanceChange>? Changed;
+
+    /// <summary>Raised when the instance ends, with how long it lasted and why.</summary>
+    public event Action<TimeSpan, InstanceEndReason>? Ended;
 
     /// <summary>How long the current instance has lasted.</summary>
     public TimeSpan Elapsed(DateTimeOffset now) =>
@@ -115,6 +149,13 @@ public sealed class InstanceWatcher
         // set says nothing about having moved.
         var opening = packet.TcpFlags?.HasFlag(TcpControlFlags.Syn) == true;
 
+        // A graceful close from the instance server is the game leaving. Deliberately not RST:
+        // that is what this tool's own reconnect injects, and treating the two alike would make
+        // every reconnect look like leaving the activity.
+        var closing = packet.IsInbound
+            && packet.TcpFlags?.HasFlag(TcpControlFlags.Fin) == true
+            && packet.TcpFlags?.HasFlag(TcpControlFlags.Reset) != true;
+
         lock (_gate)
         {
             var known = _lastSeen.TryGetValue(packet.RemoteAddress, out var seen)
@@ -122,6 +163,12 @@ public sealed class InstanceWatcher
 
             _lastSeen[packet.RemoteAddress] = packet.Timestamp;
             Forget(packet.Timestamp);
+
+            if (closing && _current is not null && packet.RemoteAddress.Equals(_current))
+            {
+                End(packet.Timestamp);
+                return;
+            }
 
             if (!opening || known)
             {
@@ -142,6 +189,7 @@ public sealed class InstanceWatcher
 
             _current = packet.RemoteAddress;
             Since = packet.Timestamp;
+            _endedAt = null;
             Changes++;
 
             Raise(new InstanceChange(packet.Timestamp, packet.RemoteAddress, previous, reason));
@@ -149,6 +197,35 @@ public sealed class InstanceWatcher
     }
 
     private void Raise(InstanceChange change) => Changed?.Invoke(change);
+
+    /// <summary>Stops the timer, the instance server having closed its connection.</summary>
+    private void End(DateTimeOffset at)
+    {
+        if (Since is not { } since)
+        {
+            return;
+        }
+
+        LastDuration = at - since;
+        Since = null;
+        _endedAt = at;
+        _current = null;
+        Ends++;
+
+        Ended?.Invoke(LastDuration, InstanceEndReason.ServerClosed);
+    }
+
+    /// <summary>When the last instance ended, for anything wanting to show how long ago.</summary>
+    public DateTimeOffset? EndedAt
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _endedAt;
+            }
+        }
+    }
 
     private void Forget(DateTimeOffset now)
     {
