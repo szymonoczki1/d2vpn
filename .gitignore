@@ -1,4 +1,4 @@
-# Build output
+﻿# Build output
 bin/
 obj/
 [Dd]ebug/
@@ -24,3 +24,8 @@ logs/
 # path - and it is regenerated any time with `d2vpn config init`. The template that
 # produces it is ConfigTemplate in the Core project, which is what belongs in the repo.
 d2vpn.json
+
+# The Bungie API key. It lives in %APPDATA% and never needs to be here, but a copy made for
+# testing would otherwise be one 'git add -A' from being published.
+bungie.key
+*.key

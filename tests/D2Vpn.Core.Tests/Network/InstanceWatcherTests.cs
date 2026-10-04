@@ -740,6 +740,75 @@ public class InstanceWatcherTests
         Assert.Equal(1, watcher.Changes);
     }
 
+    [Fact]
+    public void The_api_start_replaces_the_traffic_one()
+    {
+        // The whole point of the API half. Traffic dates the instance from the connection, which
+        // is after the activity began; the server knows when it began and nothing else does.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0.AddSeconds(4)));
+
+        Assert.True(watcher.Correct(T0));
+
+        Assert.Equal(T0, watcher.Since);
+        Assert.True(watcher.IsCorrected);
+        Assert.Equal(1, watcher.Corrections);
+
+        // Not a change. The instance is the same one; only its start moved.
+        Assert.Equal(1, watcher.Changes);
+    }
+
+    [Fact]
+    public void A_stale_api_start_is_refused()
+    {
+        // The API's current activity lags: for the first seconds after entering somewhere it still
+        // describes the last place. Taking that would drag the timer back into an activity that is
+        // already over, which is worse than not correcting at all.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0));
+
+        Assert.False(watcher.Correct(T0.AddMinutes(-20)));
+
+        Assert.Equal(T0, watcher.Since);
+        Assert.False(watcher.IsCorrected);
+    }
+
+    [Fact]
+    public void There_is_nothing_to_correct_outside_an_instance()
+    {
+        var watcher = new InstanceWatcher();
+
+        Assert.False(watcher.Correct(T0));
+        Assert.False(watcher.IsCorrected);
+    }
+
+    [Fact]
+    public void The_same_correction_is_only_applied_once()
+    {
+        // It is returned for as long as the activity runs. Applying it again is harmless, but
+        // saying so is what lets the poller stop asking.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0.AddSeconds(4)));
+
+        Assert.True(watcher.Correct(T0));
+        Assert.False(watcher.Correct(T0));
+        Assert.Equal(1, watcher.Corrections);
+    }
+
+    [Fact]
+    public void A_new_instance_is_not_corrected_until_it_is()
+    {
+        // Whatever the API said was about the instance that just ended.
+        var watcher = new InstanceWatcher();
+        watcher.Observe(Syn(ServerA, T0.AddSeconds(4)));
+        watcher.Correct(T0);
+
+        watcher.Observe(Syn(ServerB, T0.AddSeconds(90)));
+
+        Assert.False(watcher.IsCorrected);
+        Assert.Equal(T0.AddSeconds(90), watcher.Since);
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 

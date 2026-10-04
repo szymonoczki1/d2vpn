@@ -226,6 +226,64 @@ public sealed class InstanceWatcher
     /// <summary>How many ended because another instance began before they had.</summary>
     public int Superseded { get; private set; }
 
+    /// <summary>How many starts the API has corrected.</summary>
+    public int Corrections { get; private set; }
+
+    /// <summary>True when the figure being shown is the server's own start time.</summary>
+    /// <remarks>
+    /// Worth distinguishing. The traffic start is when this tool noticed the connection, which is
+    /// a second or two after the activity actually began; the API start is what the server says.
+    /// A front end that showed both the same way would be claiming an accuracy it does not have.
+    /// </remarks>
+    public bool IsCorrected { get; private set; }
+
+    /// <summary>
+    /// Replaces the start of the instance being timed with the server's own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The traffic detector notices the change at once but dates it from the connection, which is
+    /// after the activity began. The API knows when it began and nothing else does, so this is the
+    /// one thing it is for.
+    /// </para>
+    /// <para>
+    /// Refused if it disagrees by more than <paramref name="tolerance"/>. The API's "current
+    /// activity" lags - for the first few seconds after entering somewhere it still describes the
+    /// last place - and a correction taken from that would drag the timer back into an activity
+    /// already over. Minutes apart means stale; the real correction is seconds.
+    /// </para>
+    /// </remarks>
+    /// <param name="start">What the server says the activity started at.</param>
+    /// <param name="tolerance">How far it may disagree before it is taken to be stale.</param>
+    /// <returns>True when it was applied, so a caller can stop asking.</returns>
+    public bool Correct(DateTimeOffset start, TimeSpan? tolerance = null)
+    {
+        lock (_gate)
+        {
+            if (Since is not { } since)
+            {
+                return false;
+            }
+
+            // Already have this one. The API keeps returning it for as long as the activity runs,
+            // and applying it twice would be harmless but would also never stop the polling.
+            if (IsCorrected && since == start)
+            {
+                return false;
+            }
+
+            if ((start - since).Duration() > (tolerance ?? TimeSpan.FromMinutes(2)))
+            {
+                return false;
+            }
+
+            Since = start;
+            IsCorrected = true;
+            Corrections++;
+            return true;
+        }
+    }
+
     /// <summary>How long the group has carried nothing, for a front end to show.</summary>
     public TimeSpan Quiet(DateTimeOffset now) =>
         _lastTraffic == default ? TimeSpan.Zero : now - _lastTraffic;
@@ -295,6 +353,8 @@ public sealed class InstanceWatcher
 
             Since = null;
             LastDuration = TimeSpan.Zero;
+            IsCorrected = false;
+            Corrections = 0;
             Changes = 0;
             Ends = 0;
             QuietEnds = 0;
@@ -460,6 +520,9 @@ public sealed class InstanceWatcher
     /// <summary>Begins an instance on this packet's server.</summary>
     private void Start(PacketInfo packet, InstanceChangeReason reason, DateTimeOffset priorTraffic)
     {
+        // Whatever the API said was about the instance that is ending.
+        IsCorrected = false;
+
         // A running instance is closed out first, dated to its own last packet rather than to now.
         // Moving to another server while dormant means the old one stopped when its traffic did,
         // not when the new one started.
