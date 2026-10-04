@@ -104,12 +104,6 @@ public sealed class WinDivertModuleRunner : IModuleRunner, IPacketFeed
         remove => _controller.PacketObserved -= value;
     }
 
-    /// <inheritdoc/>
-    public event Action<int, int>? ResetsSent
-    {
-        add => _controller.ResetsSent += value;
-        remove => _controller.ResetsSent -= value;
-    }
 
     /// <inheritdoc/>
     public string? HandleKey => _controller.FilterExpression;

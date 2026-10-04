@@ -141,8 +141,9 @@ public sealed record TimerConfig
 /// </summary>
 /// <remarks>
 /// The modules and the instance timer are separate panels so they can sit in different corners -
-/// or in the same one, by attaching the timer to the modules. Size and transparency are not here:
-/// two panels at different scales on one screen read as a mistake rather than a choice.
+/// or in the same one, by attaching the timer to the modules. Size and transparency are per panel
+/// too: a timer you want large and a module list you want out of the way are different wants, and
+/// one scale for both made you choose between them.
 /// </remarks>
 public sealed record OverlayPanel
 {
@@ -157,6 +158,25 @@ public sealed record OverlayPanel
 
     /// <summary>Gap from the window's horizontal edge, in pixels.</summary>
     public int MarginY { get; init; } = 28;
+
+    /// <summary>Text size multiplier, for a 1440p screen or a small one.</summary>
+    public double Scale { get; init; } = 1.0;
+
+    /// <summary>How solid the backdrop behind the text is, from 0 to 1.</summary>
+    public double Opacity { get; init; } = 0.72;
+
+    /// <summary>This panel's settings, with anything out of range put back.</summary>
+    /// <remarks>
+    /// A scale of zero would be an invisible panel and a scale of forty would be one filling the
+    /// screen, neither of which can be undone from an overlay you can no longer read.
+    /// </remarks>
+    public OverlayPanel Repaired() => this with
+    {
+        Scale = Scale is < 0.5 or > 4 ? 1.0 : Scale,
+        Opacity = Opacity is < 0 or > 1 ? 0.72 : Opacity,
+        MarginX = Math.Clamp(MarginX, 0, 1200),
+        MarginY = Math.Clamp(MarginY, 0, 800)
+    };
 }
 
 /// <summary>Which of the overlay's panels something refers to.</summary>
@@ -225,12 +245,14 @@ public sealed record OverlayConfig
     public bool TimerAttached { get; init; }
 
     /// <summary>
-    /// Where the module panel used to be placed, before there were two of them.
+    /// How the overlay was described before it was two panels.
     /// </summary>
     /// <remarks>
     /// Kept only so an existing config is carried across rather than silently reset to the
-    /// defaults. <see cref="HostConfig"/> moves these into <see cref="Modules"/> on load and leaves
-    /// them null, so they disappear the next time the file is written.
+    /// defaults. <see cref="HostConfig.Migrated"/> moves these into the panels on load and leaves
+    /// them null, so they disappear the next time the file is written. The position goes to the
+    /// module panel, which is what it described; the size and transparency go to both, since they
+    /// applied to everything drawn.
     /// </remarks>
     public OverlayCorner? Corner { get; init; }
 
@@ -240,11 +262,11 @@ public sealed record OverlayConfig
     /// <inheritdoc cref="Corner"/>
     public int? MarginY { get; init; }
 
-    /// <summary>Text size multiplier, for a 1440p screen or a small one.</summary>
-    public double Scale { get; init; } = 1.0;
+    /// <inheritdoc cref="Corner"/>
+    public double? Scale { get; init; }
 
-    /// <summary>How solid the panel behind the text is, from 0 to 1.</summary>
-    public double Opacity { get; init; } = 0.72;
+    /// <inheritdoc cref="Corner"/>
+    public double? Opacity { get; init; }
 
     /// <summary>Show how long each module has been held.</summary>
     public bool ShowTimers { get; init; } = true;
@@ -518,8 +540,8 @@ public sealed record HostConfig
             PollMs = PollMs is < 1 or > 1000 ? 1 : PollMs,
             Overlay = Overlay with
             {
-                Scale = Overlay.Scale is < 0.5 or > 4 ? 1.0 : Overlay.Scale,
-                Opacity = Overlay.Opacity is < 0 or > 1 ? 0.72 : Overlay.Opacity
+                Modules = Overlay.Modules.Repaired(),
+                Timer = Overlay.Timer.Repaired()
             },
             Timer = Repair(Timer),
             Modules = modules,
@@ -550,7 +572,11 @@ public sealed record HostConfig
     /// </remarks>
     public HostConfig Migrated()
     {
-        if (Overlay.Corner is null && Overlay.MarginX is null && Overlay.MarginY is null)
+        if (Overlay.Corner is null
+            && Overlay.MarginX is null
+            && Overlay.MarginY is null
+            && Overlay.Scale is null
+            && Overlay.Opacity is null)
         {
             return this;
         }
@@ -563,13 +589,25 @@ public sealed record HostConfig
                 {
                     Corner = Overlay.Corner ?? Overlay.Modules.Corner,
                     MarginX = Overlay.MarginX ?? Overlay.Modules.MarginX,
-                    MarginY = Overlay.MarginY ?? Overlay.Modules.MarginY
+                    MarginY = Overlay.MarginY ?? Overlay.Modules.MarginY,
+                    Scale = Overlay.Scale ?? Overlay.Modules.Scale,
+                    Opacity = Overlay.Opacity ?? Overlay.Modules.Opacity
+                },
+
+                // Only the look. The position described the module panel alone - the timer had
+                // none - so moving it here as well would drag the two into the same corner.
+                Timer = Overlay.Timer with
+                {
+                    Scale = Overlay.Scale ?? Overlay.Timer.Scale,
+                    Opacity = Overlay.Opacity ?? Overlay.Timer.Opacity
                 },
 
                 // Cleared, so they are not written back and the move happens once.
                 Corner = null,
                 MarginX = null,
-                MarginY = null
+                MarginY = null,
+                Scale = null,
+                Opacity = null
             }
         };
     }
@@ -595,16 +633,22 @@ public sealed record HostConfig
             throw new ArgumentException($"pollMs {PollMs} is outside 1-1000");
         }
 
-        if (Overlay.Scale is < 0.5 or > 4)
+        // Per panel, because that is where they now live. Validation runs after the migration, so
+        // the old shared pair is already null by this point and checking it would check nothing.
+        foreach (var (what, panel) in
+            new[] { ("modules", Overlay.Modules), ("timer", Overlay.Timer) })
         {
-            throw new ArgumentException(
-                $"overlay scale {Overlay.Scale} is outside 0.5-4");
-        }
+            if (panel.Scale is < 0.5 or > 4)
+            {
+                throw new ArgumentException(
+                    $"overlay {what} scale {panel.Scale} is outside 0.5-4");
+            }
 
-        if (Overlay.Opacity is < 0 or > 1)
-        {
-            throw new ArgumentException(
-                $"overlay opacity {Overlay.Opacity} is outside 0-1");
+            if (panel.Opacity is < 0 or > 1)
+            {
+                throw new ArgumentException(
+                    $"overlay {what} opacity {panel.Opacity} is outside 0-1");
+            }
         }
 
         if (Timer.HideAfterS is < 1 or > 600)

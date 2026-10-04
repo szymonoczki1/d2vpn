@@ -54,15 +54,7 @@ public partial class OverlayWindow : Window
         InitializeComponent();
         DataContext = model;
 
-        Backdrop.Background = new SolidColorBrush((Color)FindResource("RailColor"))
-        {
-            Opacity = config.Opacity
-        };
-
-        // The whole panel, not only the text inside it: scaling the contents alone left the
-        // padding and the corner radius at full size, so a small overlay looked like a large one
-        // with small writing in it.
-        Backdrop.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
+        Dress();
 
         _model.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(Reposition);
         SizeChanged += OnSizeChanged;
@@ -229,13 +221,26 @@ public partial class OverlayWindow : Window
     {
         _config = config;
 
+        Dress();
+        Reposition();
+    }
+
+    /// <summary>Applies this panel's own size and transparency.</summary>
+    /// <remarks>
+    /// The whole panel, not only the text inside it: scaling the contents alone left the padding
+    /// and the corner radius at full size, so a small overlay looked like a large one with small
+    /// writing in it.
+    /// </remarks>
+    private void Dress()
+    {
+        var panel = Panel;
+
         Backdrop.Background = new SolidColorBrush((Color)FindResource("RailColor"))
         {
-            Opacity = config.Opacity
+            Opacity = panel.Opacity
         };
 
-        Backdrop.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
-        Reposition();
+        Backdrop.LayoutTransform = new ScaleTransform(panel.Scale, panel.Scale);
     }
 
     /// <inheritdoc/>

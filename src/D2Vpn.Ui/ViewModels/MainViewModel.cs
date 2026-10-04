@@ -177,17 +177,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 .Where(f => f.Group == DestinyPorts.Instance))
             {
                 feed.PacketObserved += Instances.Observe;
-
-                // Our own reconnect kills the connection and the game opens another within a third
-                // of a second, which is otherwise indistinguishable from arriving somewhere new.
-                feed.ResetsSent += (_, packets) =>
-                {
-                    if (packets > 0)
-                    {
-                        Instances.Suppress(DateTimeOffset.UtcNow);
-                    }
-                };
-
                 TimerIsFed = true;
             }
         }

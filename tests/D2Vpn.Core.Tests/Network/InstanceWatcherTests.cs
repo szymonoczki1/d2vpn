@@ -78,31 +78,18 @@ public class InstanceWatcherTests
     }
 
     [Fact]
-    public void A_reset_we_injected_does_not_restart_the_timer()
+    public void A_reconnect_that_lands_elsewhere_is_a_real_change()
     {
-        // The case that matters for this tool: reconnect makes the game reopen at once, and even
-        // though it was observed returning to the same server there is no guarantee it always
-        // does. Anything inside the grace window is ignored.
+        // Deliberate, and the reason there is no grace window after our own reset. A reconnect
+        // returns to the same server, which the test above already covers. If one ever does not,
+        // the activity really has changed and the timer should restart - a window that swallowed
+        // it would be suppressing the right answer.
         var watcher = new InstanceWatcher();
         watcher.Observe(Syn(ServerA, T0));
 
-        watcher.Suppress(T0.AddSeconds(10));
         watcher.Observe(Syn(ServerB, T0.AddSeconds(10.4)));
 
-        Assert.Equal(T0, watcher.Since);
-        Assert.Equal(ServerA, watcher.Server);
-        Assert.Equal(1, watcher.Suppressed);
-    }
-
-    [Fact]
-    public void A_real_change_after_the_grace_window_still_counts()
-    {
-        var watcher = new InstanceWatcher();
-        watcher.Observe(Syn(ServerA, T0));
-
-        watcher.Suppress(T0.AddSeconds(10));
-        watcher.Observe(Syn(ServerB, T0.AddSeconds(20)));
-
+        Assert.Equal(T0.AddSeconds(10.4), watcher.Since);
         Assert.Equal(ServerB, watcher.Server);
         Assert.Equal(2, watcher.Changes);
     }

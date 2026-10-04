@@ -152,7 +152,6 @@ internal static class InstanceCommand
             + $"{watcher.Ends - watcher.QuietEnds - watcher.Superseded}");
         Console.WriteLine($"  by going quiet  : {watcher.QuietEnds}");
         Console.WriteLine($"  superseded      : {watcher.Superseded}");
-        Console.WriteLine($"ignored after rc  : {watcher.Suppressed}");
         Console.WriteLine($"packets seen      : {packets}");
 
         if (watcher.Changes == 0)

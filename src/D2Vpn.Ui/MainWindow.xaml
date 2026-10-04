@@ -347,7 +347,11 @@
                      two margins, so the overlay stays put when the game window resizes. -->
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
-                        <TextBlock Text="POSITION" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Style="{StaticResource SectionLabel}">
+                            <Run Text="POSITION" />
+                            <Run Text="·" />
+                            <Run Text="{Binding EditingLabel, Mode=OneWay}" />
+                        </TextBlock>
 
                         <!-- Which chip the drag and the arrows move. Both panels are placed from
                              this one preview because the preview is the screen: two things that
@@ -468,10 +472,15 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Appearance. -->
+                <!-- Appearance, for whichever panel the selector above is on. A timer you want
+                     large and a module list you want out of the way are different wants. -->
                 <Border Style="{StaticResource Card}">
                     <StackPanel>
-                        <TextBlock Text="APPEARANCE" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Style="{StaticResource SectionLabel}">
+                            <Run Text="APPEARANCE" />
+                            <Run Text="·" />
+                            <Run Text="{Binding EditingLabel, Mode=OneWay}" />
+                        </TextBlock>
 
                         <Grid>
                             <Grid.ColumnDefinitions>

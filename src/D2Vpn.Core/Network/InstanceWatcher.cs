@@ -83,10 +83,12 @@ public readonly record struct InstanceChange(
 /// address is the discriminator, not the SYN.
 /// </para>
 /// <para>
-/// <b>Our own reconnect must not trip it.</b> Injecting resets makes the game reopen immediately,
-/// and although finding 6 saw it return to the same server there is no guarantee it always will.
-/// So <see cref="Suppress"/> is called whenever this tool causes a reset, and anything inside that
-/// window is ignored. Belt and braces: the address check would usually be enough on its own.
+/// <b>Our own reconnect does not trip it, and needs nothing to stop it.</b> Injecting resets makes
+/// the game reopen immediately, but to the same server - finding 6 - which the address check
+/// already covers. A grace window after every reset used to sit here as belt and braces, for the
+/// case where the reconnect landed somewhere else instead. That case is not a false positive: if
+/// the reset moved you, the instance really did change. The guard was suppressing the right
+/// answer, so it is gone.
 /// </para>
 /// <para>
 /// <b>This is a hypothesis with one observation behind it.</b> Whether every instance change
@@ -132,7 +134,6 @@ public sealed class InstanceWatcher
 
     private DateTimeOffset _lastTraffic;
 
-    private DateTimeOffset _suppressUntil;
     private IPAddress? _current;
     private DateTimeOffset? _endedAt;
 
@@ -216,9 +217,6 @@ public sealed class InstanceWatcher
     /// <summary>How many changes have been seen.</summary>
     public int Changes { get; private set; }
 
-    /// <summary>How many were ignored because a reset had just been injected.</summary>
-    public int Suppressed { get; private set; }
-
     /// <summary>How many instances ended, by either route.</summary>
     public int Ends { get; private set; }
 
@@ -275,22 +273,6 @@ public sealed class InstanceWatcher
     /// <summary>How long the current instance has lasted.</summary>
     public TimeSpan Elapsed(DateTimeOffset now) =>
         Since is { } since ? now - since : TimeSpan.Zero;
-
-    /// <summary>
-    /// Ignores changes for a moment, because this tool just caused a reconnect.
-    /// </summary>
-    /// <remarks>
-    /// Measured: the game reopened 330 ms after a reset. Several seconds covers that with room for
-    /// a slower machine, and is short enough that a genuine change immediately afterwards is still
-    /// caught.
-    /// </remarks>
-    public void Suppress(DateTimeOffset now, TimeSpan? grace = null)
-    {
-        lock (_gate)
-        {
-            _suppressUntil = now + (grace ?? TimeSpan.FromSeconds(5));
-        }
-    }
 
     /// <summary>Feeds in a packet. Call for every packet on the group, held or not.</summary>
     public void Observe(PacketInfo packet)
@@ -381,12 +363,12 @@ public sealed class InstanceWatcher
                 return;
             }
 
-            if (packet.Timestamp < _suppressUntil)
-            {
-                Suppressed++;
-                return;
-            }
-
+            // Nothing special is done about our own reconnect, and nothing needs to be. A reset
+            // puts the game back on the same server, which the line above already covers: known,
+            // still in the instance, not a change. A grace window used to sit here for the case
+            // where the reconnect landed somewhere else instead - but if it did, that is a
+            // different instance and the timer should restart. It was guarding against the right
+            // answer.
             Start(packet, ReasonFor(), priorTraffic);
         }
     }

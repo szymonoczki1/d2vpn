@@ -1,4 +1,4 @@
-using D2Vpn.Core.Interception;
+﻿using D2Vpn.Core.Interception;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Hosting;
@@ -34,14 +34,4 @@ public interface IPacketFeed
     /// Raised on the receive loop, so a handler must be quick and must not touch a UI directly.
     /// </remarks>
     event Action<PacketInfo>? PacketObserved;
-
-    /// <summary>
-    /// Raised after this tool injected resets, with how many connections and packets.
-    /// </summary>
-    /// <remarks>
-    /// A watcher needs this to tell its own reconnect apart from the game leaving. The reset kills
-    /// the connection and the game opens a new one within a third of a second, which by every
-    /// other measure is indistinguishable from arriving somewhere new.
-    /// </remarks>
-    event Action<int, int>? ResetsSent;
 }

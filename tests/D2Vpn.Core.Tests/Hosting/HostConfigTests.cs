@@ -734,6 +734,59 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void An_overlay_size_written_before_there_were_panels_goes_to_both()
+    {
+        // Unlike the position, which described the module panel alone. Size and transparency
+        // applied to everything drawn, so splitting them must not quietly halve the timer.
+        var config = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "overlay": { "scale": 1.6, "opacity": 0.3 }
+        }
+        """);
+
+        Assert.Equal(1.6, config.Overlay.Modules.Scale);
+        Assert.Equal(1.6, config.Overlay.Timer.Scale);
+        Assert.Equal(0.3, config.Overlay.Modules.Opacity);
+        Assert.Equal(0.3, config.Overlay.Timer.Opacity);
+
+        Assert.Null(config.Overlay.Scale);
+        Assert.Null(config.Overlay.Opacity);
+    }
+
+    [Fact]
+    public void The_panels_can_be_sized_separately()
+    {
+        var config = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "overlay": {
+            "modules": { "scale": 0.8 },
+            "timer": { "scale": 2.5, "opacity": 0 }
+          }
+        }
+        """);
+
+        Assert.Equal(0.8, config.Overlay.Modules.Scale);
+        Assert.Equal(2.5, config.Overlay.Timer.Scale);
+        Assert.Equal(0, config.Overlay.Timer.Opacity);
+
+        // Untouched keeps the default rather than inheriting the other panel's.
+        Assert.Equal(0.72, config.Overlay.Modules.Opacity);
+    }
+
+    [Fact]
+    public void A_panel_scale_outside_the_range_is_refused()
+    {
+        Assert.Throws<ArgumentException>(() => HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "overlay": { "timer": { "scale": 40 } }
+        }
+        """));
+    }
+
+    [Fact]
     public void A_config_written_with_panels_is_left_alone()
     {
         var config = HostConfig.Parse("""

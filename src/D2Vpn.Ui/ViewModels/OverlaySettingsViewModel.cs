@@ -80,20 +80,6 @@ public sealed class OverlaySettingsViewModel : SidebarItem
         set => Change(_config with { HideWhenIdle = value });
     }
 
-    /// <summary>Text size multiplier.</summary>
-    public double Scale
-    {
-        get => _config.Scale;
-        set => Change(_config with { Scale = Math.Round(Math.Clamp(value, 0.5, 4), 2) });
-    }
-
-    /// <summary>How solid the panel behind the text is.</summary>
-    public double Opacity
-    {
-        get => _config.Opacity;
-        set => Change(_config with { Opacity = Math.Round(Math.Clamp(value, 0, 1), 2) });
-    }
-
     /// <summary>
     /// Which panel the position controls are editing.
     /// </summary>
@@ -114,6 +100,7 @@ public sealed class OverlaySettingsViewModel : SidebarItem
 
             RaiseAll(
                 nameof(MarginX), nameof(MarginY), nameof(Corner), nameof(CornerLabel),
+                nameof(Scale), nameof(Opacity), nameof(EditingLabel),
                 nameof(EditingModules), nameof(EditingTimer));
         }
     }
@@ -227,6 +214,29 @@ public sealed class OverlaySettingsViewModel : SidebarItem
         set => ChangePanel(Panel with { Corner = value });
     }
 
+    /// <summary>
+    /// Text size multiplier, for the panel being edited.
+    /// </summary>
+    /// <remarks>
+    /// Per panel rather than shared. A timer you want large and a module list you want out of the
+    /// way are different wants, and one number for both made you choose between them.
+    /// </remarks>
+    public double Scale
+    {
+        get => Panel.Scale;
+        set => ChangePanel(Panel with { Scale = Math.Round(Math.Clamp(value, 0.5, 4), 2) });
+    }
+
+    /// <inheritdoc cref="Scale"/>
+    public double Opacity
+    {
+        get => Panel.Opacity;
+        set => ChangePanel(Panel with { Opacity = Math.Round(Math.Clamp(value, 0, 1), 2) });
+    }
+
+    /// <summary>Which panel the position and appearance controls are naming, for a caption.</summary>
+    public string EditingLabel => _editing == OverlayPanelKind.Timer ? "timer" : "modules";
+
     /// <summary>Puts the edited panel back into the configuration.</summary>
     private void ChangePanel(OverlayPanel panel) =>
         Change(_editing == OverlayPanelKind.Timer
@@ -301,6 +311,7 @@ public sealed class OverlaySettingsViewModel : SidebarItem
             nameof(Config), nameof(IsEnabledSetting), nameof(Process), nameof(ShowTimers),
             nameof(ShowIdle), nameof(HideWhenIdle), nameof(Scale), nameof(Opacity),
             nameof(MarginX), nameof(MarginY), nameof(Corner), nameof(CornerLabel),
+            nameof(EditingLabel),
             nameof(ShowModules), nameof(ShowTimerPanel), nameof(TimerAttached),
             nameof(TimerHasOwnPlace), nameof(SidebarDetail));
     }

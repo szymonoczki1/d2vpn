@@ -91,7 +91,7 @@ public sealed class TimerSettingsViewModel : SidebarItem
     /// <summary>How many activities have been seen and how many have ended.</summary>
     public string Counts =>
         $"{_watcher.Changes} seen  ·  {_watcher.Ends} ended  "
-        + $"({_watcher.QuietEnds} by silence)  ·  {_watcher.Suppressed} reconnects ignored";
+        + $"({_watcher.QuietEnds} by silence, {_watcher.Superseded} replaced)";
 
     /// <summary>Re-reads the running figures. Rides the window's fast tick.</summary>
     public void Tick() => RaiseAll(nameof(Elapsed), nameof(State), nameof(Counts));

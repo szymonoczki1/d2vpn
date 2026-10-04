@@ -23,7 +23,12 @@ public sealed class TimerOverlayViewModel : OverlayContent
 {
     private readonly InstanceWatcher _watcher;
     private TimerConfig _config;
-    private string _signature = string.Empty;
+
+    // Nullable, and null is the sentinel for "rebuild whatever it says". Empty string cannot be:
+    // that is also what the signature of a panel showing nothing looks like, so turning the timer
+    // off set the sentinel, found it equal to the new empty text, and returned without clearing -
+    // leaving the last figure frozen on screen for good.
+    private string? _signature;
 
     /// <summary>Creates the timer's overlay content.</summary>
     public TimerOverlayViewModel(InstanceWatcher watcher, TimerConfig config)
@@ -36,7 +41,7 @@ public sealed class TimerOverlayViewModel : OverlayContent
     public void Apply(TimerConfig config)
     {
         _config = config;
-        _signature = string.Empty;
+        _signature = null;
         Refresh();
     }
 
