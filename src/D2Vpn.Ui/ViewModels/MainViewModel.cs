@@ -231,7 +231,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Refresh();
     }
 
-    /// <summary>Re-reads what the host owns. Called by the window's refresh tick.</summary>
+    /// <summary>Re-reads everything the host owns. The slower of the window's two ticks.</summary>
     public void Refresh()
     {
         foreach (var module in Modules)
@@ -239,6 +239,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             module.Refresh();
         }
 
+        RaiseShared();
+    }
+
+    /// <summary>
+    /// Re-reads only the on states and the running timers. The fast tick.
+    /// </summary>
+    public void TickLive()
+    {
+        foreach (var module in Modules)
+        {
+            module.RaiseLive();
+        }
+
+        RaiseShared();
+    }
+
+    private void RaiseShared()
+    {
+        // The rail dots and the footer count follow the on states, so they belong on whichever
+        // tick noticed one change - which is the fast one.
         foreach (var category in Categories)
         {
             category.Refresh();

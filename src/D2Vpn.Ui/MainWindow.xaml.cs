@@ -22,6 +22,7 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel _model;
     private readonly DispatcherTimer _refresh;
+    private readonly DispatcherTimer _live;
 
     /// <summary>Creates the window over a prepared model.</summary>
     public MainWindow(MainViewModel model)
@@ -30,8 +31,23 @@ public partial class MainWindow : Window
         InitializeComponent();
         DataContext = model;
 
-        // Counters are read from the live modules rather than pushed, so something has to ask. Four
-        // times a second is enough to look live and cheap enough not to matter next to a game.
+        // Two ticks, because the two kinds of reading want different rates.
+        //
+        // The timers count in tenths, and sampling at the same interval they display makes them
+        // skip and repeat as the two drift against each other - so they are read four times per
+        // tenth and look continuous. The on states ride along, which is also what makes a hold
+        // started by a key or over the pipe appear here more or less at once.
+        _live = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(25)
+        };
+
+        _live.Tick += (_, _) => _model.TickLive();
+        _live.Start();
+
+        // Everything else - counters, switch states - at a rate suited to reading rather than to
+        // animating. Metrics builds a list on every read, and a packet count does not become more
+        // useful for being sampled forty times a second.
         _refresh = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromMilliseconds(250)
@@ -211,6 +227,7 @@ public partial class MainWindow : Window
         // Releasing before the handles close is what stops a crash or a quick Alt+F4 leaving the
         // game held. Dispose does it in order: keys, then holds, then handles.
         CancelCapture();
+        _live.Stop();
         _refresh.Stop();
         _model.Dispose();
         base.OnClosed(e);

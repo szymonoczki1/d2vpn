@@ -306,10 +306,28 @@ public sealed class ModuleViewModel : ObservableObject
     }
 
     /// <summary>Re-reads everything the host owns, for the refresh tick.</summary>
-    public void Refresh() => RaiseAll(
-        nameof(IsActive), nameof(StateLabel), nameof(IsEnabled), nameof(CanHold),
-        nameof(ResyncEnabled), nameof(BufferEnabled), nameof(Metrics),
-        nameof(HeldLabel), nameof(IsTiming), nameof(SidebarDetail));
+    public void Refresh()
+    {
+        RaiseLive();
+
+        RaiseAll(
+            nameof(IsEnabled), nameof(CanHold),
+            nameof(ResyncEnabled), nameof(BufferEnabled), nameof(Metrics));
+    }
+
+    /// <summary>
+    /// Re-reads only what changes continuously: the on state and the running timer.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Refresh"/> so it can run several times as often. A timer showing
+    /// tenths needs re-reading faster than tenths to look like it is counting rather than
+    /// stepping, and at that rate the rest is waste - <see cref="Metrics"/> builds a list on every
+    /// read, and a packet counter does not become more useful for being sampled twenty times a
+    /// second.
+    /// </remarks>
+    public void RaiseLive() => RaiseAll(
+        nameof(IsActive), nameof(StateLabel),
+        nameof(IsTiming), nameof(HeldLabel), nameof(SidebarDetail));
 
     /// <summary>Raises only the state, for an immediate response to a click.</summary>
     public void RaiseState() => RaiseAll(
