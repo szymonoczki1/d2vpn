@@ -532,7 +532,7 @@ public class InstanceWatcherTests
         Assert.False(watcher.InInstance);
         Assert.Equal(1, watcher.Changes);
 
-        // Chatter long afterwards, on a connection that was never re-opened.
+        // Chatter long afterwards, on connections that were never re-opened. No SYN, no instance.
         watcher.Observe(Data(ServerA, T0.AddSeconds(200)));
         watcher.Observe(Data(ServerB, T0.AddSeconds(260)));
 
@@ -553,6 +553,43 @@ public class InstanceWatcherTests
         Assert.True(watcher.InInstance);
         Assert.Equal(ServerB, watcher.Server);
         Assert.Equal(2, watcher.Changes);
+    }
+
+    [Fact]
+    public void Returning_to_a_recently_used_server_still_counts_as_entering()
+    {
+        // The case requiring a new server missed. Coming back to a server still inside the forget
+        // window - orbit, most obviously - opens a connection to one already known, and reading
+        // that as nothing happening lost two real instances in a measured run.
+        var watcher = new InstanceWatcher(forget: TimeSpan.FromMinutes(5));
+        InstanceChangeReason? reason = null;
+        watcher.Changed += c => reason = c.Reason;
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(30)));
+
+        Assert.False(watcher.InInstance);
+
+        // Back to the same server, well inside the forget window.
+        watcher.Observe(Syn(ServerA, T0.AddSeconds(60)));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(ServerA, watcher.Server);
+        Assert.Equal(InstanceChangeReason.Entered, reason);
+        Assert.Equal(T0.AddSeconds(60), watcher.Since);
+    }
+
+    [Fact]
+    public void A_second_socket_to_the_current_server_is_not_a_change()
+    {
+        // The reason the known check is kept at all, now that it only applies while in one.
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(5), 50002, TcpControlFlags.Syn));
+
+        Assert.Equal(1, watcher.Changes);
+        Assert.Equal(T0, watcher.Since);
     }
 
     [Fact]

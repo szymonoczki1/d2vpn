@@ -11,7 +11,17 @@ public enum InstanceChangeReason
     First,
 
     /// <summary>A connection opened to a server this session had not been talking to.</summary>
-    NewServer
+    NewServer,
+
+    /// <summary>
+    /// A connection opened while not in an instance, so one has begun.
+    /// </summary>
+    /// <remarks>
+    /// Distinct from <see cref="NewServer"/> because the server need not be new. Returning to one
+    /// recently used - orbit, most obviously - is entering an instance, and requiring novelty
+    /// missed exactly that.
+    /// </remarks>
+    Entered
 }
 
 /// <summary>Why the instance ended.</summary>
@@ -303,30 +313,32 @@ public sealed class InstanceWatcher
             //
             // Safe only because it is limited to not being in one. During an instance, a packet to
             // a server already in use says nothing about having moved.
-            // No rule here for "traffic came back, so an instance must have started".
+            // A connection *opening* is the whole signal. Not traffic arriving, and not the
+            // server being one this session has not used.
             //
-            // There was one, copied from HarryWatch, and it was wrong on this port twice. First it
-            // restarted the instance from the acknowledgements finishing its own close. Then, with
-            // a gap required, it manufactured an instance out of every burst of 30k chatter in
-            // orbit - a measured run produced two of them, each ending moments after it began.
+            // Both of those were tried and both were wrong. Treating any packet as a start - copied
+            // from HarryWatch, which watches 3074 where the port really is silent between
+            // activities - restarted an instance from the acknowledgements finishing its own close,
+            // and then manufactured instances from ordinary 30k chatter, because 30k talks to
+            // servers in menus and in orbit.
             //
-            // HarryWatch watches 3074, which is peer traffic and genuinely silent outside an
-            // activity. 30k talks to servers in menus and in orbit, so traffic arriving says
-            // nothing on its own. A connection *opening* to a server not already in use still does,
-            // and that is the rule below - which is what the first three measured runs used, and
-            // they were right every time.
+            // Requiring the server to be new instead missed real instances: coming back to one
+            // recently used - orbit, most obviously - opens a connection to a server still inside
+            // the forget window, so it read as nothing happening at all. A measured run had two of
+            // those, and only the rule that was about to be deleted had caught them.
             //
-            // The case this gives up: an instance ending on silence and traffic resuming on a
-            // connection that was never re-opened stays ended. That is hypothetical, and a
-            // hypothetical hole is a better thing to carry than two real ones.
-
-            if (!opening || known)
+            // So: a connection opening while not in an instance starts one, whatever server it is
+            // to. While in an instance, only a connection to a server not already in use counts,
+            // or every extra socket to the current one would look like a move.
+            if (!opening)
             {
                 return;
             }
 
-            // First is only ever the first connection of a session; everything after it is a move.
-
+            if (Since is not null && known)
+            {
+                return;
+            }
 
             if (packet.Timestamp < _suppressUntil)
             {
@@ -334,12 +346,7 @@ public sealed class InstanceWatcher
                 return;
             }
 
-            Start(
-                packet,
-                _endedAt is null && Changes == 0
-                    ? InstanceChangeReason.First
-                    : InstanceChangeReason.NewServer,
-                priorTraffic);
+            Start(packet, ReasonFor(), priorTraffic);
         }
     }
 
@@ -392,6 +399,12 @@ public sealed class InstanceWatcher
             }
         }
     }
+
+    /// <summary>Which kind of change this is, from what came before it.</summary>
+    private InstanceChangeReason ReasonFor() =>
+        Changes == 0 ? InstanceChangeReason.First
+        : Since is null ? InstanceChangeReason.Entered
+        : InstanceChangeReason.NewServer;
 
     /// <summary>Begins an instance on this packet's server.</summary>
     private void Start(PacketInfo packet, InstanceChangeReason reason, DateTimeOffset priorTraffic)

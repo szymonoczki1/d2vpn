@@ -2967,6 +2967,35 @@ own observation point - where `ConnectionSampler` already sits, before the modul
 packet - that cannot happen. The standalone `d2vpn instance` command is a sniffer and does have
 this blind spot; it is a measurement tool, not the shipped path.
 
+### Entering is a connection opening - not traffic, and not a new server
+
+Three rules were tried. The first two were wrong in opposite directions, and the run that exposed
+each one also contained the evidence against the next.
+
+**Any packet after a gap** - transplanted from HarryWatch - restarted an instance from the
+acknowledgements finishing its own close, and then, with a gap required, manufactured instances out
+of ordinary 30k chatter. It works there because 3074 is peer traffic and genuinely silent between
+activities; 30k talks to servers in menus and in orbit.
+
+**A connection to a server not already in use** - the original rule - looked right for three runs
+and then missed two real instances in the fourth. Returning to a server recently used, which is
+what going back to orbit does, opens a connection to one still inside the forget window and read as
+nothing happening at all. Those two had been caught only by the rule that was about to be deleted
+for being wrong, which is the sort of thing that makes a measurement worth more than an argument.
+
+**A connection opening while not in an instance**, whatever server it is to. While *in* one, only a
+connection to a server not already in use counts, or every extra socket to the current server would
+look like a move.
+
+| | packet | SYN to known server | SYN to new server |
+|---|---|---|---|
+| Not in an instance | nothing | **enters** | **enters** |
+| In an instance | nothing | nothing | **moves** |
+
+What it still gives up: an instance that ends on silence and then resumes without any connection
+being opened stays ended. Nothing observed suggests that happens, and the two rules that tried to
+cover it both did measurable harm.
+
 ### Traffic alone does not mean an instance - on 30k
 
 A rule saying it did was copied from HarryWatch and was wrong here twice.
