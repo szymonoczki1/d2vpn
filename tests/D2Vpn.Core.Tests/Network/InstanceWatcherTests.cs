@@ -170,6 +170,84 @@ public class InstanceWatcherTests
     }
 
     [Fact]
+    public void Closing_one_socket_of_several_does_not_end_it()
+    {
+        // The capture of leaving an activity showed two servers closing one connection each, so
+        // the game holds more than one at a time. One FIN means a socket ended, not the instance -
+        // and getting this wrong stops the timer mid-activity with no way back, since reopening to
+        // a server already known does not restart it.
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(1), 50002, TcpControlFlags.Syn));
+
+        watcher.Observe(Port(ServerA, T0.AddSeconds(30), 50001,
+            TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(0, watcher.Ends);
+
+        watcher.Observe(Port(ServerA, T0.AddSeconds(31), 50002,
+            TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Ends);
+    }
+
+    [Fact]
+    public void A_connection_open_before_watching_began_is_still_counted()
+    {
+        // Its SYN was never seen, so the live set has to be built from any packet rather than only
+        // from connection setup - otherwise the first FIN would look like the last one.
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(2), 50002, TcpControlFlags.Ack));
+
+        watcher.Observe(Port(ServerA, T0.AddSeconds(20), 50001,
+            TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound));
+
+        Assert.True(watcher.InInstance);
+    }
+
+    [Fact]
+    public void Resetting_every_socket_does_not_read_as_a_close()
+    {
+        // What this tool's own reconnect does. A reset leaves its connection in the live set on
+        // purpose, so emptying the set by resetting cannot be mistaken for the server closing.
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(1), 50002, TcpControlFlags.Syn));
+
+        watcher.Observe(Port(ServerA, T0.AddSeconds(10), 50001, TcpControlFlags.Reset,
+            PacketDirection.Inbound));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(10), 50002, TcpControlFlags.Reset,
+            PacketDirection.Inbound));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(0, watcher.Ends);
+    }
+
+    private static PacketInfo Port(
+        IPAddress server,
+        DateTimeOffset at,
+        int localPort,
+        TcpControlFlags flags,
+        PacketDirection direction = PacketDirection.Outbound) =>
+        new()
+        {
+            Timestamp = at,
+            Direction = direction,
+            LocalPort = localPort,
+            RemotePort = 30000,
+            RemoteAddress = server,
+            PayloadLength = 0,
+            InterfaceIndex = 1,
+            TcpFlags = flags
+        };
+
+    [Fact]
     public void A_close_from_some_other_server_is_ignored()
     {
         var watcher = new InstanceWatcher();

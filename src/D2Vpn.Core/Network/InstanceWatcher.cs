@@ -77,6 +77,20 @@ public readonly record struct InstanceChange(
 public sealed class InstanceWatcher
 {
     private readonly Dictionary<IPAddress, DateTimeOffset> _lastSeen = [];
+
+    /// <summary>
+    /// Local ports with a live connection to each server.
+    /// </summary>
+    /// <remarks>
+    /// The instance ends when the <b>last</b> connection to its server closes, not the first. A
+    /// capture of leaving an activity showed two servers closing one connection each, which is
+    /// enough to say the game holds more than one at a time - so a single FIN says a socket ended,
+    /// not that the instance did.
+    ///
+    /// Populated from any packet rather than only from a SYN, so a connection that was already
+    /// open when this started watching is still counted.
+    /// </remarks>
+    private readonly Dictionary<IPAddress, HashSet<int>> _live = [];
     private readonly TimeSpan _forget;
     private readonly TimeSpan _silence;
     private readonly Lock _gate = new();
@@ -179,9 +193,11 @@ public sealed class InstanceWatcher
         // set says nothing about having moved.
         var opening = packet.TcpFlags?.HasFlag(TcpControlFlags.Syn) == true;
 
-        // A graceful close from the instance server is the game leaving. Deliberately not RST:
-        // that is what this tool's own reconnect injects, and treating the two alike would make
-        // every reconnect look like leaving the activity.
+        // A graceful close from the instance server is the game leaving - once it is the last one.
+        // Deliberately not RST: that is what this tool's own reconnect injects, and treating the
+        // two alike would make every reconnect look like leaving the activity. A reset also leaves
+        // its connection in the live set on purpose, so resetting every socket does not empty it
+        // and read as a close.
         var closing = packet.IsInbound
             && packet.TcpFlags?.HasFlag(TcpControlFlags.Fin) == true
             && packet.TcpFlags?.HasFlag(TcpControlFlags.Reset) != true;
@@ -190,15 +206,32 @@ public sealed class InstanceWatcher
         {
             _lastTraffic = packet.Timestamp;
 
+            if (!_live.TryGetValue(packet.RemoteAddress, out var ports))
+            {
+                _live[packet.RemoteAddress] = ports = [];
+            }
+
+            ports.Add(packet.LocalPort);
+
             var known = _lastSeen.TryGetValue(packet.RemoteAddress, out var seen)
                 && packet.Timestamp - seen <= _forget;
 
             _lastSeen[packet.RemoteAddress] = packet.Timestamp;
             Forget(packet.Timestamp);
 
-            if (closing && _current is not null && packet.RemoteAddress.Equals(_current))
+            if (closing)
             {
-                End(packet.Timestamp, InstanceEndReason.ServerClosed);
+                ports.Remove(packet.LocalPort);
+
+                // Only when the last one goes. Closing one socket of several is the game tidying
+                // up, not leaving.
+                if (ports.Count == 0
+                    && _current is not null
+                    && packet.RemoteAddress.Equals(_current))
+                {
+                    End(packet.Timestamp, InstanceEndReason.ServerClosed);
+                }
+
                 return;
             }
 
@@ -223,6 +256,11 @@ public sealed class InstanceWatcher
             Since = packet.Timestamp;
             _endedAt = null;
             Changes++;
+
+            // A server being talked to again starts with a clean slate; anything left over belongs
+            // to the instance that has just been replaced.
+            _live.Remove(packet.RemoteAddress);
+            _live[packet.RemoteAddress] = [packet.LocalPort];
 
             Raise(new InstanceChange(packet.Timestamp, packet.RemoteAddress, previous, reason));
         }
@@ -275,6 +313,7 @@ public sealed class InstanceWatcher
         Since = null;
         _endedAt = at;
         _current = null;
+        _live.Clear();
         Ends++;
 
         Ended?.Invoke(LastDuration, reason);
