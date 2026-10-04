@@ -104,6 +104,38 @@ public sealed record PauseConfig
     public int SafetyTimeoutS { get; init; } = 30;
 }
 
+/// <summary>
+/// The instance timer: how long the game has been in the current activity.
+/// </summary>
+/// <remarks>
+/// Both numbers are waits on silence, and the shorter one only hides. A loading screen stops 30k
+/// traffic without ending anything, so the timer keeps running while it is out of sight and picks
+/// up where it left off if the same server comes back.
+/// </remarks>
+public sealed record TimerConfig
+{
+    /// <summary>Whether to track it at all.</summary>
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>
+    /// Seconds of silence before the timer is hidden, while still running.
+    /// </summary>
+    /// <remarks>
+    /// 30k carries a heartbeat every 3.02 s, so fifteen is five missed beats - long enough not to
+    /// flicker on an ordinary gap, short enough to go away promptly on a load screen.
+    /// </remarks>
+    public int HideAfterS { get; init; } = 15;
+
+    /// <summary>
+    /// Seconds of silence before the instance is declared over.
+    /// </summary>
+    /// <remarks>
+    /// The backstop for a departure that sends no FIN, which was measured happening. Returning to
+    /// the same server before this elapses continues the timer rather than restarting it.
+    /// </remarks>
+    public int EndAfterS { get; init; } = 45;
+}
+
 /// <summary>Which corner of the game window the overlay sits in.</summary>
 public enum OverlayCorner
 {
@@ -232,6 +264,9 @@ public sealed record HostConfig
 
     /// <summary>The in-game overlay.</summary>
     public OverlayConfig Overlay { get; init; } = new();
+
+    /// <summary>The instance timer.</summary>
+    public TimerConfig Timer { get; init; } = new();
 
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
@@ -430,6 +465,7 @@ public sealed record HostConfig
                 Scale = Overlay.Scale is < 0.5 or > 4 ? 1.0 : Overlay.Scale,
                 Opacity = Overlay.Opacity is < 0 or > 1 ? 0.72 : Overlay.Opacity
             },
+            Timer = Repair(Timer),
             Modules = modules,
             Pause = pause,
             ReleaseBind = release,
@@ -479,6 +515,25 @@ public sealed record HostConfig
         {
             throw new ArgumentException(
                 $"overlay opacity {Overlay.Opacity} is outside 0-1");
+        }
+
+        if (Timer.HideAfterS is < 1 or > 600)
+        {
+            throw new ArgumentException($"timer hideAfterS {Timer.HideAfterS} is outside 1-600");
+        }
+
+        if (Timer.EndAfterS is < 1 or > 600)
+        {
+            throw new ArgumentException($"timer endAfterS {Timer.EndAfterS} is outside 1-600");
+        }
+
+        // Hiding after the instance has already ended would mean the timer was never hidden at
+        // all, only stopped.
+        if (Timer.HideAfterS > Timer.EndAfterS)
+        {
+            throw new ArgumentException(
+                $"timer hideAfterS {Timer.HideAfterS} is longer than endAfterS {Timer.EndAfterS}, "
+                + "so the timer would end before it was ever hidden");
         }
 
         // Parsing every name up front turns a typo into one clear error rather than a module that
@@ -551,6 +606,19 @@ public sealed record HostConfig
                 $"'{clash.Key}' is bound to more than one thing: "
                 + string.Join(" and ", clash.Select(k => k.What)));
         }
+    }
+
+    /// <summary>Puts a timer configuration back inside its limits.</summary>
+    private static TimerConfig Repair(TimerConfig timer)
+    {
+        var hide = timer.HideAfterS is < 1 or > 600 ? 15 : timer.HideAfterS;
+        var end = timer.EndAfterS is < 1 or > 600 ? 45 : timer.EndAfterS;
+
+        return timer with
+        {
+            HideAfterS = hide,
+            EndAfterS = hide > end ? hide : end
+        };
     }
 
     /// <summary>The specs and their numbers, in config order.</summary>

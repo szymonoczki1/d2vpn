@@ -226,6 +226,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             "Settings", "IconSettings", "Nothing to configure here yet.");
 
         settings.Items.Add(new OverlaySettingsViewModel(_config.Overlay, ApplyOverlay));
+        settings.Items.Add(new TimerSettingsViewModel(_config.Timer, ApplyTimer));
 
         foreach (var category in new[] { traffic, system, settings })
         {
@@ -384,6 +385,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>Raised when the overlay's settings change, so the window can apply them.</summary>
     public event Action<OverlayConfig>? OverlayChanged;
+
+    /// <summary>Takes a change from the timer settings page: saves it, and applies it live.</summary>
+    private void ApplyTimer(TimerConfig timer)
+    {
+        _config = _config with { Timer = timer };
+        TimerChanged?.Invoke(timer);
+        Save();
+    }
+
+    /// <summary>Raised when the timer's settings change.</summary>
+    public event Action<TimerConfig>? TimerChanged;
+
+    /// <summary>The timer's settings, as loaded.</summary>
+    public TimerConfig Timer => _config.Timer;
 
     /// <summary>Writes the current binds and switch states back to the config file.</summary>
     /// <remarks>

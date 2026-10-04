@@ -1,6 +1,7 @@
 ﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Diagnostics;
+using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
@@ -28,7 +29,12 @@ internal static class InstanceCommand
     public static async Task<int> ExecuteAsync(
         PortGroup group, short priority, string? logPath, CancellationToken cancellationToken)
     {
-        var watcher = new InstanceWatcher();
+        // From the same config the window uses, so the command measures what the app will do.
+        var timer = TimerFor(logPath);
+
+        var watcher = new InstanceWatcher(
+            silence: TimeSpan.FromSeconds(timer.EndAfterS),
+            dormantAfter: TimeSpan.FromSeconds(timer.HideAfterS));
         using var log = logPath is null ? null : new SessionLog(logPath);
 
         log?.Write("config", $"group={group.Name} priority={priority}");
@@ -153,11 +159,44 @@ internal static class InstanceCommand
         return 0;
     }
 
+    /// <summary>
+    /// The timer settings, from the shared config, falling back to the defaults.
+    /// </summary>
+    /// <remarks>
+    /// Read rather than hardcoded so this command measures the waits the window will actually use.
+    /// A measurement of different numbers from the ones that ship is not a measurement of anything.
+    /// </remarks>
+    private static TimerConfig TimerFor(string? _)
+    {
+        try
+        {
+            var path = ConfigLocation.Default;
+
+            return File.Exists(path) ? HostConfig.Load(path).Timer : new TimerConfig();
+        }
+        catch (Exception)
+        {
+            // A config that will not load is the host's problem to report, not this command's.
+            return new TimerConfig();
+        }
+    }
+
     /// <summary>In an instance and for how long, or not in one.</summary>
-    private static string State(InstanceWatcher watcher, DateTimeOffset now) =>
-        watcher.InInstance
-            ? $"instance {watcher.Elapsed(now).TotalSeconds,7:F1}s"
-            : "        not in one";
+    private static string State(InstanceWatcher watcher, DateTimeOffset now)
+    {
+        if (!watcher.InInstance)
+        {
+            return "        not in one";
+        }
+
+        var elapsed = $"instance {watcher.Elapsed(now).TotalSeconds,7:F1}s";
+
+        // Dormant is still in the instance, so it says so rather than going blank - and shows how
+        // long is left before it would be declared over.
+        return watcher.IsDormant(now)
+            ? $"{elapsed} hidden, {watcher.UntilEnd(now).TotalSeconds:F0}s left"
+            : elapsed;
+    }
 
     /// <summary>
     /// A server address with its host part removed.

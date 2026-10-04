@@ -216,6 +216,93 @@
             </StackPanel>
         </DataTemplate>
 
+        <DataTemplate DataType="{x:Type vm:TimerSettingsViewModel}">
+            <StackPanel>
+                <Grid Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel>
+                        <TextBlock Text="Timer" Style="{StaticResource Heading}" />
+                        <TextBlock Style="{StaticResource Subtle}" Margin="0,4,0,0"
+                                   Text="How long you have been in the current instance, worked out from 30k traffic. It starts when the game connects to a new server and stops when that server closes, or when the group falls silent." />
+                    </StackPanel>
+
+                    <CheckBox Grid.Column="1" Style="{StaticResource Switch}"
+                              VerticalAlignment="Top" Margin="18,4,0,0"
+                              IsChecked="{Binding IsEnabledSetting, Mode=TwoWay}"
+                              Content="Enabled" />
+                </Grid>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="WAITS ON SILENCE" Style="{StaticResource SectionLabel}" />
+
+                        <Grid Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="86" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="56" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Hide after" VerticalAlignment="Center" Margin="0,6" />
+                            <Button Grid.Column="1" Content="−" Style="{StaticResource FlatButton}"
+                                    Margin="0,3" Padding="12,4" Tag="hide-" Click="OnTimerNudge" />
+                            <TextBlock Grid.Column="2" Style="{StaticResource Mono}" FontSize="14"
+                                       Foreground="{StaticResource TextBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Text="{Binding HideAfterS, StringFormat={}{0}s}" />
+                            <Button Grid.Column="3" Content="+" Style="{StaticResource FlatButton}"
+                                    Margin="0,3" Padding="12,4" Tag="hide+" Click="OnTimerNudge" />
+                            <TextBlock Grid.Column="4" Style="{StaticResource Subtle}"
+                                       VerticalAlignment="Center" Margin="14,0,0,0"
+                                       Text="{Binding HideInBeats}" />
+
+                            <TextBlock Grid.Row="1" Text="Over after" VerticalAlignment="Center"
+                                       Margin="0,6" />
+                            <Button Grid.Row="1" Grid.Column="1" Content="−"
+                                    Style="{StaticResource FlatButton}"
+                                    Margin="0,3" Padding="12,4" Tag="end-" Click="OnTimerNudge" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Style="{StaticResource Mono}"
+                                       FontSize="14" Foreground="{StaticResource TextBrush}"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Text="{Binding EndAfterS, StringFormat={}{0}s}" />
+                            <Button Grid.Row="1" Grid.Column="3" Content="+"
+                                    Style="{StaticResource FlatButton}"
+                                    Margin="0,3" Padding="12,4" Tag="end+" Click="OnTimerNudge" />
+                            <TextBlock Grid.Row="1" Grid.Column="4" Style="{StaticResource Subtle}"
+                                       VerticalAlignment="Center" Margin="14,0,0,0"
+                                       Text="{Binding EndInBeats}" />
+                        </Grid>
+
+                        <TextBlock Style="{StaticResource Subtle}" Margin="0,14,0,0"
+                                   Text="{Binding Summary}" />
+
+                        <TextBlock Style="{StaticResource Subtle}" Margin="0,10,0,0"
+                                   Text="Seconds say how long you wait; heartbeats say how certain you are. 30k carries one every 3.02s, so a wait is really a count of how many have gone missing." />
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource Card}">
+                    <StackPanel>
+                        <TextBlock Text="HOW IT ENDS" Style="{StaticResource SectionLabel}" />
+                        <TextBlock Style="{StaticResource Subtle}"
+                                   Text="The server closing its connection ends it at once - that is what leaving an activity usually looks like. Not every departure does it, so the silence wait is the backstop." />
+                        <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
+                                   Text="A reconnect never ends it. That is a reset rather than a close, which is what makes the two possible to tell apart." />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
         <DataTemplate DataType="{x:Type vm:OverlaySettingsViewModel}">
             <StackPanel>
                 <Grid Margin="0,0,0,18">

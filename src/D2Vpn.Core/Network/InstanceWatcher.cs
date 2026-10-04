@@ -113,6 +113,7 @@ public sealed class InstanceWatcher
     private readonly Dictionary<IPAddress, Dictionary<int, DateTimeOffset>> _live = [];
     private readonly TimeSpan _forget;
     private readonly TimeSpan _silence;
+    private readonly TimeSpan _dormantAfter;
     private readonly TimeSpan _portIdle;
     private readonly Lock _gate = new();
 
@@ -136,12 +137,27 @@ public sealed class InstanceWatcher
     /// 3.02 s heartbeats by default, which is what distinguishes a connection that was reset from
     /// one that is merely between packets.
     /// </param>
+    /// <param name="dormantAfter">
+    /// How long the group may be quiet before the instance is treated as <em>dormant</em> - still
+    /// running, but not worth showing. A loading screen stops the traffic without ending anything,
+    /// and a timer that vanished and came back at zero would be worse than one that waits.
+    /// </param>
     public InstanceWatcher(
-        TimeSpan? forget = null, TimeSpan? silence = null, TimeSpan? portIdle = null)
+        TimeSpan? forget = null,
+        TimeSpan? silence = null,
+        TimeSpan? portIdle = null,
+        TimeSpan? dormantAfter = null)
     {
-        _forget = forget ?? TimeSpan.FromSeconds(20);
-        _silence = silence ?? TimeSpan.FromSeconds(30);
+        _silence = silence ?? TimeSpan.FromSeconds(45);
+        _dormantAfter = dormantAfter ?? TimeSpan.FromSeconds(15);
         _portIdle = portIdle ?? TimeSpan.FromSeconds(10);
+
+        // Never shorter than the silence window, whatever is asked for. A server dropped from the
+        // known set reads as new when it is next heard from, which restarts the timer - so a forget
+        // shorter than the wait would reset the very instance the wait exists to preserve, and only
+        // when a load screen happened to run long. Invisible until it is not.
+        var asked = forget ?? TimeSpan.FromSeconds(20);
+        _forget = asked > _silence ? asked : _silence + TimeSpan.FromSeconds(5);
     }
 
     /// <summary>When the current instance started, or null if nothing has been seen yet.</summary>
@@ -188,6 +204,27 @@ public sealed class InstanceWatcher
     /// <summary>How long the last instance lasted, or zero if none has ended.</summary>
     public TimeSpan LastDuration { get; private set; }
 
+    /// <summary>
+    /// True when the instance is running but the group has gone quiet.
+    /// </summary>
+    /// <remarks>
+    /// Derived rather than stored: it is simply how long since the last packet, so it becomes false
+    /// again the moment traffic returns, without anything having to notice. A loading screen is the
+    /// case - still in the instance, nothing to show.
+    /// </remarks>
+    public bool IsDormant(DateTimeOffset now) =>
+        InInstance && Quiet(now) > _dormantAfter;
+
+    /// <summary>True when there is a timer worth showing.</summary>
+    public bool ShouldShow(DateTimeOffset now) => InInstance && !IsDormant(now);
+
+    /// <summary>How long until a dormant instance is declared over.</summary>
+    public TimeSpan UntilEnd(DateTimeOffset now)
+    {
+        var left = _silence - Quiet(now);
+        return left > TimeSpan.Zero ? left : TimeSpan.Zero;
+    }
+
     /// <summary>Raised when the instance changes.</summary>
     public event Action<InstanceChange>? Changed;
 
@@ -232,6 +269,10 @@ public sealed class InstanceWatcher
 
         lock (_gate)
         {
+            // Kept before it is overwritten. Moving to another server closes the old instance at
+            // its own last packet, and by this point "last" would otherwise already mean this one.
+            var priorTraffic = _lastTraffic;
+
             _lastTraffic = packet.Timestamp;
 
             if (!_live.TryGetValue(packet.RemoteAddress, out var ports))
@@ -280,7 +321,8 @@ public sealed class InstanceWatcher
                     packet,
                     _endedAt is null
                         ? InstanceChangeReason.First
-                        : InstanceChangeReason.ResumedAfterQuiet);
+                        : InstanceChangeReason.ResumedAfterQuiet,
+                    priorTraffic);
 
                 return;
             }
@@ -296,7 +338,7 @@ public sealed class InstanceWatcher
                 return;
             }
 
-            Start(packet, InstanceChangeReason.NewServer);
+            Start(packet, InstanceChangeReason.NewServer, priorTraffic);
         }
     }
 
@@ -351,8 +393,16 @@ public sealed class InstanceWatcher
     }
 
     /// <summary>Begins an instance on this packet's server.</summary>
-    private void Start(PacketInfo packet, InstanceChangeReason reason)
+    private void Start(PacketInfo packet, InstanceChangeReason reason, DateTimeOffset priorTraffic)
     {
+        // A running instance is closed out first, dated to its own last packet rather than to now.
+        // Moving to another server while dormant means the old one stopped when its traffic did,
+        // not when the new one started.
+        if (Since is not null)
+        {
+            End(priorTraffic, InstanceEndReason.WentQuiet);
+        }
+
         var previous = _current;
 
         _current = packet.RemoteAddress;

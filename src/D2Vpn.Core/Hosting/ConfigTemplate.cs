@@ -87,6 +87,20 @@ public static class ConfigTemplate
       // Releases every module at once, including pause. Worth binding somewhere easy to hit.
       "releaseBind": "f12",
 
+      // The instance timer: how long you have been in the current activity, from 30k traffic.
+      //
+      // Both numbers are waits on silence, and the shorter one only hides. A loading screen stops
+      // the traffic without ending anything, so the timer keeps running out of sight and picks up
+      // where it left off when the same server comes back.
+      //
+      // 30k carries a heartbeat every 3.02s, so a wait is really a count of missed beats:
+      // 15s is five, 45s is fifteen. Seconds say how long you wait, beats say how sure you are.
+      "timer": {
+        "enabled": true,
+        "hideAfterS": 15,
+        "endAfterS": 45
+      },
+
       // The in-game overlay: a small panel saying what is held and for how long. It appears only
       // while the game owns the foreground window, never takes focus and never takes a click.
       //

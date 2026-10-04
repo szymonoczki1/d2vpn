@@ -441,6 +441,62 @@ public class HostConfigTests
     }
 
     [Fact]
+    public void The_timer_waits_round_trip_and_default_sensibly()
+    {
+        var config = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "timer": { "hideAfterS": 20, "endAfterS": 60 }
+        }
+        """);
+
+        Assert.True(config.Timer.Enabled);
+        Assert.Equal(20, config.Timer.HideAfterS);
+        Assert.Equal(60, config.Timer.EndAfterS);
+
+        var defaults = HostConfig.Parse("""{ "modules": [ { "name": "30k" } ] }""").Timer;
+
+        Assert.Equal(15, defaults.HideAfterS);
+        Assert.Equal(45, defaults.EndAfterS);
+    }
+
+    [Fact]
+    public void Hiding_after_the_end_is_rejected()
+    {
+        // It would mean the timer was never hidden at all, only stopped.
+        var ex = Assert.Throws<ArgumentException>(() => HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "timer": { "hideAfterS": 60, "endAfterS": 30 }
+        }
+        """));
+
+        Assert.Contains("before it was ever hidden", ex.Message);
+    }
+
+    [Fact]
+    public void A_contradictory_timer_is_repaired_rather_than_fatal_for_the_window()
+    {
+        var path = Write("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "timer": { "hideAfterS": 60, "endAfterS": 30 }
+        }
+        """);
+
+        try
+        {
+            var config = HostConfig.LoadForgiving(path, out _);
+
+            Assert.True(config.Timer.EndAfterS >= config.Timer.HideAfterS);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void A_duplicate_key_is_repaired_rather_than_fatal()
     {
         // The window is the tool for fixing a config, so it must not be stopped from opening by

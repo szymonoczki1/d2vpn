@@ -463,6 +463,94 @@ public class InstanceWatcherTests
         Assert.Equal(1, watcher.Changes);
     }
 
+    [Fact]
+    public void A_quiet_instance_is_hidden_before_it_is_ended()
+    {
+        // The loading-screen case: traffic stops, so the timer goes out of sight, but the instance
+        // has not ended and the figure keeps counting behind it.
+        var watcher = new InstanceWatcher(
+            dormantAfter: TimeSpan.FromSeconds(15), silence: TimeSpan.FromSeconds(45));
+
+        watcher.Observe(Syn(ServerA, T0));
+
+        Assert.True(watcher.ShouldShow(T0.AddSeconds(10)));
+        Assert.False(watcher.IsDormant(T0.AddSeconds(10)));
+
+        Assert.False(watcher.ShouldShow(T0.AddSeconds(20)));
+        Assert.True(watcher.IsDormant(T0.AddSeconds(20)));
+        Assert.True(watcher.InInstance);
+
+        // Still running, so the figure is still climbing while nothing is shown.
+        Assert.Equal(TimeSpan.FromSeconds(20), watcher.Elapsed(T0.AddSeconds(20)));
+
+        Assert.False(watcher.Tick(T0.AddSeconds(44)));
+        Assert.True(watcher.Tick(T0.AddSeconds(46)));
+        Assert.False(watcher.InInstance);
+    }
+
+    [Fact]
+    public void Returning_to_the_same_server_while_dormant_does_not_reset()
+    {
+        // The requirement this whole state exists for. A load screen that runs past the hide wait
+        // must not cost the elapsed time when the same instance comes back.
+        var watcher = new InstanceWatcher(
+            dormantAfter: TimeSpan.FromSeconds(15), silence: TimeSpan.FromSeconds(45));
+
+        watcher.Observe(Syn(ServerA, T0));
+        Assert.True(watcher.IsDormant(T0.AddSeconds(30)));
+
+        watcher.Observe(Data(ServerA, T0.AddSeconds(35)));
+
+        Assert.Equal(T0, watcher.Since);
+        Assert.True(watcher.ShouldShow(T0.AddSeconds(35)));
+        Assert.Equal(1, watcher.Changes);
+    }
+
+    [Fact]
+    public void A_reopened_connection_to_the_same_server_while_dormant_does_not_reset()
+    {
+        // The forget window has to outlast the silence wait, or a server dropped from the known set
+        // reads as new and restarts the very instance the wait exists to preserve - and only when a
+        // load screen happens to run long, which is the worst way to find a bug.
+        var watcher = new InstanceWatcher(
+            forget: TimeSpan.FromSeconds(20),
+            dormantAfter: TimeSpan.FromSeconds(15),
+            silence: TimeSpan.FromSeconds(45));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Syn(ServerA, T0.AddSeconds(40)));
+
+        Assert.Equal(T0, watcher.Since);
+        Assert.Equal(1, watcher.Changes);
+    }
+
+    [Fact]
+    public void Moving_to_another_server_while_dormant_closes_the_old_one_at_its_last_packet()
+    {
+        var watcher = new InstanceWatcher(
+            dormantAfter: TimeSpan.FromSeconds(15), silence: TimeSpan.FromSeconds(45));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Data(ServerA, T0.AddSeconds(20)));
+
+        watcher.Observe(Syn(ServerB, T0.AddSeconds(40)));
+
+        // The old instance stopped when its traffic did, not when the new one started.
+        Assert.Equal(TimeSpan.FromSeconds(20), watcher.LastDuration);
+        Assert.Equal(T0.AddSeconds(40), watcher.Since);
+        Assert.Equal(ServerB, watcher.Server);
+    }
+
+    [Fact]
+    public void The_countdown_to_ending_is_reported()
+    {
+        var watcher = new InstanceWatcher(silence: TimeSpan.FromSeconds(45));
+        watcher.Observe(Syn(ServerA, T0));
+
+        Assert.Equal(TimeSpan.FromSeconds(25), watcher.UntilEnd(T0.AddSeconds(20)));
+        Assert.Equal(TimeSpan.Zero, watcher.UntilEnd(T0.AddSeconds(90)));
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 

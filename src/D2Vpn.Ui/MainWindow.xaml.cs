@@ -263,6 +263,26 @@ public partial class MainWindow : Window
         return null;
     }
 
+    /// <summary>The arrows on the timer page.</summary>
+    private void OnTimerNudge(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }
+            || _model.Selected is not TimerSettingsViewModel timer)
+        {
+            return;
+        }
+
+        // Five at a time. These are waits on a heartbeat arriving every three seconds, so a second
+        // either way is below the resolution of what they are measuring.
+        switch (tag)
+        {
+            case "hide-": timer.NudgeHide(-5); break;
+            case "hide+": timer.NudgeHide(5); break;
+            case "end-": timer.NudgeEnd(-5); break;
+            case "end+": timer.NudgeEnd(5); break;
+        }
+    }
+
     private void OnReleaseAll(object sender, RoutedEventArgs e) => _model.ReleaseAll();
 
     private void OnReset(object sender, RoutedEventArgs e)
