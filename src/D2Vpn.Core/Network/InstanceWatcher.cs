@@ -48,7 +48,17 @@ public enum InstanceEndReason
     /// The threshold has measurement behind it rather than being a guess: 30k carries a 73-byte
     /// heartbeat every 3.02 s (finding 50), so half a minute of nothing is ten missed beats.
     /// </remarks>
-    WentQuiet
+    WentQuiet,
+
+    /// <summary>
+    /// Another instance began before this one had ended.
+    /// </summary>
+    /// <remarks>
+    /// Travelling straight from one activity to another. It was counted as having gone quiet, which
+    /// is where the traffic stopped but not why the instance ended - and it inflated the
+    /// gone-quiet tally with endings that were nothing of the sort.
+    /// </remarks>
+    Superseded
 }
 
 /// <summary>What happened when the instance changed.</summary>
@@ -186,6 +196,9 @@ public sealed class InstanceWatcher
 
     /// <summary>How many of those ended because the group went quiet rather than closed.</summary>
     public int QuietEnds { get; private set; }
+
+    /// <summary>How many ended because another instance began before they had.</summary>
+    public int Superseded { get; private set; }
 
     /// <summary>How long the group has carried nothing, for a front end to show.</summary>
     public TimeSpan Quiet(DateTimeOffset now) =>
@@ -414,7 +427,8 @@ public sealed class InstanceWatcher
         // not when the new one started.
         if (Since is not null)
         {
-            End(priorTraffic, InstanceEndReason.WentQuiet);
+            Superseded++;
+            End(priorTraffic, InstanceEndReason.Superseded);
         }
 
         var previous = _current;

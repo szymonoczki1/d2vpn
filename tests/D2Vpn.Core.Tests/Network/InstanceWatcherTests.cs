@@ -632,6 +632,25 @@ public class InstanceWatcherTests
         Assert.Equal(ServerB, watcher.Server);
     }
 
+    [Fact]
+    public void An_instance_replaced_by_another_is_superseded_not_quiet()
+    {
+        // Travelling straight from one activity to another. It was counted as having gone quiet,
+        // which is where the traffic stopped but not why the instance ended - and it put endings
+        // in the gone-quiet tally that were nothing of the sort.
+        var watcher = new InstanceWatcher();
+        InstanceEndReason? reason = null;
+        watcher.Ended += (_, r) => reason = r;
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Syn(ServerB, T0.AddSeconds(40)));
+
+        Assert.Equal(InstanceEndReason.Superseded, reason);
+        Assert.Equal(1, watcher.Superseded);
+        Assert.Equal(0, watcher.QuietEnds);
+        Assert.Equal(1, watcher.Ends);
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 

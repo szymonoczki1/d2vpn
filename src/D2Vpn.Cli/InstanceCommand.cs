@@ -116,12 +116,17 @@ internal static class InstanceCommand
                 // followed by seventy seconds of nothing ended no instance at all.
                 watcher.Tick(now);
 
-                Console.Write($"\r{(now - started).TotalSeconds,6:N0}s  "
+                // Padded to a fixed width. The status is rewritten over itself with a carriage
+                // return, so a shorter line leaves the tail of a longer one behind - "not in one"
+                // replacing "instance 50.9s hidden, 25s left" printed the packet count twice.
+                var line = $"{(now - started).TotalSeconds,6:N0}s  "
                     + $"{State(watcher, now)}  "
                     + $"changes {watcher.Changes}  "
                     + $"ends {watcher.Ends}  "
                     + $"quiet {watcher.Quiet(now).TotalSeconds,5:F1}s  "
-                    + $"packets {packets}   ");
+                    + $"packets {packets}";
+
+                Console.Write("\r" + line.PadRight(Width));
 
                 await Task.Delay(200, cancellationToken).ConfigureAwait(false);
             }
@@ -142,8 +147,11 @@ internal static class InstanceCommand
         Console.WriteLine();
         Console.WriteLine();
         Console.WriteLine($"instance changes  : {watcher.Changes}");
-        Console.WriteLine($"instances ended   : {watcher.Ends}"
-            + (watcher.QuietEnds > 0 ? $"  ({watcher.QuietEnds} by going quiet)" : string.Empty));
+        Console.WriteLine($"instances ended   : {watcher.Ends}");
+        Console.WriteLine("  by a close      : "
+            + $"{watcher.Ends - watcher.QuietEnds - watcher.Superseded}");
+        Console.WriteLine($"  by going quiet  : {watcher.QuietEnds}");
+        Console.WriteLine($"  superseded      : {watcher.Superseded}");
         Console.WriteLine($"ignored after rc  : {watcher.Suppressed}");
         Console.WriteLine($"packets seen      : {packets}");
 
@@ -186,6 +194,15 @@ internal static class InstanceCommand
             return new TimerConfig();
         }
     }
+
+    /// <summary>
+    /// How wide the status line is held, so it always covers whatever it replaces.
+    /// </summary>
+    /// <remarks>
+    /// Fixed rather than read from the console, which reports zero when output is redirected and
+    /// would then pad to nothing.
+    /// </remarks>
+    private const int Width = 96;
 
     /// <summary>In an instance and for how long, or not in one.</summary>
     private static string State(InstanceWatcher watcher, DateTimeOffset now)
