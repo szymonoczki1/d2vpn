@@ -181,6 +181,14 @@ public class InstanceWatcherTests
         watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
         watcher.Observe(Port(ServerA, T0.AddSeconds(1), 50002, TcpControlFlags.Syn));
 
+        // Both carrying traffic up to the close. A connection silent for half a minute would have
+        // been pruned, and rightly - this port carries a heartbeat every three seconds.
+        for (var second = 3; second < 30; second += 3)
+        {
+            watcher.Observe(Port(ServerA, T0.AddSeconds(second), 50001, TcpControlFlags.Ack));
+            watcher.Observe(Port(ServerA, T0.AddSeconds(second), 50002, TcpControlFlags.Ack));
+        }
+
         watcher.Observe(Port(ServerA, T0.AddSeconds(30), 50001,
             TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound));
 
@@ -203,8 +211,9 @@ public class InstanceWatcherTests
 
         watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
         watcher.Observe(Port(ServerA, T0.AddSeconds(2), 50002, TcpControlFlags.Ack));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(14), 50002, TcpControlFlags.Ack));
 
-        watcher.Observe(Port(ServerA, T0.AddSeconds(20), 50001,
+        watcher.Observe(Port(ServerA, T0.AddSeconds(16), 50001,
             TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound));
 
         Assert.True(watcher.InInstance);
@@ -227,6 +236,49 @@ public class InstanceWatcherTests
 
         Assert.True(watcher.InInstance);
         Assert.Equal(0, watcher.Ends);
+    }
+
+    [Fact]
+    public void A_reset_connection_does_not_block_a_later_departure()
+    {
+        // The bug the connection tracking introduced. A reset leaves no FIN, so without pruning its
+        // port stayed in the live set for ever, the set never emptied, and every leave after one
+        // reconnect fell through to the thirty-second silence instead of being noticed at once.
+        var watcher = new InstanceWatcher(portIdle: TimeSpan.FromSeconds(10));
+
+        watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(5), 50001, TcpControlFlags.Reset,
+            PacketDirection.Inbound));
+
+        // The game reopens on a new port and carries on; the reset one is never heard from again.
+        watcher.Observe(Port(ServerA, T0.AddSeconds(6), 50002, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(20), 50002, TcpControlFlags.Ack));
+
+        watcher.Observe(Port(ServerA, T0.AddSeconds(25), 50002,
+            TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Ends);
+    }
+
+    [Fact]
+    public void A_connection_merely_between_packets_is_not_pruned()
+    {
+        // Pruning must not mistake a quiet moment for a dead socket, or closing the other one would
+        // end the instance early.
+        var watcher = new InstanceWatcher(portIdle: TimeSpan.FromSeconds(10));
+
+        watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(1), 50002, TcpControlFlags.Syn));
+
+        // Both still carrying traffic, a few seconds apart as the heartbeat does.
+        watcher.Observe(Port(ServerA, T0.AddSeconds(6), 50001, TcpControlFlags.Ack));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(7), 50002, TcpControlFlags.Ack));
+
+        watcher.Observe(Port(ServerA, T0.AddSeconds(8), 50002,
+            TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound));
+
+        Assert.True(watcher.InInstance);
     }
 
     private static PacketInfo Port(

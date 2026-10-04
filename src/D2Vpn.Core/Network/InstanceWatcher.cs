@@ -79,20 +79,31 @@ public sealed class InstanceWatcher
     private readonly Dictionary<IPAddress, DateTimeOffset> _lastSeen = [];
 
     /// <summary>
-    /// Local ports with a live connection to each server.
+    /// Local ports with a live connection to each server, and when each was last heard from.
     /// </summary>
     /// <remarks>
-    /// The instance ends when the <b>last</b> connection to its server closes, not the first. A
-    /// capture of leaving an activity showed two servers closing one connection each, which is
-    /// enough to say the game holds more than one at a time - so a single FIN says a socket ended,
-    /// not that the instance did.
-    ///
+    /// <para>
+    /// The instance ends when the <b>last</b> connection to its server closes, not the first. It is
+    /// not established that the game ever holds several at once - an earlier reading of two
+    /// captures said so and was wrong, they were separate events four hundred seconds apart - so
+    /// this is a guard rather than a response to observed behaviour. It costs nothing if there is
+    /// only ever one connection, and makes the question not need an answer.
+    /// </para>
+    /// <para>
+    /// Timestamped because a connection can stop existing without saying so. A reset leaves no FIN
+    /// behind, so without pruning, one reconnect would leave a port in here permanently, the set
+    /// would never empty, and every later departure would fall through to the silence backstop
+    /// instead of being noticed at once.
+    /// </para>
+    /// <para>
     /// Populated from any packet rather than only from a SYN, so a connection that was already
     /// open when this started watching is still counted.
+    /// </para>
     /// </remarks>
-    private readonly Dictionary<IPAddress, HashSet<int>> _live = [];
+    private readonly Dictionary<IPAddress, Dictionary<int, DateTimeOffset>> _live = [];
     private readonly TimeSpan _forget;
     private readonly TimeSpan _silence;
+    private readonly TimeSpan _portIdle;
     private readonly Lock _gate = new();
 
     private DateTimeOffset _lastTraffic;
@@ -110,10 +121,17 @@ public sealed class InstanceWatcher
     /// How long the group may carry nothing at all before the instance is taken to have ended.
     /// Defaults to 30 s, which is ten of the 3.02 s heartbeats measured in finding 50.
     /// </param>
-    public InstanceWatcher(TimeSpan? forget = null, TimeSpan? silence = null)
+    /// <param name="portIdle">
+    /// How long one connection may carry nothing before it is taken to be gone. Three of the
+    /// 3.02 s heartbeats by default, which is what distinguishes a connection that was reset from
+    /// one that is merely between packets.
+    /// </param>
+    public InstanceWatcher(
+        TimeSpan? forget = null, TimeSpan? silence = null, TimeSpan? portIdle = null)
     {
         _forget = forget ?? TimeSpan.FromSeconds(20);
         _silence = silence ?? TimeSpan.FromSeconds(30);
+        _portIdle = portIdle ?? TimeSpan.FromSeconds(10);
     }
 
     /// <summary>When the current instance started, or null if nothing has been seen yet.</summary>
@@ -211,7 +229,8 @@ public sealed class InstanceWatcher
                 _live[packet.RemoteAddress] = ports = [];
             }
 
-            ports.Add(packet.LocalPort);
+            ports[packet.LocalPort] = packet.Timestamp;
+            Prune(ports, packet.Timestamp);
 
             var known = _lastSeen.TryGetValue(packet.RemoteAddress, out var seen)
                 && packet.Timestamp - seen <= _forget;
@@ -260,7 +279,10 @@ public sealed class InstanceWatcher
             // A server being talked to again starts with a clean slate; anything left over belongs
             // to the instance that has just been replaced.
             _live.Remove(packet.RemoteAddress);
-            _live[packet.RemoteAddress] = [packet.LocalPort];
+            _live[packet.RemoteAddress] = new Dictionary<int, DateTimeOffset>
+            {
+                [packet.LocalPort] = packet.Timestamp
+            };
 
             Raise(new InstanceChange(packet.Timestamp, packet.RemoteAddress, previous, reason));
         }
@@ -296,6 +318,23 @@ public sealed class InstanceWatcher
             QuietEnds++;
             End(_lastTraffic, InstanceEndReason.WentQuiet);
             return true;
+        }
+    }
+
+    /// <summary>Drops connections that have gone quiet for long enough to be gone.</summary>
+    private void Prune(Dictionary<int, DateTimeOffset> ports, DateTimeOffset now)
+    {
+        if (ports.Count < 2)
+        {
+            return;
+        }
+
+        foreach (var (port, seen) in ports.ToArray())
+        {
+            if (now - seen > _portIdle)
+            {
+                ports.Remove(port);
+            }
         }
     }
 

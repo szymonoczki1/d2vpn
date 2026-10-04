@@ -2930,16 +2930,19 @@ instance server** on port 30000:
 205.209.x.x -> 10.x.x.x   TCP   40   30000 -> 62933 [FIN, ACK] Seq=42279 Ack=13724 Win=76800 Len=0
 ```
 
-Two connections closing, **two different servers**, both from port 30000 to different local ports.
+**These are two separate departures**, roughly four hundred seconds apart - frames 131186 and
+179637, at t=312.9 and t=699.5. One FIN each, from a different server each time.
 
-That last detail matters more than it looks: the game holds connections to more than one 30k server
-at a time. So a single FIN says a socket ended, not that the instance did - and the instance is
-taken to have ended only when the **last** connection to its server closes. Getting that wrong
-stops the timer mid-activity with no way back, because reopening to a server already known does not
-restart it.
+An earlier reading of this took them for one event and concluded the game holds connections to
+several 30k servers at once. **It does not say that.** Nothing here establishes how many
+connections exist at a time, and the detector does not depend on knowing: it ends the instance when
+the **last** connection to its server closes, which is correct for one connection and for several.
 
-A reset deliberately does not remove its connection from that set, so this tool resetting every
-socket cannot empty it and be mistaken for the server closing.
+A reset does not count as a close, so this tool resetting a socket cannot be mistaken for the server
+closing. Connections are instead forgotten after ten seconds of silence - three missed heartbeats -
+because a reset leaves no FIN behind, and without that one reconnect would leave a port counted for
+ever, the set would never empty, and every later departure would fall through to the silence
+backstop rather than being noticed at once.
 
 **A reconnect produces no equivalent inbound traffic at all.** This tool's reconnect injects RST,
 and leaving sends FIN - so the two are distinguishable by flag, which is what lets the timer stop
