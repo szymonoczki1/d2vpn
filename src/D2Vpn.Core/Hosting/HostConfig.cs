@@ -104,6 +104,77 @@ public sealed record PauseConfig
     public int SafetyTimeoutS { get; init; } = 30;
 }
 
+/// <summary>Which corner of the game window the overlay sits in.</summary>
+public enum OverlayCorner
+{
+    /// <summary>Top left.</summary>
+    TopLeft,
+
+    /// <summary>Top right.</summary>
+    TopRight,
+
+    /// <summary>Bottom left.</summary>
+    BottomLeft,
+
+    /// <summary>Bottom right.</summary>
+    BottomRight
+}
+
+/// <summary>
+/// The in-game overlay: what it shows, where, and when.
+/// </summary>
+/// <remarks>
+/// <para>
+/// It appears only while the watched process owns the foreground window, so it is invisible on the
+/// desktop and while anything else is in front. It never takes focus and never takes a click - it
+/// is a layered, transparent, click-through window - so it cannot swallow an input meant for the
+/// game.
+/// </para>
+/// <para>
+/// <b>It cannot draw over exclusive fullscreen.</b> Nothing outside the game can: the display is
+/// owned by that process and a composited window is not in the chain. Borderless windowed is the
+/// supported arrangement, and is what most people run anyway for alt-tabbing.
+/// </para>
+/// </remarks>
+public sealed record OverlayConfig
+{
+    /// <summary>Whether to show it at all.</summary>
+    public bool Enabled { get; init; } = true;
+
+    /// <summary>The process it follows, without the extension.</summary>
+    public string Process { get; init; } = "destiny2";
+
+    /// <summary>Which corner of that window it sits in.</summary>
+    public OverlayCorner Corner { get; init; } = OverlayCorner.TopRight;
+
+    /// <summary>Gap from the window's vertical edge, in pixels.</summary>
+    public int MarginX { get; init; } = 28;
+
+    /// <summary>Gap from the window's horizontal edge, in pixels.</summary>
+    public int MarginY { get; init; } = 28;
+
+    /// <summary>Text size multiplier, for a 1440p screen or a small one.</summary>
+    public double Scale { get; init; } = 1.0;
+
+    /// <summary>How solid the panel behind the text is, from 0 to 1.</summary>
+    public double Opacity { get; init; } = 0.72;
+
+    /// <summary>Show how long each module has been held.</summary>
+    public bool ShowTimers { get; init; } = true;
+
+    /// <summary>
+    /// Show modules that are hosted but not currently held.
+    /// </summary>
+    /// <remarks>
+    /// Off by default. The overlay exists to answer "what is on right now", and a list of nine
+    /// modules that are mostly off answers it worse than a list of the one that is.
+    /// </remarks>
+    public bool ShowIdle { get; init; }
+
+    /// <summary>Disappear entirely when nothing is held, rather than showing an empty panel.</summary>
+    public bool HideWhenIdle { get; init; } = true;
+}
+
 /// <summary>A key bound to <c>reset</c> on one module.</summary>
 public sealed record ResetBind
 {
@@ -159,11 +230,17 @@ public sealed record HostConfig
     /// <summary>Keys bound to reconnect on a module.</summary>
     public IReadOnlyList<ResetBind> ResetBinds { get; init; } = [];
 
+    /// <summary>The in-game overlay.</summary>
+    public OverlayConfig Overlay { get; init; } = new();
+
     private static readonly JsonSerializerOptions ReadOptions = new()
     {
         PropertyNameCaseInsensitive = true,
         ReadCommentHandling = JsonCommentHandling.Skip,
-        AllowTrailingCommas = true
+        AllowTrailingCommas = true,
+
+        // "topRight" rather than 1. A config is written by hand and read by a person.
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
     private static readonly JsonSerializerOptions WriteOptions = new()
@@ -173,6 +250,7 @@ public sealed record HostConfig
         // Match the template. The reader is case-insensitive either way, but a file the window
         // rewrites should not come back in different casing from the one it was given.
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
@@ -347,6 +425,11 @@ public sealed record HostConfig
         return this with
         {
             PollMs = PollMs is < 1 or > 1000 ? 1 : PollMs,
+            Overlay = Overlay with
+            {
+                Scale = Overlay.Scale is < 0.5 or > 4 ? 1.0 : Overlay.Scale,
+                Opacity = Overlay.Opacity is < 0 or > 1 ? 0.72 : Overlay.Opacity
+            },
             Modules = modules,
             Pause = pause,
             ReleaseBind = release,
@@ -384,6 +467,18 @@ public sealed record HostConfig
         if (PollMs is < 1 or > 1000)
         {
             throw new ArgumentException($"pollMs {PollMs} is outside 1-1000");
+        }
+
+        if (Overlay.Scale is < 0.5 or > 4)
+        {
+            throw new ArgumentException(
+                $"overlay scale {Overlay.Scale} is outside 0.5-4");
+        }
+
+        if (Overlay.Opacity is < 0 or > 1)
+        {
+            throw new ArgumentException(
+                $"overlay opacity {Overlay.Opacity} is outside 0-1");
         }
 
         // Parsing every name up front turns a typo into one clear error rather than a module that

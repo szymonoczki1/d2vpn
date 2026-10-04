@@ -87,6 +87,30 @@ public static class ConfigTemplate
       // Releases every module at once, including pause. Worth binding somewhere easy to hit.
       "releaseBind": "f12",
 
+      // The in-game overlay: a small panel saying what is held and for how long. It appears only
+      // while the game owns the foreground window, never takes focus and never takes a click.
+      //
+      // It cannot draw over EXCLUSIVE FULLSCREEN - nothing outside the game can, since that
+      // process owns the display. Use borderless windowed.
+      //
+      // corner      topLeft | topRight | bottomLeft | bottomRight
+      // scale       text size multiplier, 0.5 to 4
+      // opacity     how solid the panel behind the text is, 0 to 1
+      // showIdle    also list modules that are hosted but not held
+      // hideWhenIdle  disappear entirely when nothing is held
+      "overlay": {
+        "enabled": true,
+        "process": "destiny2",
+        "corner": "topRight",
+        "marginX": 28,
+        "marginY": 28,
+        "scale": 1.0,
+        "opacity": 0.72,
+        "showTimers": true,
+        "showIdle": false,
+        "hideWhenIdle": true
+      },
+
       // Reconnect. It is its own entry in the window - addressed as 30k-rc over the pipe - but its
       // key is stored here, under the group, because the sampler it needs shares that group's
       // packet handle rather than opening one of its own.

@@ -81,8 +81,21 @@ public partial class App : Application
                 : $"fixed {warnings.Count} config problems: {string.Join("; ", warnings)}");
         }
 
-        MainWindow = new MainWindow(model);
+        var main = new MainWindow(model);
+
+        MainWindow = main;
         MainWindow.Show();
+
+        // After Show, because a window cannot own another until it has been shown itself. Only when
+        // asked for, and only when there is something to report: an overlay over a session that
+        // hosts nothing would be an empty panel following the game around.
+        if (config.Overlay.Enabled && model.Modules.Count > 0)
+        {
+            var overlay = new OverlayViewModel(model.Modules, config.Overlay);
+
+            model.OverlayTick += overlay.Refresh;
+            main.AttachOverlay(new OverlayWindow(overlay, config.Overlay));
+        }
     }
 }
 

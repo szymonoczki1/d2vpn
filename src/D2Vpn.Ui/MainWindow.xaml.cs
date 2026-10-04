@@ -92,6 +92,22 @@ public partial class MainWindow : Window
             ? WindowState.Normal
             : WindowState.Maximized;
 
+    private OverlayWindow? _overlay;
+
+    /// <summary>
+    /// Takes ownership of the overlay, so it closes with this window.
+    /// </summary>
+    /// <remarks>
+    /// Owner rather than a second top-level window: without it the application would keep running
+    /// with an invisible overlay after the main window closed, since something would still be open.
+    /// </remarks>
+    public void AttachOverlay(OverlayWindow overlay)
+    {
+        _overlay = overlay;
+        overlay.Owner = this;
+        overlay.Begin();
+    }
+
     private void OnReleaseAll(object sender, RoutedEventArgs e) => _model.ReleaseAll();
 
     private void OnReset(object sender, RoutedEventArgs e)
@@ -229,6 +245,7 @@ public partial class MainWindow : Window
         CancelCapture();
         _live.Stop();
         _refresh.Stop();
+        _overlay?.Close();
         _model.Dispose();
         base.OnClosed(e);
     }

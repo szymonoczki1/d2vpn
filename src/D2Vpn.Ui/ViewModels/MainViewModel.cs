@@ -109,6 +109,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// <summary>Where the config was loaded from.</summary>
     public string ConfigPath => _configPath;
 
+    /// <summary>The overlay's settings, as loaded.</summary>
+    public OverlayConfig Overlay => _config.Overlay;
+
     /// <summary>
     /// Opens the handles, binds the keys and starts serving. Returns false if it could not.
     /// </summary>
@@ -253,7 +256,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
 
         RaiseShared();
+        OverlayTick?.Invoke();
     }
+
+    /// <summary>
+    /// Raised on the fast tick, for anything else that shows a running timer.
+    /// </summary>
+    /// <remarks>
+    /// The overlay rides this rather than keeping a timer of its own, so the two cannot drift apart
+    /// and say different things about the same hold.
+    /// </remarks>
+    public event Action? OverlayTick;
 
     private void RaiseShared()
     {

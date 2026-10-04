@@ -1,0 +1,62 @@
+<Window x:Class="D2Vpn.Ui.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="d2vpn overlay"
+        SizeToContent="WidthAndHeight"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Focusable="False"
+        IsHitTestVisible="False"
+        UseLayoutRounding="True"
+        TextOptions.TextRenderingMode="ClearType">
+
+    <!--
+        SizeToContent, because the panel is only as large as what is on. A fixed-size overlay would
+        either clip a long list or leave a rectangle of dimmed game on screen permanently.
+    -->
+    <Border x:Name="Panel"
+            CornerRadius="8"
+            Padding="14,10"
+            MinWidth="150">
+        <Border.Background>
+            <SolidColorBrush Color="{StaticResource RailColor}" Opacity="0.72" />
+        </Border.Background>
+
+        <StackPanel x:Name="Root">
+            <ItemsControl ItemsSource="{Binding Lines}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                     Margin="0,0,9,0"
+                                     Fill="{Binding Dot}" />
+
+                            <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                       Foreground="{StaticResource TextBrush}"
+                                       FontFamily="{StaticResource UiFont}"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center" />
+
+                            <TextBlock Grid.Column="2" Text="{Binding Held}"
+                                       Foreground="{StaticResource HoldingBrush}"
+                                       FontFamily="{StaticResource MonoFont}"
+                                       FontWeight="Bold"
+                                       Margin="16,0,0,0"
+                                       VerticalAlignment="Center" />
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </Border>
+</Window>
