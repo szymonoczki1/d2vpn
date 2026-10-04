@@ -2967,6 +2967,21 @@ own observation point - where `ConnectionSampler` already sits, before the modul
 packet - that cannot happen. The standalone `d2vpn instance` command is a sniffer and does have
 this blind spot; it is a measurement tool, not the shipped path.
 
+### The silence backstop shipped as dead code
+
+A run that error-coded on purpose and then sat for **over seventy seconds with no packets at all**
+ended no instance. The rule was not the problem: `Tick` was never called, so silence was never
+checked. The giveaway was in the run's own output - no `quiet` column, because the edit that added
+the call and the edit that added the column were the same one, and it failed before writing.
+
+Two of the three problems reported from that run were this single bug. The third - leaving shortly
+after a reconnect with no FIN arriving - is precisely what the backstop exists for, so it was the
+same bug wearing a different hat.
+
+The unit tests covered `Tick` thoroughly, and every one of them called it directly. **A rule that is
+never run is worse than one with no measurement behind it, because nothing goes red.**
+
+
 ### Still unknown
 
 Whether a FIN from the instance server ever arrives during ordinary play - a connection cycling for
