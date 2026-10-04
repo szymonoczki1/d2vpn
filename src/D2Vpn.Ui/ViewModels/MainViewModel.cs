@@ -475,38 +475,25 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>Writes the current binds and switch states back to the config file.</summary>
     /// <remarks>
+    /// <para>
     /// Rebuilt from the view models rather than patched, so what is written is what the window
     /// shows. Pause is written back to its own section, since that is where it came from.
+    /// </para>
+    /// <para>
+    /// Only the parts this session actually hosts. The settings pages are reachable when nothing
+    /// started - that is deliberate, it is when you most want them - and rebuilding the module list
+    /// from an empty sidebar would write that emptiness over a working file. One click on a
+    /// settings page after a failed start was enough to erase every module from the config.
+    /// </para>
     /// </remarks>
     public void Save()
     {
         try
         {
-            var pause = Modules.FirstOrDefault(m => m.Name == PauseName);
-
-            _config = _config with
+            if (!Failed)
             {
-                Modules = [.. Modules
-                    .Where(m => m.Kind == ModuleKind.Hold)
-                    .Select(m => m.ToConfig())],
-                ResetBinds = [.. Modules
-                    .Where(m => m.Kind == ModuleKind.Trigger && m.BindKey is not null)
-                    .Select(m => new ResetBind
-                    {
-                        Module = GroupOf(m.Name),
-                        Bind = KeyName.Describe(m.BindKey!.Value)
-                    })],
-                Pause = pause is null
-                    ? _config.Pause
-                    : _config.Pause with
-                    {
-                        Bind = pause.BindKey is { } key ? KeyName.Describe(key) : null,
-
-                        // Not Enabled, which is whether pause is hosted at all. A switch that
-                        // unhosted its own control could not be switched back.
-                        ModuleEnabled = pause.IsEnabled
-                    }
-            };
+                _config = WithHostedState(_config);
+            }
 
             File.WriteAllText(_configPath, _config.ToJson());
             Flash($"saved {Path.GetFileName(_configPath)}");
@@ -515,6 +502,42 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         {
             Status = $"could not save {Path.GetFileName(_configPath)}: {ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// Puts the binds and switch states the window is showing back into a config.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Save"/> so there is one obvious place that reads the view models,
+    /// and one obvious condition under which it is allowed to run.
+    /// </remarks>
+    private HostConfig WithHostedState(HostConfig config)
+    {
+        var pause = Modules.FirstOrDefault(m => m.Name == PauseName);
+
+        return config with
+        {
+            Modules = [.. Modules
+                .Where(m => m.Kind == ModuleKind.Hold)
+                .Select(m => m.ToConfig())],
+            ResetBinds = [.. Modules
+                .Where(m => m.Kind == ModuleKind.Trigger && m.BindKey is not null)
+                .Select(m => new ResetBind
+                {
+                    Module = GroupOf(m.Name),
+                    Bind = KeyName.Describe(m.BindKey!.Value)
+                })],
+            Pause = pause is null
+                ? config.Pause
+                : config.Pause with
+                {
+                    Bind = pause.BindKey is { } key ? KeyName.Describe(key) : null,
+
+                    // Not Enabled, which is whether pause is hosted at all. A switch that
+                    // unhosted its own control could not be switched back.
+                    ModuleEnabled = pause.IsEnabled
+                }
+        };
     }
 
     /// <summary>The key a config bound to a reconnect, found by its group.</summary>
