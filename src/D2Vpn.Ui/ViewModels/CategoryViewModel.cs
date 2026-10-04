@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 
 using D2Vpn.Core.Hosting;
 
@@ -46,21 +46,24 @@ public sealed class CategoryViewModel : ObservableObject
     /// <summary>What to say when this category holds nothing.</summary>
     public string EmptyMessage { get; }
 
-    /// <summary>The modules in this category, in host order.</summary>
-    public ObservableCollection<ModuleViewModel> Modules { get; } = [];
+    /// <summary>What this category lists, in order.</summary>
+    public ObservableCollection<SidebarItem> Items { get; } = [];
 
     /// <summary>True when there is nothing to list.</summary>
-    public bool IsEmpty => Modules.Count == 0;
+    public bool IsEmpty => Items.Count == 0;
 
-    /// <summary>How many of this category's modules are on, for the rail badge.</summary>
-    public int ActiveCount => Modules.Count(m => m.IsActive);
+    /// <summary>How many of this category's entries are on, for the rail badge.</summary>
+    public int ActiveCount => Items.Count(m => m.IsActive);
 
     /// <summary>True when any of them is on.</summary>
     public bool HasActive => ActiveCount > 0;
 
-    /// <summary>The module last looked at here, so switching categories does not lose your place.</summary>
-    public ModuleViewModel? Selected { get; set; }
+    /// <summary>What was last looked at here, so switching categories does not lose your place.</summary>
+    public SidebarItem? Selected { get; set; }
 
     /// <summary>Re-reads what the modules report.</summary>
     public void Refresh() => RaiseAll(nameof(ActiveCount), nameof(HasActive), nameof(IsEmpty));
+
+    /// <summary>The name, so a rail entry announces itself usefully. See SidebarItem.ToString.</summary>
+    public override string ToString() => Name;
 }

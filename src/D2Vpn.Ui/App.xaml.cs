@@ -89,12 +89,22 @@ public partial class App : Application
         // After Show, because a window cannot own another until it has been shown itself. Only when
         // asked for, and only when there is something to report: an overlay over a session that
         // hosts nothing would be an empty panel following the game around.
-        if (config.Overlay.Enabled && model.Modules.Count > 0)
+        if (model.Modules.Count > 0)
         {
-            var overlay = new OverlayViewModel(model.Modules, config.Overlay);
+            var overlayModel = new OverlayViewModel(model.Modules, config.Overlay);
+            var overlay = new OverlayWindow(overlayModel, config.Overlay);
 
-            model.OverlayTick += overlay.Refresh;
-            main.AttachOverlay(new OverlayWindow(overlay, config.Overlay));
+            model.OverlayTick += overlayModel.Refresh;
+
+            // Created even when disabled, so turning it on in the settings page takes effect
+            // without restarting; the window itself stays hidden until it is wanted.
+            model.OverlayChanged += updated =>
+            {
+                overlayModel.Apply(updated);
+                overlay.Apply(updated);
+            };
+
+            main.AttachOverlay(overlay);
         }
     }
 }

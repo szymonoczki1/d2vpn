@@ -3,8 +3,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 
+using D2Vpn.Core.Hosting;
 using D2Vpn.Ui.ViewModels;
 
 namespace D2Vpn.Ui;
@@ -108,11 +110,164 @@ public partial class MainWindow : Window
         overlay.Begin();
     }
 
+    // ---- Overlay position preview -------------------------------------------------------
+
+    private bool _draggingChip;
+
+    /// <summary>
+    /// How many reference pixels one preview pixel stands for.
+    /// </summary>
+    /// <remarks>
+    /// The preview is 384x216 standing in for a 1920x1080 window, so exactly five. Margins are
+    /// stored in that reference window's pixels rather than as a fraction, because the overlay
+    /// anchors to a corner and a fixed inset from a corner is what stays put when the real window
+    /// is a different size.
+    /// </remarks>
+    private const double PreviewScale = OverlaySettingsViewModel.ReferenceWidth / 384.0;
+
+    private static Border? Chip(object sender) =>
+        sender is Canvas canvas && canvas.Children.Count > 0
+            ? canvas.Children[0] as Border
+            : null;
+
+    /// <summary>Puts the chip where the current settings say, when the page first appears.</summary>
+    private void OnPreviewLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Canvas canvas
+            || Chip(canvas) is not { } chip
+            || _model.Selected is not OverlaySettingsViewModel settings)
+        {
+            return;
+        }
+
+        var right = settings.Corner is OverlayCorner.TopRight or OverlayCorner.BottomRight;
+        var bottom = settings.Corner is OverlayCorner.BottomLeft or OverlayCorner.BottomRight;
+
+        Canvas.SetLeft(chip, right
+            ? canvas.Width - chip.Width - (settings.MarginX / PreviewScale)
+            : settings.MarginX / PreviewScale);
+
+        Canvas.SetTop(chip, bottom
+            ? canvas.Height - chip.Height - (settings.MarginY / PreviewScale)
+            : settings.MarginY / PreviewScale);
+    }
+
+    private void OnPreviewDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Canvas canvas)
+        {
+            return;
+        }
+
+        _draggingChip = true;
+        canvas.CaptureMouse();
+        MoveChip(canvas, e.GetPosition(canvas));
+    }
+
+    private void OnPreviewMove(object sender, MouseEventArgs e)
+    {
+        if (_draggingChip && sender is Canvas canvas)
+        {
+            MoveChip(canvas, e.GetPosition(canvas));
+        }
+    }
+
+    private void OnPreviewUp(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not Canvas canvas)
+        {
+            return;
+        }
+
+        _draggingChip = false;
+        canvas.ReleaseMouseCapture();
+        Commit(canvas);
+    }
+
+    /// <summary>Centres the chip on the pointer, kept inside the preview.</summary>
+    private static void MoveChip(Canvas canvas, Point at)
+    {
+        if (Chip(canvas) is not { } chip)
+        {
+            return;
+        }
+
+        Canvas.SetLeft(chip, Math.Clamp(at.X - (chip.Width / 2), 0, canvas.Width - chip.Width));
+        Canvas.SetTop(chip, Math.Clamp(at.Y - (chip.Height / 2), 0, canvas.Height - chip.Height));
+    }
+
+    /// <summary>Turns where the chip ended up into a corner and a pair of margins.</summary>
+    private void Commit(Canvas canvas)
+    {
+        if (Chip(canvas) is not { } chip
+            || _model.Selected is not OverlaySettingsViewModel settings)
+        {
+            return;
+        }
+
+        settings.PlaceAt(
+            Canvas.GetLeft(chip) * PreviewScale,
+            Canvas.GetTop(chip) * PreviewScale,
+            chip.Width * PreviewScale,
+            chip.Height * PreviewScale);
+    }
+
+    /// <summary>The arrows beside the numbers, for placing it more precisely than a drag can.</summary>
+    private void OnNudge(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }
+            || _model.Selected is not OverlaySettingsViewModel settings)
+        {
+            return;
+        }
+
+        // Ten at a time: one pixel per click is not a useful unit at this size, and the drag
+        // already covers coarse placement.
+        switch (tag)
+        {
+            case "x-": settings.NudgeX(-10); break;
+            case "x+": settings.NudgeX(10); break;
+            case "y-": settings.NudgeY(-10); break;
+            case "y+": settings.NudgeY(10); break;
+        }
+
+        SyncPreview();
+    }
+
+    /// <summary>Puts the chip back in step with the numbers after they change on their own.</summary>
+    private void SyncPreview()
+    {
+        if (FindPreviewCanvas(this) is { } canvas)
+        {
+            OnPreviewLoaded(canvas, new RoutedEventArgs());
+        }
+    }
+
+    private static Canvas? FindPreviewCanvas(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+
+            if (child is Canvas canvas)
+            {
+                return canvas;
+            }
+
+            if (FindPreviewCanvas(child) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
     private void OnReleaseAll(object sender, RoutedEventArgs e) => _model.ReleaseAll();
 
     private void OnReset(object sender, RoutedEventArgs e)
     {
-        if (_model.Selected is not { SupportsReset: true } module)
+        if (_model.SelectedModule is not { SupportsReset: true } module)
         {
             return;
         }
@@ -134,7 +289,7 @@ public partial class MainWindow : Window
         if (sender is not Button button
             || button.Tag is not string tag
             || !Enum.TryParse<BindSlot>(tag, out var slot)
-            || _model.Selected is not { } module)
+            || _model.SelectedModule is not { } module)
         {
             return;
         }

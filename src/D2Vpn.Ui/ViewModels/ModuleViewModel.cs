@@ -18,7 +18,7 @@ namespace D2Vpn.Ui.ViewModels;
 /// written back to it.
 /// </para>
 /// </remarks>
-public sealed class ModuleViewModel : ObservableObject
+public sealed class ModuleViewModel : SidebarItem
 {
     private readonly IControllable _control;
     private int? _bindKey;
@@ -49,8 +49,8 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>The config entry this came from, or null for a module with none, such as pause.</summary>
     public ModuleConfig? Config { get; }
 
-    /// <summary>The module's name, which is also how the control surface addresses it.</summary>
-    public string Name => _control.Name;
+    /// <inheritdoc/>
+    public override string Name => _control.Name;
 
     /// <summary>What shape of thing this is, which decides which panel the window shows.</summary>
     public ModuleKind Kind => _control.Kind;
@@ -90,7 +90,7 @@ public sealed class ModuleViewModel : ObservableObject
     /// <summary>
     /// Whether the module participates at all. Turning it off releases it first.
     /// </summary>
-    public bool IsEnabled
+    public override bool IsEnabled
     {
         get => _control.IsEnabled;
         set
@@ -115,7 +115,7 @@ public sealed class ModuleViewModel : ObservableObject
     public bool CanHold => IsEnabled && IsToggleable;
 
     /// <summary>Whether the module is holding. Setting this reaches the real module.</summary>
-    public bool IsActive
+    public override bool IsActive
     {
         get => _control.IsActive;
         set
@@ -259,11 +259,11 @@ public sealed class ModuleViewModel : ObservableObject
         ? Format(DateTimeOffset.UtcNow - since)
         : string.Empty;
 
-    /// <summary>True while there is something to count.</summary>
-    public bool IsTiming => _control.ActiveSince is not null;
+    /// <inheritdoc/>
+    public override bool IsTiming => _control.ActiveSince is not null;
 
-    /// <summary>Everything in the sidebar's second line: the key, and the timer while running.</summary>
-    public string SidebarDetail => IsTiming ? HeldLabel : BindLabel;
+    /// <inheritdoc/>
+    public override string SidebarDetail => IsTiming ? HeldLabel : BindLabel;
 
     /// <summary>
     /// Minutes once there are any, because a hold measured in minutes read as "212.4s".

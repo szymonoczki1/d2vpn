@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Interop;
@@ -102,7 +102,8 @@ public partial class OverlayWindow : Window
     /// </remarks>
     private void Reposition()
     {
-        var wanted = _gameInFront
+        var wanted = _config.Enabled
+            && _gameInFront
             && _gameBounds.IsReal
             && (!_config.HideWhenIdle || _model.HasLines);
 

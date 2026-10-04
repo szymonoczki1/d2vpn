@@ -35,7 +35,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private HotkeyWatcher? _hotkeys;
     private List<IModuleRunner> _runners = [];
     private HostConfig _config;
-    private ModuleViewModel? _selected;
+    private SidebarItem? _selected;
     private CategoryViewModel? _category;
     private string _status = string.Empty;
     private bool _failed;
@@ -73,18 +73,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 return;
             }
 
-            Selected = value.Selected is { } remembered && value.Modules.Contains(remembered)
+            Selected = value.Selected is { } remembered && value.Items.Contains(remembered)
                 ? remembered
-                : value.Modules.FirstOrDefault();
+                : value.Items.FirstOrDefault();
         }
     }
 
-    /// <summary>The module the detail panel is showing.</summary>
-    public ModuleViewModel? Selected
+    /// <summary>
+    /// What the detail panel is showing - a module, or a settings page.
+    /// </summary>
+    /// <remarks>
+    /// Typed as the common base so the panel can pick its layout from the runtime type through a
+    /// DataTemplate, rather than the window growing a switch on what it is displaying.
+    /// </remarks>
+    public SidebarItem? Selected
     {
         get => _selected;
         set => Set(ref _selected, value);
     }
+
+    /// <summary>The selected item when it is a module, for the handlers that need one.</summary>
+    public ModuleViewModel? SelectedModule => _selected as ModuleViewModel;
 
     /// <summary>A one-line description of what the session is doing.</summary>
     public string Status
@@ -208,10 +217,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         foreach (var module in Modules)
         {
-            (module.Kind == ModuleKind.Process ? system : traffic).Modules.Add(module);
+            (module.Kind == ModuleKind.Process ? system : traffic).Items.Add(module);
         }
 
-        foreach (var category in new[] { traffic, system })
+        // Settings is always listed, even when no module could start: the overlay is configurable
+        // whether or not anything is hosted, and a rail that vanished would be a dead end.
+        var settings = new CategoryViewModel(
+            "Settings", "IconSettings", "Nothing to configure here yet.");
+
+        settings.Items.Add(new OverlaySettingsViewModel(_config.Overlay, ApplyOverlay));
+
+        foreach (var category in new[] { traffic, system, settings })
         {
             if (!category.IsEmpty)
             {
@@ -351,6 +367,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
     /// <summary>The control-surface name game pause is hosted under.</summary>
     private const string PauseName = "pause";
+
+    /// <summary>
+    /// Takes a change from the overlay settings page: saves it, and applies it live.
+    /// </summary>
+    /// <remarks>
+    /// Applied before saving, so a setting that cannot be written to disk still takes effect for
+    /// this session rather than appearing to do nothing.
+    /// </remarks>
+    private void ApplyOverlay(OverlayConfig overlay)
+    {
+        _config = _config with { Overlay = overlay };
+        OverlayChanged?.Invoke(overlay);
+        Save();
+    }
+
+    /// <summary>Raised when the overlay's settings change, so the window can apply them.</summary>
+    public event Action<OverlayConfig>? OverlayChanged;
 
     /// <summary>Writes the current binds and switch states back to the config file.</summary>
     /// <remarks>
