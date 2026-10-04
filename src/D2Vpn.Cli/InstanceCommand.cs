@@ -71,15 +71,19 @@ internal static class InstanceCommand
         Console.WriteLine($"  {timer.EndAfterS}s of silence on the group         - the backstop, for an error");
         Console.WriteLine("    code, which drops the connection without closing it politely.");
         Console.WriteLine($"    That is {timer.EndAfterS / 3.02:F0} of the 3.02s heartbeats this port carries.");
-        Console.WriteLine("  nothing at all for a reconnect      - that is an RST, not a close");
+        Console.WriteLine("  the server resetting it             - the same departure, abruptly;");
+        Console.WriteLine("    leaving to orbit was measured doing either one");
         Console.WriteLine("");
         Console.WriteLine($"After {timer.HideAfterS}s of silence the timer is hidden but keeps running, so a");
         Console.WriteLine("loading screen does not cost the elapsed time. Coming back to the same");
         Console.WriteLine($"server inside {timer.EndAfterS}s continues it rather than starting again.");
         Console.WriteLine();
-        Console.WriteLine("Press your reconnect key during the run as well: it must NOT end the");
-        Console.WriteLine("instance. This is sniff mode, so it runs alongside 'd2vpn reconnect");
-        Console.WriteLine("30k' - a sniffing handle takes nothing away from a diverting one.");
+        Console.WriteLine("NOTE ON RECONNECT. A reset from the server now ends the instance, and a");
+        Console.WriteLine("reconnect injects one of those itself - so the two are told apart by");
+        Console.WriteLine("knowing which resets we caused, not by the packet. This command cannot");
+        Console.WriteLine("know: the reconnect is a separate process. Pressing it here WILL look");
+        Console.WriteLine("like leaving, and that is expected rather than a fault. In the app both");
+        Console.WriteLine("live in one process and the reset is discounted.");
         Console.WriteLine();
 
         if (log is not null)
@@ -148,8 +152,8 @@ internal static class InstanceCommand
         Console.WriteLine();
         Console.WriteLine($"instance changes  : {watcher.Changes}");
         Console.WriteLine($"instances ended   : {watcher.Ends}");
-        Console.WriteLine("  by a close      : "
-            + $"{watcher.Ends - watcher.QuietEnds - watcher.Superseded}");
+        Console.WriteLine("  by the server   : "
+            + $"{watcher.Ends - watcher.QuietEnds - watcher.Superseded}  (a close or a reset)");
         Console.WriteLine($"  by going quiet  : {watcher.QuietEnds}");
         Console.WriteLine($"  superseded      : {watcher.Superseded}");
         Console.WriteLine($"ignored after rc  : {watcher.Suppressed}");

@@ -155,21 +155,6 @@ public class InstanceWatcherTests
     }
 
     [Fact]
-    public void A_reset_does_not_end_the_instance()
-    {
-        // The case this whole distinction exists for: our own reconnect injects RST, and if that
-        // read as leaving then every reconnect would stop the timer.
-        var watcher = new InstanceWatcher();
-        watcher.Observe(Syn(ServerA, T0));
-
-        watcher.Observe(Packet(ServerA, T0.AddSeconds(30), TcpControlFlags.Reset,
-            PacketDirection.Inbound));
-
-        Assert.True(watcher.InInstance);
-        Assert.Equal(0, watcher.Ends);
-    }
-
-    [Fact]
     public void Closing_one_socket_of_several_does_not_end_it()
     {
         // The capture of leaving an activity showed two servers closing one connection each, so
@@ -229,6 +214,9 @@ public class InstanceWatcherTests
         watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
         watcher.Observe(Port(ServerA, T0.AddSeconds(1), 50002, TcpControlFlags.Syn));
 
+        // Ours, so they say nothing about the instance.
+        watcher.Suppress(T0.AddSeconds(9));
+
         watcher.Observe(Port(ServerA, T0.AddSeconds(10), 50001, TcpControlFlags.Reset,
             PacketDirection.Inbound));
         watcher.Observe(Port(ServerA, T0.AddSeconds(10), 50002, TcpControlFlags.Reset,
@@ -247,6 +235,9 @@ public class InstanceWatcherTests
         var watcher = new InstanceWatcher(portIdle: TimeSpan.FromSeconds(10));
 
         watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+
+        // Ours, so it is ignored rather than read as the server tearing the instance down.
+        watcher.Suppress(T0.AddSeconds(4));
         watcher.Observe(Port(ServerA, T0.AddSeconds(5), 50001, TcpControlFlags.Reset,
             PacketDirection.Inbound));
 
@@ -650,6 +641,77 @@ public class InstanceWatcherTests
         Assert.Equal(0, watcher.QuietEnds);
         Assert.Equal(1, watcher.Ends);
     }
+
+    [Fact]
+    public void A_server_reset_ends_the_instance_like_a_close()
+    {
+        // Measured: leaving to orbit sometimes produces inbound [RST, ACK] from the instance server
+        // instead of a FIN. Same departure, different teardown.
+        var watcher = new InstanceWatcher();
+        InstanceEndReason? reason = null;
+        watcher.Ended += (_, r) => reason = r;
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Rst(ServerA, T0.AddSeconds(90)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(InstanceEndReason.ServerReset, reason);
+        Assert.Equal(TimeSpan.FromSeconds(90), watcher.LastDuration);
+    }
+
+    [Fact]
+    public void A_reset_we_caused_is_still_ignored()
+    {
+        // The flag cannot separate a departure from this tool's own reconnect, and a capture cannot
+        // either - an injected inbound packet never reaches the adapter. Knowing which resets we
+        // caused is what separates them.
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Port(ServerA, T0, 50001, TcpControlFlags.Syn));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(1), 50002, TcpControlFlags.Syn));
+
+        watcher.Suppress(T0.AddSeconds(30));
+
+        watcher.Observe(Port(ServerA, T0.AddSeconds(30.2), 50001,
+            TcpControlFlags.Reset | TcpControlFlags.Ack, PacketDirection.Inbound));
+        watcher.Observe(Port(ServerA, T0.AddSeconds(30.3), 50002,
+            TcpControlFlags.Reset | TcpControlFlags.Ack, PacketDirection.Inbound));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(0, watcher.Ends);
+        Assert.Equal(2, watcher.Suppressed);
+    }
+
+    [Fact]
+    public void A_server_reset_after_the_grace_window_still_ends_it()
+    {
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Suppress(T0.AddSeconds(10));
+        watcher.Observe(Rst(ServerA, T0.AddSeconds(40)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Ends);
+    }
+
+    [Fact]
+    public void A_graceful_close_is_never_suppressed()
+    {
+        // Only a reset is ambiguous. A FIN is not something this tool injects, so leaving right
+        // after a reconnect must still be noticed.
+        var watcher = new InstanceWatcher();
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Suppress(T0.AddSeconds(30));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(30.5)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Ends);
+    }
+
+    private static PacketInfo Rst(IPAddress server, DateTimeOffset at) =>
+        Packet(server, at, TcpControlFlags.Reset | TcpControlFlags.Ack, PacketDirection.Inbound);
 
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);

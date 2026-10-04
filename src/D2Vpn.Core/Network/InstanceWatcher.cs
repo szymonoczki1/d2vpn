@@ -32,10 +32,27 @@ public enum InstanceEndReason
     /// </summary>
     /// <remarks>
     /// Measured: leaving an activity produced inbound <c>[FIN, ACK]</c> from the instance server on
-    /// port 30000. A reset does not - it produces RST, which is what this tool's own reconnect
-    /// injects, and is the reason the two can be told apart at all.
+    /// port 30000.
     /// </remarks>
     ServerClosed,
+
+    /// <summary>
+    /// The server tore the connection down abruptly.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Measured: leaving to orbit sometimes produces inbound <c>[RST, ACK]</c> from the instance
+    /// server instead of a FIN. Same departure, different teardown.
+    /// </para>
+    /// <para>
+    /// <b>This is also what this tool's own reconnect injects</b>, so the flag alone cannot tell
+    /// them apart - and a capture cannot settle it either, because an injected inbound packet is
+    /// delivered up the local stack and never reaches the adapter (finding 46). What separates them
+    /// is knowing which resets we caused, which is what <see cref="InstanceWatcher.Suppress"/> is for: an inbound
+    /// reset inside that window is ignored entirely.
+    /// </para>
+    /// </remarks>
+    ServerReset,
 
     /// <summary>
     /// The group went silent for long enough that the connection cannot still be live.
@@ -271,14 +288,15 @@ public sealed class InstanceWatcher
         // set says nothing about having moved.
         var opening = packet.TcpFlags?.HasFlag(TcpControlFlags.Syn) == true;
 
-        // A graceful close from the instance server is the game leaving - once it is the last one.
-        // Deliberately not RST: that is what this tool's own reconnect injects, and treating the
-        // two alike would make every reconnect look like leaving the activity. A reset also leaves
-        // its connection in the live set on purpose, so resetting every socket does not empty it
-        // and read as a close.
-        var closing = packet.IsInbound
-            && packet.TcpFlags?.HasFlag(TcpControlFlags.Fin) == true
-            && packet.TcpFlags?.HasFlag(TcpControlFlags.Reset) != true;
+        // The instance server tearing a connection down - gracefully with a FIN, or abruptly with
+        // a RST. Leaving to orbit was measured doing both, on different occasions.
+        //
+        // A reset is also what this tool's own reconnect injects, so the flag cannot separate the
+        // two on its own. The suppression window does, below: an inbound reset we caused is ignored
+        // rather than read as a departure.
+        var fin = packet.TcpFlags?.HasFlag(TcpControlFlags.Fin) == true;
+        var rst = packet.TcpFlags?.HasFlag(TcpControlFlags.Reset) == true;
+        var closing = packet.IsInbound && (fin || rst);
 
         lock (_gate)
         {
@@ -304,6 +322,14 @@ public sealed class InstanceWatcher
 
             if (closing)
             {
+                // A reset we caused is not the server saying anything. Left in the live set as well
+                // as ignored, so resetting every socket cannot empty it and read as a departure.
+                if (rst && packet.Timestamp < _suppressUntil)
+                {
+                    Suppressed++;
+                    return;
+                }
+
                 ports.Remove(packet.LocalPort);
 
                 // Only when the last one goes. Closing one socket of several is the game tidying
@@ -312,7 +338,9 @@ public sealed class InstanceWatcher
                     && _current is not null
                     && packet.RemoteAddress.Equals(_current))
                 {
-                    End(packet.Timestamp, InstanceEndReason.ServerClosed);
+                    End(
+                        packet.Timestamp,
+                        fin ? InstanceEndReason.ServerClosed : InstanceEndReason.ServerReset);
                 }
 
                 return;
