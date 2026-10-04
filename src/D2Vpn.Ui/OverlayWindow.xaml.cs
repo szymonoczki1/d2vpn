@@ -53,7 +53,10 @@ public partial class OverlayWindow : Window
             Opacity = config.Opacity
         };
 
-        Root.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
+        // The whole panel, not only the text inside it: scaling the contents alone left the
+        // padding and the corner radius at full size, so a small overlay looked like a large one
+        // with small writing in it.
+        Panel.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
 
         _model.PropertyChanged += (_, _) => Dispatcher.BeginInvoke(Reposition);
 
@@ -153,7 +156,7 @@ public partial class OverlayWindow : Window
             Opacity = config.Opacity
         };
 
-        Root.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
+        Panel.LayoutTransform = new ScaleTransform(config.Scale, config.Scale);
         Reposition();
     }
 

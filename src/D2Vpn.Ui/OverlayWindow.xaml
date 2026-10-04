@@ -18,10 +18,14 @@
         SizeToContent, because the panel is only as large as what is on. A fixed-size overlay would
         either clip a long list or leave a rectangle of dimmed game on screen permanently.
     -->
+    <!--
+        No MinWidth: the panel is as wide as its contents. One used to hold it at 150, which is in
+        unscaled units and so did not shrink with the size setting - below 1.0x that left a growing
+        gap between the module name and its timer.
+    -->
     <Border x:Name="Panel"
             CornerRadius="8"
-            Padding="14,10"
-            MinWidth="150">
+            Padding="14,10">
         <Border.Background>
             <SolidColorBrush Color="{StaticResource RailColor}" Opacity="0.72" />
         </Border.Background>

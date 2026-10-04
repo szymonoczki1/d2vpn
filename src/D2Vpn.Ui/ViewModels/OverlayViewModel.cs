@@ -31,7 +31,16 @@ public sealed class OverlayViewModel : ObservableObject
 {
     private readonly IReadOnlyList<ModuleViewModel> _modules;
     private OverlayConfig _config;
-    private string _signature = string.Empty;
+    /// <summary>
+    /// What the rows last said, or null when they have to be rebuilt regardless.
+    /// </summary>
+    /// <remarks>
+    /// Nullable rather than an empty string, which is what it used to be reset to. An empty string
+    /// is also the signature of an empty list, so turning off "list idle modules" while nothing was
+    /// held produced a new signature equal to the reset value, the rebuild was skipped, and the rows
+    /// stayed on screen until something unrelated changed.
+    /// </remarks>
+    private string? _signature;
 
     /// <summary>Creates the overlay's model over the hosted modules.</summary>
     public OverlayViewModel(IReadOnlyList<ModuleViewModel> modules, OverlayConfig config)
@@ -50,7 +59,7 @@ public sealed class OverlayViewModel : ObservableObject
     public void Apply(OverlayConfig config)
     {
         _config = config;
-        _signature = string.Empty;
+        _signature = null;
         Refresh();
     }
 
