@@ -315,16 +315,31 @@ public sealed class InstanceWatcher
             // a server already in use says nothing about having moved.
             if (Since is null && _current is null)
             {
-                // Resumed only if there was something to resume from. The very first packet of a
-                // session has not come back from anywhere.
-                Start(
-                    packet,
-                    _endedAt is null
-                        ? InstanceChangeReason.First
-                        : InstanceChangeReason.ResumedAfterQuiet,
-                    priorTraffic);
+                // Resumed only if there was something to resume from - the first packet of a
+                // session has not come back from anywhere - and only after actual quiet.
+                //
+                // The quiet is the part that was missing. Closing a TCP connection takes more than
+                // the FIN: the acknowledgements finishing the teardown arrive milliseconds later,
+                // and with no gap required they read as traffic returning, so leaving an activity
+                // ended the instance and immediately started another one. HarryWatch's rule has
+                // always been a packet *after a gap*; this had kept the packet and dropped the gap.
+                var resumed = _endedAt is not null
+                    && packet.Timestamp - priorTraffic >= _dormantAfter;
 
-                return;
+                if (_endedAt is null || resumed)
+                {
+                    Start(
+                        packet,
+                        _endedAt is null
+                            ? InstanceChangeReason.First
+                            : InstanceChangeReason.ResumedAfterQuiet,
+                        priorTraffic);
+
+                    return;
+                }
+
+                // Not a resume, but a connection opening to somewhere new still is an instance, so
+                // this falls through rather than returning.
             }
 
             if (!opening || known)

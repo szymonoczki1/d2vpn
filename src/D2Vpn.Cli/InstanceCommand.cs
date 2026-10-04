@@ -64,12 +64,18 @@ internal static class InstanceCommand
         Console.WriteLine("when you leave one. Either firing while you stand still, or failing to");
         Console.WriteLine("fire on a real change, is what this is looking for.");
         Console.WriteLine();
+        // Read from the configuration rather than written in, so the description cannot drift
+        // from the waits actually in force - it said 30s while the default had become 45s.
         Console.WriteLine("Three ways it can end:");
         Console.WriteLine("  the server closing its connection   - leaving an activity");
-        Console.WriteLine("  30s of silence on the group         - the backstop, for an error");
+        Console.WriteLine($"  {timer.EndAfterS}s of silence on the group         - the backstop, for an error");
         Console.WriteLine("    code, which drops the connection without closing it politely.");
-        Console.WriteLine("    30s is ten of the 3.02s heartbeats this port carries.");
+        Console.WriteLine($"    That is {timer.EndAfterS / 3.02:F0} of the 3.02s heartbeats this port carries.");
         Console.WriteLine("  nothing at all for a reconnect      - that is an RST, not a close");
+        Console.WriteLine("");
+        Console.WriteLine($"After {timer.HideAfterS}s of silence the timer is hidden but keeps running, so a");
+        Console.WriteLine("loading screen does not cost the elapsed time. Coming back to the same");
+        Console.WriteLine($"server inside {timer.EndAfterS}s continues it rather than starting again.");
         Console.WriteLine();
         Console.WriteLine("Press your reconnect key during the run as well: it must NOT end the");
         Console.WriteLine("instance. This is sniff mode, so it runs alongside 'd2vpn reconnect");

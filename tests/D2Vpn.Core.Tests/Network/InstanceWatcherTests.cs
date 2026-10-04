@@ -551,6 +551,62 @@ public class InstanceWatcherTests
         Assert.Equal(TimeSpan.Zero, watcher.UntilEnd(T0.AddSeconds(90)));
     }
 
+    [Fact]
+    public void The_tail_of_a_close_does_not_start_a_new_instance()
+    {
+        // Reported from a run: leaving an activity ended the instance and immediately began
+        // another. Closing a TCP connection takes more than the FIN - the acknowledgements
+        // finishing the teardown arrive milliseconds later - and resuming on any packet rather
+        // than on a packet after a gap read those as traffic returning.
+        var watcher = new InstanceWatcher(dormantAfter: TimeSpan.FromSeconds(15));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(60)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Ends);
+
+        // The teardown finishing, a fraction of a second later.
+        watcher.Observe(Data(ServerA, T0.AddSeconds(60.1)));
+        watcher.Observe(Data(ServerA, T0.AddSeconds(60.3)));
+
+        Assert.False(watcher.InInstance);
+        Assert.Equal(1, watcher.Changes);
+    }
+
+    [Fact]
+    public void Traffic_long_after_a_close_does_start_one()
+    {
+        // The gap is what makes it a resume rather than a teardown.
+        var watcher = new InstanceWatcher(dormantAfter: TimeSpan.FromSeconds(15));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(60)));
+        watcher.Observe(Data(ServerA, T0.AddSeconds(60.1)));
+
+        watcher.Observe(Data(ServerA, T0.AddSeconds(200)));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(T0.AddSeconds(200), watcher.Since);
+    }
+
+    [Fact]
+    public void A_new_server_during_a_teardown_is_still_a_new_instance()
+    {
+        // Falling through rather than returning: the tail of one close must not swallow a genuine
+        // connection somewhere else.
+        var watcher = new InstanceWatcher(dormantAfter: TimeSpan.FromSeconds(15));
+
+        watcher.Observe(Syn(ServerA, T0));
+        watcher.Observe(Fin(ServerA, T0.AddSeconds(60)));
+        watcher.Observe(Data(ServerA, T0.AddSeconds(60.1)));
+
+        watcher.Observe(Syn(ServerB, T0.AddSeconds(60.5)));
+
+        Assert.True(watcher.InInstance);
+        Assert.Equal(ServerB, watcher.Server);
+    }
+
     private static PacketInfo Fin(IPAddress server, DateTimeOffset at) =>
         Packet(server, at, TcpControlFlags.Fin | TcpControlFlags.Ack, PacketDirection.Inbound);
 
