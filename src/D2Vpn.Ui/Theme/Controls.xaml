@@ -155,6 +155,115 @@
         </Setter>
     </Style>
 
+    <!-- A dropdown. Templated in full because the stock one is painted by the system theme and
+         arrives white on a window that is not - the one control in here that ignores every brush
+         it is given. -->
+    <Style x:Key="Dropdown" TargetType="ComboBox">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFont}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ComboBox">
+                    <Grid>
+                        <ToggleButton x:Name="Toggle"
+                                      Focusable="False"
+                                      ClickMode="Press"
+                                      IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                  RelativeSource={RelativeSource TemplatedParent}}">
+                            <ToggleButton.Template>
+                                <ControlTemplate TargetType="ToggleButton">
+                                    <Border x:Name="Shell" CornerRadius="5"
+                                            Background="{StaticResource CardBrush}"
+                                            BorderBrush="{StaticResource LineBrush}"
+                                            BorderThickness="1"
+                                            Padding="10,6">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+
+                                            <ContentPresenter VerticalAlignment="Center" />
+
+                                            <Path Grid.Column="1" Data="M 0 0 L 8 0 L 4 5 Z"
+                                                  Fill="{StaticResource TextDimBrush}"
+                                                  VerticalAlignment="Center"
+                                                  Margin="10,0,0,0" />
+                                        </Grid>
+                                    </Border>
+                                    <ControlTemplate.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter TargetName="Shell" Property="BorderBrush"
+                                                    Value="{StaticResource AccentBrush}" />
+                                        </Trigger>
+                                    </ControlTemplate.Triggers>
+                                </ControlTemplate>
+                            </ToggleButton.Template>
+
+                            <ContentPresenter
+                                Content="{Binding SelectionBoxItem,
+                                          RelativeSource={RelativeSource TemplatedParent}}"
+                                ContentTemplate="{Binding SelectionBoxItemTemplate,
+                                                  RelativeSource={RelativeSource TemplatedParent}}"
+                                VerticalAlignment="Center" />
+                        </ToggleButton>
+
+                        <Popup IsOpen="{TemplateBinding IsDropDownOpen}"
+                               Placement="Bottom"
+                               AllowsTransparency="True"
+                               Focusable="False"
+                               PopupAnimation="Fade">
+                            <Border Background="{StaticResource PanelBrush}"
+                                    BorderBrush="{StaticResource LineBrush}"
+                                    BorderThickness="1" CornerRadius="5"
+                                    MinWidth="{Binding ActualWidth,
+                                               RelativeSource={RelativeSource TemplatedParent}}"
+                                    Margin="0,2,0,0">
+                                <ItemsPresenter />
+                            </Border>
+                        </Popup>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.35" />
+                            <Setter Property="Cursor" Value="Arrow" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+
+        <Setter Property="ItemContainerStyle">
+            <Setter.Value>
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                    <Setter Property="Cursor" Value="Hand" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border x:Name="Row" Background="Transparent" Padding="10,7">
+                                    <ContentPresenter />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter TargetName="Row" Property="Background"
+                                                Value="{StaticResource HoverBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Row" Property="Background"
+                                                Value="{StaticResource AccentDimBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- One of a short row of mutually exclusive choices. A radio button rather than two plain
          buttons, because which one is selected has to be visible without being clicked - this picks
          what the controls underneath are editing, not an action. -->

@@ -5,6 +5,7 @@ using System.Runtime.Versioning;
 using D2Vpn.Core.Api;
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Input;
+using D2Vpn.Core.Macros;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Network;
 using D2Vpn.Core.Processes;
@@ -38,6 +39,13 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private HotkeyWatcher? _hotkeys;
     private List<IModuleRunner> _runners = [];
     private HostConfig _config;
+    /// <summary>True when the traffic modules opened their handles.</summary>
+    /// <remarks>
+    /// What <see cref="Save"/> keys off. The sidebar is rebuilt from the view models, so writing
+    /// the module list when none started would write that emptiness over a working config.
+    /// </remarks>
+    private bool _trafficHosted;
+
     private BungieActivityWatcher? _api;
     private TimerSettingsViewModel? _timerPage;
     private SidebarItem? _selected;
@@ -155,10 +163,26 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool Start()
     {
+        // The traffic modules on their own, because they are the only part that can fail this way.
+        // Opening a WinDivert handle needs elevation and needs no other limiter to be holding an
+        // overlapping filter; nothing else here needs either. Hosting them in the same try as
+        // everything else meant one refused handle took game pause and the macro with it - neither
+        // of which touches a packet.
         try
         {
             _runners = [.. ModuleRunnerFactory.CreateAll(_config.Resolve())];
+            _trafficHosted = true;
+        }
+        catch (Exception ex)
+        {
+            // Said, not thrown. The window is still worth having for what did start, and this is
+            // the common failure - another limiter still running, or the driver refusing.
+            Status = ex.Message;
+            Failed = true;
+        }
 
+        try
+        {
             if (_config.Pause.Enabled)
             {
                 var process = NtProcessControl.Open(_config.Pause.Process);
@@ -169,6 +193,20 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 _runners.Add(new GamePauseRunner(new GamePauseSession(process, timeout), "pause")
                 {
                     IsEnabled = _config.Pause.ModuleEnabled
+                });
+            }
+
+            if (_config.Macro.Enabled)
+            {
+                // The uplink is resolved when the macro runs rather than now, because the traffic
+                // runners are built in the same breath as this one and the lookup has to see them.
+                _runners.Add(new MacroRunner(
+                    MacroName,
+                    new SyntheticInput(),
+                    () => _config.Macro.ToSettings(),
+                    () => Find(UplinkName))
+                {
+                    IsEnabled = _config.Macro.ModuleEnabled
                 });
             }
 
@@ -185,8 +223,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         }
         catch (Exception ex)
         {
-            // A handle that will not open is the common failure - another limiter still running, or
-            // the driver refusing. Saying so beats a window that looks fine and does nothing.
+            // Game pause failing to find its process, or the macro refusing a plan. Rarer than a
+            // handle, and there is nothing left to host afterwards, so this one does end startup.
             Status = ex.Message;
             Failed = true;
             Dispose();
@@ -205,7 +243,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         foreach (var controllable in _runners.SelectMany(r => r.Controls))
         {
             var module = new ModuleViewModel(
-                controllable, byName.GetValueOrDefault(controllable.Name));
+                controllable, byName.GetValueOrDefault(controllable.Name))
+            {
+                Macro = controllable.Name == MacroName
+                    ? new MacroSettingsViewModel(_config.Macro, ApplyMacro)
+                    : null
+            };
 
             // Every switch the operator flips is written straight back, so enabled, autoresync and
             // buffering are all where they were left next launch - the same as a keybind.
@@ -216,9 +259,12 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             // reconnect keeps its in resetBinds.
             if (module.Config is null)
             {
-                module.BindKey = controllable.Name == PauseName
-                    ? ParseOrNull(_config.Pause.Bind)
-                    : ParseOrNull(ResetBindFor(controllable.Name));
+                module.BindKey = controllable.Name switch
+                {
+                    PauseName => ParseOrNull(_config.Pause.Bind),
+                    MacroName => ParseOrNull(_config.Macro.Bind),
+                    _ => ParseOrNull(ResetBindFor(controllable.Name))
+                };
             }
 
             Modules.Add(module);
@@ -237,9 +283,15 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         BindKeys();
         StartApi();
 
-        Status = $"hosting {Modules.Count} module{(Modules.Count == 1 ? "" : "s")} "
-            + $"across {_runners.Count} handle{(_runners.Count == 1 ? "" : "s")}";
-        return true;
+        // The traffic failure keeps the status line if there was one: what did not start matters
+        // more than what did, and it has nowhere else to appear.
+        if (!Failed)
+        {
+            Status = $"hosting {Modules.Count} module{(Modules.Count == 1 ? "" : "s")} "
+                + $"across {_runners.Count} handle{(_runners.Count == 1 ? "" : "s")}";
+        }
+
+        return !Failed;
     }
 
     /// <summary>
@@ -314,9 +366,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             "System", "IconSystem",
             "Game pause is not enabled in the config.");
 
+        // The category the rail was built for. A macro is not traffic and not the game process,
+        // and filing it under either would make the rail a list of things that are nearly right.
+        var macros = new CategoryViewModel(
+            "Macros", "IconMacros",
+            "The loadout macro is not enabled in the config.");
+
         foreach (var module in Modules)
         {
-            (module.Kind == ModuleKind.Process ? system : traffic).Items.Add(module);
+            var category = module.Kind switch
+            {
+                ModuleKind.Process => system,
+                ModuleKind.Macro => macros,
+                _ => traffic
+            };
+
+            category.Items.Add(module);
         }
 
         // Settings is always listed, even when no module could start: the overlay is configurable
@@ -333,7 +398,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         settings.Items.Add(_timerPage);
 
-        foreach (var category in new[] { traffic, system, settings })
+        foreach (var category in new[] { traffic, system, macros, settings })
         {
             if (!category.IsEmpty)
             {
@@ -484,6 +549,17 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// <summary>The control-surface name game pause is hosted under.</summary>
     private const string PauseName = "pause";
 
+    /// <summary>The control-surface name the loadout macro is hosted under.</summary>
+    private const string MacroName = "macro";
+
+    /// <summary>The hold the macro ticks for the length of a run.</summary>
+    private const string UplinkName = "3074-ul";
+
+    /// <summary>One hosted control by name, or null if it is not hosted.</summary>
+    private IControllable? Find(string name) => _runners
+        .SelectMany(r => r.Controls)
+        .FirstOrDefault(c => c.Name == name);
+
     /// <summary>
     /// Takes a change from the overlay settings page: saves it, and applies it live.
     /// </summary>
@@ -531,6 +607,19 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Save();
     }
 
+    /// <summary>
+    /// Takes a change from the macro's panel: saves it, and uses it on the next run.
+    /// </summary>
+    /// <remarks>
+    /// Nothing is pushed at the running macro. Its settings are read when the key is pressed, so a
+    /// run in progress finishes the way it started rather than changing shape underneath itself.
+    /// </remarks>
+    private void ApplyMacro(MacroConfig macro)
+    {
+        _config = _config with { Macro = macro };
+        Save();
+    }
+
     /// <summary>Raised when the timer's settings change.</summary>
     public event Action<TimerConfig>? TimerChanged;
 
@@ -544,20 +633,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// shows. Pause is written back to its own section, since that is where it came from.
     /// </para>
     /// <para>
-    /// Only the parts this session actually hosts. The settings pages are reachable when nothing
-    /// started - that is deliberate, it is when you most want them - and rebuilding the module list
-    /// from an empty sidebar would write that emptiness over a working file. One click on a
-    /// settings page after a failed start was enough to erase every module from the config.
+    /// Section by section, and only the ones this session actually hosts. The settings pages are
+    /// reachable when nothing started - that is deliberate, it is when you most want them - and
+    /// rebuilding the module list from an empty sidebar would write that emptiness over a working
+    /// file. One click on a settings page after a failed start was enough to erase every module
+    /// from the config.
+    /// </para>
+    /// <para>
+    /// Per section rather than all or nothing, because the failures are per section too. A refused
+    /// WinDivert handle costs the traffic modules and nothing else, and a macro bind set in that
+    /// session should still be there next time.
     /// </para>
     /// </remarks>
     public void Save()
     {
         try
         {
-            if (!Failed)
-            {
-                _config = WithHostedState(_config);
-            }
+            _config = WithHostedState(_config);
 
             File.WriteAllText(_configPath, _config.ToJson());
             Flash($"saved {Path.GetFileName(_configPath)}");
@@ -581,16 +673,27 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         return config with
         {
-            Modules = [.. Modules
-                .Where(m => m.Kind == ModuleKind.Hold)
-                .Select(m => m.ToConfig())],
-            ResetBinds = [.. Modules
-                .Where(m => m.Kind == ModuleKind.Trigger && m.BindKey is not null)
-                .Select(m => new ResetBind
+            Modules = _trafficHosted
+                ? [.. Modules
+                    .Where(m => m.Kind == ModuleKind.Hold)
+                    .Select(m => m.ToConfig())]
+                : config.Modules,
+            ResetBinds = _trafficHosted
+                ? [.. Modules
+                    .Where(m => m.Kind == ModuleKind.Trigger && m.BindKey is not null)
+                    .Select(m => new ResetBind
+                    {
+                        Module = GroupOf(m.Name),
+                        Bind = KeyName.Describe(m.BindKey!.Value)
+                    })]
+                : config.ResetBinds,
+            Macro = Modules.FirstOrDefault(m => m.Name == MacroName) is { } macro
+                ? config.Macro with
                 {
-                    Module = GroupOf(m.Name),
-                    Bind = KeyName.Describe(m.BindKey!.Value)
-                })],
+                    Bind = macro.BindKey is { } macroKey ? KeyName.Describe(macroKey) : null,
+                    ModuleEnabled = macro.IsEnabled
+                }
+                : config.Macro,
             Pause = pause is null
                 ? config.Pause
                 : config.Pause with

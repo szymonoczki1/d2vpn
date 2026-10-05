@@ -68,13 +68,36 @@ public sealed class ModuleViewModel : SidebarItem
     /// <summary>True for a traffic hold or delay line, which is what has switches.</summary>
     public bool IsHold => Kind == ModuleKind.Hold;
 
-    /// <summary>The heading over the on switch, which is not "hold" for a process.</summary>
-    public string ToggleSectionLabel => Kind == ModuleKind.Process ? "PAUSE" : "HOLD";
+    /// <summary>True for the loadout macro, which has a panel of its own below.</summary>
+    public bool IsMacro => Kind == ModuleKind.Macro;
+
+    /// <summary>
+    /// The macro's settings, or null for everything else.
+    /// </summary>
+    /// <remarks>
+    /// Hung off the module rather than given a page in Settings, because these are what you change
+    /// while tuning a swap that is not working, and walking to another page between attempts is how
+    /// you lose track of which change did what.
+    /// </remarks>
+    public MacroSettingsViewModel? Macro { get; init; }
+
+    /// <summary>The heading over the on switch, which is not "hold" for every kind.</summary>
+    public string ToggleSectionLabel => Kind switch
+    {
+        ModuleKind.Process => "PAUSE",
+        ModuleKind.Macro => "RUN",
+        _ => "HOLD"
+    };
 
     /// <summary>What the on switch does, in a sentence.</summary>
-    public string ToggleDescription => Kind == ModuleKind.Process
-        ? "Suspends the game process. Nothing is sent, received, drawn or simulated while it is held."
-        : "On until you turn it off. The key below does the same thing.";
+    public string ToggleDescription => Kind switch
+    {
+        ModuleKind.Process =>
+            "Suspends the game process. Nothing is sent, received, drawn or simulated while it is held.",
+        ModuleKind.Macro =>
+            "Runs the swap, and stops itself when the duration is up. Pressing the key again stops it early.",
+        _ => "On until you turn it off. The key below does the same thing."
+    };
 
     /// <summary>True for a one-shot action such as reconnect.</summary>
     public bool IsTrigger => Kind == ModuleKind.Trigger;
@@ -84,6 +107,7 @@ public sealed class ModuleViewModel : SidebarItem
     {
         ModuleKind.Trigger => "reconnect",
         ModuleKind.Process => "process",
+        ModuleKind.Macro => "macro",
         _ => Name.Contains("-slow", StringComparison.Ordinal) ? "delay line" : "hold"
     };
 
@@ -239,6 +263,7 @@ public sealed class ModuleViewModel : SidebarItem
     {
         ModuleKind.Trigger => "Reconnect",
         ModuleKind.Process => "Pause",
+        ModuleKind.Macro => "Run",
         _ => "Hold"
     };
 
@@ -246,7 +271,11 @@ public sealed class ModuleViewModel : SidebarItem
     public bool HasBind => _bindKey is not null;
 
     /// <summary>HOLDING, idle or disabled, for the panel.</summary>
-    public string StateLabel => !IsEnabled ? "disabled" : IsActive ? "HOLDING" : "idle";
+    public string StateLabel => !IsEnabled
+        ? "disabled"
+        : IsActive
+            ? Kind == ModuleKind.Macro ? "RUNNING" : "HOLDING"
+            : "idle";
 
     /// <summary>
     /// How long this has been on, counting up, or an empty string when it is not.
@@ -283,7 +312,8 @@ public sealed class ModuleViewModel : SidebarItem
     public IReadOnlyList<ModuleMetric> Metrics => _control.Metrics;
 
     /// <summary>The heading over them.</summary>
-    public string MetricsLabel => Kind == ModuleKind.Process ? "ACTIVITY" : "TRAFFIC";
+    public string MetricsLabel =>
+        Kind is ModuleKind.Process or ModuleKind.Macro ? "ACTIVITY" : "TRAFFIC";
 
     /// <summary>Asks for a reconnect.</summary>
     public void RequestReset() => _control.RequestReset();

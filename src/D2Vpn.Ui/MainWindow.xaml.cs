@@ -366,6 +366,36 @@ public partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// The arrows on the macro panel.
+    /// </summary>
+    /// <remarks>
+    /// Step sizes differ per setting because the units do. A click gap is tuned in single
+    /// milliseconds, a run length in whole seconds, and a screen delay somewhere between - one step
+    /// for all three would make two of them tedious and the third imprecise.
+    /// </remarks>
+    private void OnMacroNudge(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button { Tag: string tag }
+            || _model.Selected is not ModuleViewModel { Macro: { } macro })
+        {
+            return;
+        }
+
+        var up = tag.EndsWith('+');
+        var what = tag[..^1];
+
+        var step = what switch
+        {
+            "duration" => 1000,
+            "open" or "page" => 20,
+            "end" => 1,
+            _ => 5
+        };
+
+        macro.Nudge(what, up ? step : -step);
+    }
+
     /// <summary>The arrows on the timer page.</summary>
     private void OnTimerNudge(object sender, RoutedEventArgs e)
     {

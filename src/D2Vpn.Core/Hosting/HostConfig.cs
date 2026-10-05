@@ -1,4 +1,6 @@
 ﻿using System.Text.Json;
+
+using D2Vpn.Core.Macros;
 using System.Text.Json.Serialization;
 
 namespace D2Vpn.Core.Hosting;
@@ -302,6 +304,157 @@ public sealed record OverlayConfig
     public bool HideWhenIdle { get; init; } = true;
 }
 
+/// <summary>
+/// One saved loadout rotation.
+/// </summary>
+/// <remarks>
+/// Named, because five of them listed as "preset 3" is five things to try one at a time. The order
+/// is the rotation and repeats until the duration is up; <see cref="EndOn"/> is what it settles on
+/// afterwards, which is usually not a member of the rotation at all.
+/// </remarks>
+public sealed record MacroPreset
+{
+    /// <summary>What to call it in the window.</summary>
+    public string Name { get; init; } = "preset";
+
+    /// <summary>The loadout slots to cycle, in order, numbered from 1.</summary>
+    public IReadOnlyList<int> Order { get; init; } = [1, 2];
+
+    /// <summary>The slot to finish on, or null to stop wherever the rotation ended.</summary>
+    public int? EndOn { get; init; }
+}
+
+/// <summary>
+/// The loadout macro.
+/// </summary>
+/// <remarks>
+/// Every delay is in milliseconds because every one of them is a race against something drawing -
+/// the character screen appearing, the loadout page sliding in, the game registering a click. Those
+/// are tens of milliseconds apart, not tenths of a second, and a setting that cannot express the
+/// difference cannot be tuned.
+/// </remarks>
+public sealed record MacroConfig
+{
+    /// <summary>Whether to host it at all. False and it does not appear in the window.</summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>The window's own switch: hosted and listed, but refusing to run.</summary>
+    public bool ModuleEnabled { get; init; } = true;
+
+    /// <summary>The key that starts it, and stops it if it is already going.</summary>
+    public string? Bind { get; init; }
+
+    /// <summary>The gap between loadout clicks.</summary>
+    public int ClickDelayMs { get; init; } = 30;
+
+    /// <summary>How long to keep swapping.</summary>
+    public int DurationMs { get; init; } = 10000;
+
+    /// <summary>
+    /// How long to wait after F1 for the character screen.
+    /// </summary>
+    /// <remarks>
+    /// Really "how long does this machine take to draw that screen". A click sent before it is
+    /// there goes to whatever was underneath, which on the tower screen is a destination.
+    /// </remarks>
+    public int OpenDelayMs { get; init; } = 400;
+
+    /// <summary>How long to wait after the left arrow for the loadouts.</summary>
+    public int PageDelayMs { get; init; } = 120;
+
+    /// <summary>Hold 3074's uplink for the length of the run.</summary>
+    public bool TickUplink { get; init; } = true;
+
+    /// <summary>Turn 3074's uplink buffer off for the length of the run.</summary>
+    public bool DisableBuffer { get; init; } = true;
+
+    /// <summary>Where the loadouts are on screen.</summary>
+    public LoadoutGrid Grid { get; init; } = new();
+
+    /// <summary>The saved rotations.</summary>
+    public IReadOnlyList<MacroPreset> Presets { get; init; } =
+    [
+        new() { Name = "two swap", Order = [1, 2], EndOn = 1 },
+        new() { Name = "three swap", Order = [1, 2, 3], EndOn = 1 },
+        new() { Name = "preset 3", Order = [1, 2], EndOn = 1 },
+        new() { Name = "preset 4", Order = [1, 2], EndOn = 1 },
+        new() { Name = "preset 5", Order = [1, 2], EndOn = 1 }
+    ];
+
+    /// <summary>Which preset the key runs, from 0.</summary>
+    public int Preset { get; init; }
+
+    /// <summary>The preset that would run now, whatever the index says.</summary>
+    /// <remarks>
+    /// Clamped rather than throwing. An index past the end is a hand-edited file or a preset that
+    /// was deleted, and neither is worth refusing to start a session over.
+    /// </remarks>
+    public MacroPreset Selected => Presets.Count == 0
+        ? new MacroPreset()
+        : Presets[Math.Clamp(Preset, 0, Presets.Count - 1)];
+
+    /// <summary>What the runner needs, with the preset resolved.</summary>
+    public MacroSettings ToSettings() => new()
+    {
+        Grid = Grid,
+        Order = Selected.Order,
+        EndOn = Selected.EndOn,
+        Duration = TimeSpan.FromMilliseconds(DurationMs),
+        ClickDelay = TimeSpan.FromMilliseconds(ClickDelayMs),
+        OpenDelay = TimeSpan.FromMilliseconds(OpenDelayMs),
+        PageDelay = TimeSpan.FromMilliseconds(PageDelayMs),
+        TickUplink = TickUplink,
+        DisableBuffer = DisableBuffer
+    };
+
+    /// <summary>Checks the settings describe something runnable.</summary>
+    public void Validate()
+    {
+        if (!Enabled)
+        {
+            return;
+        }
+
+        Grid.Validate();
+
+        if (ClickDelayMs is < 0 or > 10000)
+        {
+            throw new ArgumentException(
+                $"macro clickDelayMs {ClickDelayMs} is outside 0-10000");
+        }
+
+        if (DurationMs is < 1 or > 600000)
+        {
+            throw new ArgumentException($"macro durationMs {DurationMs} is outside 1-600000");
+        }
+
+        if (OpenDelayMs is < 0 or > 10000 || PageDelayMs is < 0 or > 10000)
+        {
+            throw new ArgumentException("macro open and page delays must be within 0-10000 ms");
+        }
+
+        foreach (var preset in Presets)
+        {
+            foreach (var slot in preset.Order)
+            {
+                if (!Grid.Holds(slot))
+                {
+                    throw new ArgumentException(
+                        $"macro preset '{preset.Name}' uses loadout {slot}, "
+                        + $"and the grid holds 1 to {Grid.Count}");
+                }
+            }
+
+            if (preset.EndOn is { } end && !Grid.Holds(end))
+            {
+                throw new ArgumentException(
+                    $"macro preset '{preset.Name}' ends on loadout {end}, "
+                    + $"and the grid holds 1 to {Grid.Count}");
+            }
+        }
+    }
+}
+
 /// <summary>A key bound to <c>reset</c> on one module.</summary>
 public sealed record ResetBind
 {
@@ -350,6 +503,9 @@ public sealed record HostConfig
 
     /// <summary>Game pause.</summary>
     public PauseConfig Pause { get; init; } = new();
+
+    /// <summary>The loadout macro.</summary>
+    public MacroConfig Macro { get; init; } = new();
 
     /// <summary>A key that releases every module at once.</summary>
     public string? ReleaseBind { get; init; }
@@ -668,6 +824,8 @@ public sealed record HostConfig
                     $"overlay {what} opacity {panel.Opacity} is outside 0-1");
             }
         }
+
+        Macro.Validate();
 
         if (Timer.HideAfterS is < 1 or > 600)
         {

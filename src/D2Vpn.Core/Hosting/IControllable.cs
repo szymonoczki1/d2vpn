@@ -127,5 +127,15 @@ public enum ModuleKind
     Trigger,
 
     /// <summary>The game process being suspended.</summary>
-    Process
+    Process,
+
+    /// <summary>
+    /// A sequence of clicks that runs for a while and then stops by itself.
+    /// </summary>
+    /// <remarks>
+    /// Shaped like a hold - on until off - but it ends on its own when its duration is up, and
+    /// pressing its key again stops it early. A front end that offered only "start" would be one
+    /// you had to wait out.
+    /// </remarks>
+    Macro
 }
