@@ -54,7 +54,8 @@ public class LoadoutMacroTests
     private static MacroPlan Plan(
         IReadOnlyList<int> order,
         int? endOn = null,
-        TimeSpan? duration = null) =>
+        TimeSpan? duration = null,
+        bool closeAfter = false) =>
         new(
             Grid,
             order,
@@ -62,7 +63,8 @@ public class LoadoutMacroTests
             duration ?? TimeSpan.FromMilliseconds(1),
             TimeSpan.FromMilliseconds(30),
             TimeSpan.FromMilliseconds(400),
-            TimeSpan.FromMilliseconds(120));
+            TimeSpan.FromMilliseconds(120),
+            closeAfter);
 
     // ---- the grid ----
 
@@ -186,6 +188,49 @@ public class LoadoutMacroTests
     }
 
     // ---- what it refuses ----
+
+    [Fact]
+    public void It_closes_the_character_screen_when_asked()
+    {
+        // The same key that opened it, after the finishing click - so the game has been given the
+        // swap before the screen it was made on goes away.
+        var sink = new Recorder();
+
+        new LoadoutMacro(sink, sink).Run(
+            Plan([5, 2], endOn: 1, closeAfter: true), CancellationToken.None);
+
+        Assert.Equal($"key {F1:X2}", sink.Events[^1]);
+        Assert.Equal("click 117,385", sink.Events[^2]);
+    }
+
+    [Fact]
+    public void It_closes_the_screen_on_a_run_that_was_stopped()
+    {
+        // An inventory left open sends the next key press to a menu rather than to the game, which
+        // is a worse place to be than before the macro ran.
+        var sink = new Recorder();
+        using var stop = new CancellationTokenSource();
+        stop.Cancel();
+
+        new LoadoutMacro(sink, sink).Run(
+            Plan([5, 2], endOn: 1, closeAfter: true), stop.Token);
+
+        Assert.Equal($"key {F1:X2}", sink.Events[^1]);
+    }
+
+    [Fact]
+    public void It_leaves_the_screen_open_when_not_asked()
+    {
+        var sink = new Recorder();
+
+        new LoadoutMacro(sink, sink).Run(
+            Plan([5, 2], endOn: 1, closeAfter: false), CancellationToken.None);
+
+        Assert.StartsWith("click", sink.Events[^1], StringComparison.Ordinal);
+
+        // Exactly one F1, the one that opened it.
+        Assert.Single(sink.Events, e => e == $"key {F1:X2}");
+    }
 
     [Fact]
     public void An_empty_order_is_refused()

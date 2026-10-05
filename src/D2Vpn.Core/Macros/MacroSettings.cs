@@ -1,4 +1,4 @@
-namespace D2Vpn.Core.Macros;
+﻿namespace D2Vpn.Core.Macros;
 
 /// <summary>
 /// One run's settings, with the preset already chosen.
@@ -37,7 +37,10 @@ public readonly record struct MacroSettings
     /// <summary>Turn 3074's uplink buffer off for the length of the run.</summary>
     public bool DisableBuffer { get; init; }
 
+    /// <summary>Press F1 again at the end, closing the character screen.</summary>
+    public bool CloseAfter { get; init; }
+
     /// <summary>The plan this describes.</summary>
     public MacroPlan ToPlan() =>
-        new(Grid, Order, EndOn, Duration, ClickDelay, OpenDelay, PageDelay);
+        new(Grid, Order, EndOn, Duration, ClickDelay, OpenDelay, PageDelay, CloseAfter);
 }

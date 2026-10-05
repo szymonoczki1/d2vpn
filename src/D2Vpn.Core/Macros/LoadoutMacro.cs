@@ -106,19 +106,30 @@ public sealed class LoadoutMacro
         return Finish(plan, CancellationToken.None);
     }
 
-    /// <summary>Clicks the loadout the run is meant to end on.</summary>
+    /// <summary>Clicks the loadout the run is meant to end on, then tidies up.</summary>
+    /// <remarks>
+    /// Both halves run however the macro ended, including on a stop. Leaving the character screen
+    /// open after an interrupted run is the state nobody asked for - the next key press goes to a
+    /// menu rather than to the game.
+    /// </remarks>
     private int Finish(MacroPlan plan, CancellationToken token)
     {
-        if (plan.EndOn is not { } slot)
+        if (plan.EndOn is { } slot)
         {
-            return Swaps;
+            _clock.Wait(plan.ClickDelay, token);
+
+            var (x, y) = plan.Grid.PointFor(slot);
+            _input.ClickAt(x, y);
+            Swaps++;
         }
 
-        _clock.Wait(plan.ClickDelay, token);
-
-        var (x, y) = plan.Grid.PointFor(slot);
-        _input.ClickAt(x, y);
-        Swaps++;
+        if (plan.CloseAfter)
+        {
+            // The same key that opened it. After the click and its gap, so the game has been given
+            // the swap before the screen it was made on goes away.
+            _clock.Wait(plan.ClickDelay, token);
+            _input.PressKey(VkF1);
+        }
 
         return Swaps;
     }
@@ -132,6 +143,7 @@ public sealed class LoadoutMacro
 /// <param name="ClickDelay">The gap between clicks.</param>
 /// <param name="OpenDelay">How long to wait after F1 for the character screen.</param>
 /// <param name="PageDelay">How long to wait after the left arrow for the loadouts.</param>
+/// <param name="CloseAfter">Press F1 again at the end, closing the character screen.</param>
 public readonly record struct MacroPlan(
     LoadoutGrid Grid,
     IReadOnlyList<int> Order,
@@ -139,7 +151,8 @@ public readonly record struct MacroPlan(
     TimeSpan Duration,
     TimeSpan ClickDelay,
     TimeSpan OpenDelay,
-    TimeSpan PageDelay)
+    TimeSpan PageDelay,
+    bool CloseAfter = false)
 {
     /// <summary>Checks the plan can be run, with a message saying what to change if not.</summary>
     public void Validate()

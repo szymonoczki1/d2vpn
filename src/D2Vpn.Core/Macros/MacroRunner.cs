@@ -1,4 +1,4 @@
-﻿using System.Runtime.Versioning;
+using System.Runtime.Versioning;
 
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Input;
@@ -6,43 +6,42 @@ using D2Vpn.Core.Input;
 namespace D2Vpn.Core.Macros;
 
 /// <summary>
-/// The loadout macro, hosted like any other module.
+/// The loadout macros, hosted like any other module.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A switch you turn on, which turns itself off when the duration is up. Pressing the key again
-/// stops it early - a macro that could only be started would be one you had to wait out.
+/// One runner, one control per preset - the same shape as 3074's four toggles behind one handle.
+/// Each preset carries its own key, its own timings and its own rotation, so they are really
+/// several macros that happen to agree about where the loadouts are.
+/// </para>
+/// <para>
+/// Only one may run at a time, and starting a second stops the first. Two sequences clicking the
+/// same twenty squares at once is not two macros, it is neither.
 /// </para>
 /// <para>
 /// It opens no handle, so <see cref="HandleKey"/> is null and it cannot collide with a traffic
-/// module. Like game pause, it is a runner only because that is how the host addresses things.
-/// </para>
-/// <para>
-/// The hold it drives is the reason this is inside d2vpn rather than beside it. Ticking 3074's
-/// uplink for exactly the length of the swap is a method call here; from a separate script it would
-/// be a round trip through the control pipe, which an unelevated script cannot even open.
+/// module. The hold it drives is the reason this lives inside d2vpn rather than beside it: ticking
+/// 3074's uplink for exactly the length of the swap is a method call here, where from a separate
+/// script it would be a round trip through a pipe an unelevated script cannot open.
 /// </para>
 /// </remarks>
 [SupportedOSPlatform("windows")]
-public sealed class MacroRunner : IModuleRunner, IControllable
+public sealed class MacroRunner : IModuleRunner
 {
     private readonly IInputSink _input;
     private readonly Func<IControllable?> _uplink;
-    private readonly Func<MacroSettings> _settings;
+    private readonly Func<MacroConfig> _config;
     private readonly Func<IMacroClock> _clocks;
-
+    private readonly List<PresetControl> _controls = [];
     private readonly Lock _gate = new();
 
-    private CancellationTokenSource? _run;
-    private Task? _task;
-    private DateTimeOffset? _activeSince;
-    private TimeSpan _totalActive;
+    private PresetControl? _running;
 
-    /// <summary>Creates the macro module.</summary>
-    /// <param name="name">What the control surface calls it.</param>
+    /// <summary>Creates the macro module, with one control per preset.</summary>
+    /// <param name="name">The stem of each control's address, such as <c>macro</c>.</param>
     /// <param name="input">Where the clicks go.</param>
-    /// <param name="settings">
-    /// Read fresh at each run, so changing the delay or the order in the window takes effect on the
+    /// <param name="config">
+    /// Read fresh at each run, so changing a delay or a rotation in the window takes effect on the
     /// next press rather than on the next launch.
     /// </param>
     /// <param name="uplink">
@@ -53,124 +52,34 @@ public sealed class MacroRunner : IModuleRunner, IControllable
     public MacroRunner(
         string name,
         IInputSink input,
-        Func<MacroSettings> settings,
+        Func<MacroConfig> config,
         Func<IControllable?> uplink,
         Func<IMacroClock>? clocks = null)
     {
         Name = name;
         _input = input;
-        _settings = settings;
+        _config = config;
         _uplink = uplink;
         _clocks = clocks ?? (() => new MacroClock());
+
+        // Addressed by position, not by name. A preset renamed in the window would otherwise
+        // change its control address, which would lose its key and break anything driving it over
+        // the pipe - a rename is not meant to be a re-bind.
+        for (var i = 0; i < config().Presets.Count; i++)
+        {
+            _controls.Add(new PresetControl(this, i, $"{name}-{i + 1}"));
+        }
     }
 
     /// <inheritdoc/>
     public string Name { get; }
 
     /// <inheritdoc/>
-    public IReadOnlyList<IControllable> Controls => [this];
+    public IReadOnlyList<IControllable> Controls => _controls;
 
     /// <inheritdoc/>
     /// <remarks>Null: this opens no packet handle, so it can never collide with one.</remarks>
     public string? HandleKey => null;
-
-    /// <inheritdoc/>
-    public ModuleKind Kind => ModuleKind.Macro;
-
-    /// <inheritdoc/>
-    public bool IsEnabled { get; set; } = true;
-
-    /// <inheritdoc/>
-    public bool SupportsReset => false;
-
-    /// <inheritdoc/>
-    public IModuleOptions? Options => null;
-
-    /// <inheritdoc/>
-    public DateTimeOffset? ActiveSince
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _activeSince;
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    public TimeSpan TotalActive
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _activeSince is { } since
-                    ? _totalActive + (DateTimeOffset.UtcNow - since)
-                    : _totalActive;
-            }
-        }
-    }
-
-    /// <summary>How many times it has been run.</summary>
-    public int Runs { get; private set; }
-
-    /// <summary>How many loadout clicks the last run made.</summary>
-    public int LastSwaps { get; private set; }
-
-    /// <summary>Why the last run stopped early, or null if it finished.</summary>
-    public string? LastError { get; private set; }
-
-    /// <inheritdoc/>
-    public bool IsActive
-    {
-        get => ActiveSince is not null;
-        set
-        {
-            if (value)
-            {
-                StartRun();
-            }
-            else
-            {
-                StopRun();
-            }
-        }
-    }
-
-    /// <inheritdoc/>
-    /// <remarks>
-    /// Every packet count is zero, and honestly so: this module touches none. The counts exist
-    /// because the control protocol is packet-shaped, which is also why <see cref="Metrics"/>
-    /// exists for the numbers a macro actually has.
-    /// </remarks>
-    public ModuleStatus Status => new(
-        Name,
-        IsActive,
-        IsEnabled,
-        PacketsSeen: 0,
-        PacketsDropped: 0,
-        PacketsBuffered: 0,
-        PacketsReplayed: 0,
-        ResetsInjected: 0,
-        HeldSeconds: ActiveSince is { } since
-            ? (DateTimeOffset.UtcNow - since).TotalSeconds
-            : 0,
-        TotalHeldSeconds: TotalActive.TotalSeconds);
-
-    /// <inheritdoc/>
-    public IReadOnlyList<ModuleMetric> Metrics =>
-    [
-        new("runs", Runs.ToString()),
-        new("swaps last run", LastSwaps.ToString()),
-        new("total", ModuleMetrics.Seconds(TotalActive))
-    ];
-
-    /// <inheritdoc/>
-    public void RequestReset()
-    {
-        // Nothing to reset. A macro is a sequence, not a connection.
-    }
 
     /// <inheritdoc/>
     /// <remarks>
@@ -180,150 +89,317 @@ public sealed class MacroRunner : IModuleRunner, IControllable
     public Task RunAsync(CancellationToken cancellationToken) =>
         Task.Delay(Timeout.Infinite, cancellationToken);
 
-    private void StartRun()
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        foreach (var control in _controls)
+        {
+            control.Stop();
+        }
+
+        foreach (var control in _controls)
+        {
+            control.AwaitEnd();
+        }
+    }
+
+    /// <summary>The preset a control stands for, or a default if it has been deleted.</summary>
+    private MacroPreset PresetAt(int index)
+    {
+        var presets = _config().Presets;
+        return index < presets.Count ? presets[index] : new MacroPreset();
+    }
+
+    /// <summary>
+    /// Stops whatever is running and records the new one, if any.
+    /// </summary>
+    /// <remarks>
+    /// Under one lock, so two keys pressed together cannot both believe they won.
+    /// </remarks>
+    private bool Claim(PresetControl control)
+    {
+        PresetControl? previous;
+
+        lock (_gate)
+        {
+            if (ReferenceEquals(_running, control))
+            {
+                return false;
+            }
+
+            previous = _running;
+            _running = control;
+        }
+
+        previous?.Stop();
+        return true;
+    }
+
+    /// <summary>Lets go, if this control is still the one holding.</summary>
+    private void Release(PresetControl control)
     {
         lock (_gate)
         {
-            if (!IsEnabled || _activeSince is not null)
+            if (ReferenceEquals(_running, control))
+            {
+                _running = null;
+            }
+        }
+    }
+
+    /// <summary>One preset, as the control surface sees it.</summary>
+    private sealed class PresetControl(MacroRunner owner, int index, string name) : IControllable
+    {
+        private readonly Lock _gate = new();
+
+        private CancellationTokenSource? _run;
+        private Task? _task;
+        private DateTimeOffset? _activeSince;
+        private TimeSpan _totalActive;
+
+        public string Name => name;
+
+        public ModuleKind Kind => ModuleKind.Macro;
+
+        public bool IsEnabled { get; set; } = true;
+
+        public bool SupportsReset => false;
+
+        public IModuleOptions? Options => null;
+
+        /// <summary>The preset this runs, read fresh so a rename or a retune is picked up.</summary>
+        public MacroPreset Preset => owner.PresetAt(index);
+
+        /// <summary>How many times it has been run.</summary>
+        public int Runs { get; private set; }
+
+        /// <summary>How many loadout clicks the last run made.</summary>
+        public int LastSwaps { get; private set; }
+
+        /// <summary>Why the last run stopped early, or null if it finished.</summary>
+        public string? LastError { get; private set; }
+
+        public DateTimeOffset? ActiveSince
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _activeSince;
+                }
+            }
+        }
+
+        public TimeSpan TotalActive
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _activeSince is { } since
+                        ? _totalActive + (DateTimeOffset.UtcNow - since)
+                        : _totalActive;
+                }
+            }
+        }
+
+        public bool IsActive
+        {
+            get => ActiveSince is not null;
+            set
+            {
+                if (value)
+                {
+                    Start();
+                }
+                else
+                {
+                    Stop();
+                }
+            }
+        }
+
+        /// <inheritdoc/>
+        /// <remarks>
+        /// Every packet count is zero, and honestly so: this module touches none. They exist
+        /// because the control protocol is packet-shaped, which is also why <see cref="Metrics"/>
+        /// exists for the numbers a macro actually has.
+        /// </remarks>
+        public ModuleStatus Status => new(
+            Name,
+            IsActive,
+            IsEnabled,
+            PacketsSeen: 0,
+            PacketsDropped: 0,
+            PacketsBuffered: 0,
+            PacketsReplayed: 0,
+            ResetsInjected: 0,
+            HeldSeconds: ActiveSince is { } since
+                ? (DateTimeOffset.UtcNow - since).TotalSeconds
+                : 0,
+            TotalHeldSeconds: TotalActive.TotalSeconds);
+
+        public IReadOnlyList<ModuleMetric> Metrics =>
+        [
+            new("runs", Runs.ToString()),
+            new("swaps last run", LastSwaps.ToString()),
+            new("total", ModuleMetrics.Seconds(TotalActive))
+        ];
+
+        public void RequestReset()
+        {
+            // Nothing to reset. A macro is a sequence, not a connection.
+        }
+
+        private void Start()
+        {
+            if (!IsEnabled || IsActive || !owner.Claim(this))
             {
                 return;
             }
 
-            _run = new CancellationTokenSource();
-            _activeSince = DateTimeOffset.UtcNow;
-            LastError = null;
-            Runs++;
-        }
-
-        var token = _run!.Token;
-        var settings = _settings();
-
-        // Its own thread rather than the pool. The run spins out the last milliseconds of each
-        // delay to keep the gap accurate, and a pool thread doing that is one fewer for everything
-        // else in the process - including the packet pumps.
-        _task = Task.Factory.StartNew(
-            () => Execute(settings, token),
-            token,
-            TaskCreationOptions.LongRunning,
-            TaskScheduler.Default);
-    }
-
-    private void StopRun()
-    {
-        CancellationTokenSource? run;
-
-        lock (_gate)
-        {
-            run = _run;
-        }
-
-        run?.Cancel();
-    }
-
-    /// <summary>One run, start to finish, including putting the uplink back.</summary>
-    private void Execute(MacroSettings settings, CancellationToken token)
-    {
-        var uplink = settings.TickUplink || settings.DisableBuffer ? _uplink() : null;
-
-        // Remembered rather than assumed. Turning the hold off afterwards when it was already on
-        // before would release a hold the operator had started by hand.
-        var wasActive = uplink?.IsActive;
-        var hadBuffer = uplink?.Options is { SupportsBuffer: true } o
-            ? o.BufferEnabled
-            : (bool?)null;
-
-        try
-        {
-            if (uplink is not null)
-            {
-                if (settings.TickUplink)
-                {
-                    uplink.IsActive = true;
-                }
-
-                // After the hold, not before. Turning the buffer off is what makes the withheld
-                // packets be destroyed rather than replayed, and doing it while nothing is held
-                // changes nothing to destroy.
-                if (settings.DisableBuffer && uplink.Options is { SupportsBuffer: true } options)
-                {
-                    options.BufferEnabled = false;
-                }
-            }
-
-            var macro = new LoadoutMacro(_input, _clocks());
-            LastSwaps = macro.Run(settings.ToPlan(), token);
-        }
-        catch (Exception ex)
-        {
-            // A plan that will not run, or Windows refusing the input. Reported on the module
-            // rather than thrown: this is on a thread of its own, and a macro that failed must not
-            // take the session with it.
-            LastError = ex.Message;
-        }
-        finally
-        {
-            Restore(uplink, wasActive, hadBuffer);
+            CancellationToken token;
 
             lock (_gate)
             {
-                if (_activeSince is { } since)
+                _run = new CancellationTokenSource();
+                token = _run.Token;
+                _activeSince = DateTimeOffset.UtcNow;
+                LastError = null;
+                Runs++;
+            }
+
+            var config = owner._config();
+            var settings = Preset.ToSettings(config.Grid);
+
+            // Its own thread rather than the pool. The run spins out the last milliseconds of each
+            // delay to keep the gap accurate, and a pool thread doing that is one fewer for
+            // everything else in the process - including the packet pumps.
+            _task = Task.Factory.StartNew(
+                () => Execute(settings, token),
+                token,
+                TaskCreationOptions.LongRunning,
+                TaskScheduler.Default);
+        }
+
+        public void Stop()
+        {
+            CancellationTokenSource? run;
+
+            lock (_gate)
+            {
+                run = _run;
+            }
+
+            run?.Cancel();
+        }
+
+        /// <summary>Waits for a stopped run to finish putting things back.</summary>
+        public void AwaitEnd()
+        {
+            try
+            {
+                _task?.Wait(TimeSpan.FromSeconds(2));
+            }
+            catch
+            {
+                // Shutting down. The uplink is restored in the run's own finally.
+            }
+        }
+
+        /// <summary>One run, start to finish, including putting the uplink back.</summary>
+        private void Execute(MacroSettings settings, CancellationToken token)
+        {
+            var uplink = settings.TickUplink || settings.DisableBuffer ? owner._uplink() : null;
+
+            // Remembered rather than assumed. Turning the hold off afterwards when it was already
+            // on before would release a hold the operator had started by hand.
+            var wasActive = uplink?.IsActive;
+            var hadBuffer = uplink?.Options is { SupportsBuffer: true } o
+                ? o.BufferEnabled
+                : (bool?)null;
+
+            try
+            {
+                if (uplink is not null)
                 {
-                    _totalActive += DateTimeOffset.UtcNow - since;
+                    if (settings.TickUplink)
+                    {
+                        uplink.IsActive = true;
+                    }
+
+                    // After the hold, not before. Turning the buffer off is what makes withheld
+                    // packets be destroyed rather than replayed, and doing it while nothing is
+                    // held changes nothing to destroy.
+                    if (settings.DisableBuffer
+                        && uplink.Options is { SupportsBuffer: true } options)
+                    {
+                        options.BufferEnabled = false;
+                    }
                 }
 
-                _activeSince = null;
-                _run?.Dispose();
-                _run = null;
+                var macro = new LoadoutMacro(owner._input, owner._clocks());
+                LastSwaps = macro.Run(settings.ToPlan(), token);
             }
-        }
-    }
-
-    /// <summary>
-    /// Puts the uplink back the way it was found.
-    /// </summary>
-    /// <remarks>
-    /// In a finally, and swallowing its own failures, because this is the half that matters. A
-    /// macro that threw halfway and left 3074's uplink held is a connection that stays broken until
-    /// somebody notices and releases it by hand.
-    /// </remarks>
-    private static void Restore(IControllable? uplink, bool? wasActive, bool? hadBuffer)
-    {
-        if (uplink is null)
-        {
-            return;
-        }
-
-        try
-        {
-            if (hadBuffer is { } buffer && uplink.Options is { SupportsBuffer: true } options)
+            catch (Exception ex)
             {
-                options.BufferEnabled = buffer;
+                // A plan that will not run, or Windows refusing the input. Reported on the module
+                // rather than thrown: this is on a thread of its own, and a macro that failed must
+                // not take the session with it.
+                LastError = ex.Message;
             }
-
-            if (wasActive is false)
+            finally
             {
-                uplink.IsActive = false;
+                Restore(uplink, wasActive, hadBuffer);
+
+                lock (_gate)
+                {
+                    if (_activeSince is { } since)
+                    {
+                        _totalActive += DateTimeOffset.UtcNow - since;
+                    }
+
+                    _activeSince = null;
+                    _run?.Dispose();
+                    _run = null;
+                }
+
+                owner.Release(this);
             }
         }
-        catch
-        {
-            // Nothing useful left to do. The release-everything key is the backstop, and it is
-            // bound by default.
-        }
-    }
 
-    /// <inheritdoc/>
-    public void Dispose()
-    {
-        StopRun();
+        /// <summary>
+        /// Puts the uplink back the way it was found.
+        /// </summary>
+        /// <remarks>
+        /// In a finally, and swallowing its own failures, because this is the half that matters. A
+        /// macro that threw halfway and left 3074's uplink held is a connection that stays broken
+        /// until somebody notices and releases it by hand.
+        /// </remarks>
+        private static void Restore(IControllable? uplink, bool? wasActive, bool? hadBuffer)
+        {
+            if (uplink is null)
+            {
+                return;
+            }
 
-        try
-        {
-            _task?.Wait(TimeSpan.FromSeconds(2));
-        }
-        catch
-        {
-            // Shutting down. The uplink is restored in the run's own finally.
+            try
+            {
+                if (hadBuffer is { } buffer && uplink.Options is { SupportsBuffer: true } options)
+                {
+                    options.BufferEnabled = buffer;
+                }
+
+                if (wasActive is false)
+                {
+                    uplink.IsActive = false;
+                }
+            }
+            catch
+            {
+                // Nothing useful left to do. The release-everything key is the backstop, and it is
+                // bound by default.
+            }
         }
     }
 }

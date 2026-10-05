@@ -72,6 +72,17 @@ public sealed class ModuleViewModel : SidebarItem
     public bool IsMacro => Kind == ModuleKind.Macro;
 
     /// <summary>
+    /// What to call this on screen.
+    /// </summary>
+    /// <remarks>
+    /// The control's address for everything else, but a macro preset's own name for a macro - so
+    /// the sidebar reads "two swap" rather than "macro-1". The address stays as it was, because a
+    /// rename is not meant to be a re-bind.
+    /// </remarks>
+    public override string Title =>
+        Macro?.PresetName is { Length: > 0 } named ? named : Name;
+
+    /// <summary>
     /// The macro's settings, or null for everything else.
     /// </summary>
     /// <remarks>
@@ -341,7 +352,7 @@ public sealed class ModuleViewModel : SidebarItem
         RaiseLive();
 
         RaiseAll(
-            nameof(IsEnabled), nameof(CanHold),
+            nameof(IsEnabled), nameof(CanHold), nameof(Title),
             nameof(ResyncEnabled), nameof(BufferEnabled), nameof(Metrics));
     }
 

@@ -305,44 +305,33 @@ public sealed record OverlayConfig
 }
 
 /// <summary>
-/// One saved loadout rotation.
+/// One saved macro: a rotation, its timings, and the key that runs it.
 /// </summary>
 /// <remarks>
-/// Named, because five of them listed as "preset 3" is five things to try one at a time. The order
-/// is the rotation and repeats until the duration is up; <see cref="EndOn"/> is what it settles on
-/// afterwards, which is usually not a member of the rotation at all.
+/// <para>
+/// Everything about a run lives here rather than being shared. Two swaps worth saving separately
+/// are usually different in more than which loadouts they touch - a fast two-slot cycle and a
+/// slower four-slot one need different gaps and different durations - so a preset that only
+/// remembered the loadouts would mean re-typing the timings every time you switched.
+/// </para>
+/// <para>
+/// The order is the rotation and repeats until the duration is up. <see cref="EndOn"/> is what it
+/// settles on afterwards, which is usually not a member of the rotation at all.
+/// </para>
 /// </remarks>
 public sealed record MacroPreset
 {
     /// <summary>What to call it in the window.</summary>
     public string Name { get; init; } = "preset";
 
+    /// <summary>The key that runs this one, and stops it if it is already going.</summary>
+    public string? Bind { get; init; }
+
     /// <summary>The loadout slots to cycle, in order, numbered from 1.</summary>
     public IReadOnlyList<int> Order { get; init; } = [1, 2];
 
     /// <summary>The slot to finish on, or null to stop wherever the rotation ended.</summary>
     public int? EndOn { get; init; }
-}
-
-/// <summary>
-/// The loadout macro.
-/// </summary>
-/// <remarks>
-/// Every delay is in milliseconds because every one of them is a race against something drawing -
-/// the character screen appearing, the loadout page sliding in, the game registering a click. Those
-/// are tens of milliseconds apart, not tenths of a second, and a setting that cannot express the
-/// difference cannot be tuned.
-/// </remarks>
-public sealed record MacroConfig
-{
-    /// <summary>Whether to host it at all. False and it does not appear in the window.</summary>
-    public bool Enabled { get; init; }
-
-    /// <summary>The window's own switch: hosted and listed, but refusing to run.</summary>
-    public bool ModuleEnabled { get; init; } = true;
-
-    /// <summary>The key that starts it, and stops it if it is already going.</summary>
-    public string? Bind { get; init; }
 
     /// <summary>The gap between loadout clicks.</summary>
     public int ClickDelayMs { get; init; } = 30;
@@ -355,7 +344,7 @@ public sealed record MacroConfig
     /// </summary>
     /// <remarks>
     /// Really "how long does this machine take to draw that screen". A click sent before it is
-    /// there goes to whatever was underneath, which on the tower screen is a destination.
+    /// there goes to whatever was underneath.
     /// </remarks>
     public int OpenDelayMs { get; init; } = 400;
 
@@ -368,44 +357,106 @@ public sealed record MacroConfig
     /// <summary>Turn 3074's uplink buffer off for the length of the run.</summary>
     public bool DisableBuffer { get; init; } = true;
 
-    /// <summary>Where the loadouts are on screen.</summary>
-    public LoadoutGrid Grid { get; init; } = new();
-
-    /// <summary>The saved rotations.</summary>
-    public IReadOnlyList<MacroPreset> Presets { get; init; } =
-    [
-        new() { Name = "two swap", Order = [1, 2], EndOn = 1 },
-        new() { Name = "three swap", Order = [1, 2, 3], EndOn = 1 },
-        new() { Name = "preset 3", Order = [1, 2], EndOn = 1 },
-        new() { Name = "preset 4", Order = [1, 2], EndOn = 1 },
-        new() { Name = "preset 5", Order = [1, 2], EndOn = 1 }
-    ];
-
-    /// <summary>Which preset the key runs, from 0.</summary>
-    public int Preset { get; init; }
-
-    /// <summary>The preset that would run now, whatever the index says.</summary>
+    /// <summary>
+    /// Press F1 again at the end, to close the character screen.
+    /// </summary>
     /// <remarks>
-    /// Clamped rather than throwing. An index past the end is a hand-edited file or a preset that
-    /// was deleted, and neither is worth refusing to start a session over.
+    /// Optional because it is not always wanted: a swap done to set up for something else is
+    /// better left on the screen it ended on. Off, the macro leaves the inventory open.
     /// </remarks>
-    public MacroPreset Selected => Presets.Count == 0
-        ? new MacroPreset()
-        : Presets[Math.Clamp(Preset, 0, Presets.Count - 1)];
+    public bool CloseAfter { get; init; } = true;
 
-    /// <summary>What the runner needs, with the preset resolved.</summary>
-    public MacroSettings ToSettings() => new()
+    /// <summary>What the runner needs, against a given screen.</summary>
+    public MacroSettings ToSettings(LoadoutGrid grid) => new()
     {
-        Grid = Grid,
-        Order = Selected.Order,
-        EndOn = Selected.EndOn,
+        Grid = grid,
+        Order = Order,
+        EndOn = EndOn,
         Duration = TimeSpan.FromMilliseconds(DurationMs),
         ClickDelay = TimeSpan.FromMilliseconds(ClickDelayMs),
         OpenDelay = TimeSpan.FromMilliseconds(OpenDelayMs),
         PageDelay = TimeSpan.FromMilliseconds(PageDelayMs),
         TickUplink = TickUplink,
-        DisableBuffer = DisableBuffer
+        DisableBuffer = DisableBuffer,
+        CloseAfter = CloseAfter
     };
+
+    /// <summary>Checks this one can run, naming itself if not.</summary>
+    public void Validate(LoadoutGrid grid)
+    {
+        foreach (var slot in Order)
+        {
+            if (!grid.Holds(slot))
+            {
+                throw new ArgumentException(
+                    $"macro preset '{Name}' uses loadout {slot}, "
+                    + $"and the grid holds 1 to {grid.Count}");
+            }
+        }
+
+        if (EndOn is { } end && !grid.Holds(end))
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' ends on loadout {end}, "
+                + $"and the grid holds 1 to {grid.Count}");
+        }
+
+        if (ClickDelayMs is < 0 or > 10000)
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' has clickDelayMs {ClickDelayMs}, outside 0-10000");
+        }
+
+        if (DurationMs is < 1 or > 600000)
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' has durationMs {DurationMs}, outside 1-600000");
+        }
+
+        if (OpenDelayMs is < 0 or > 10000 || PageDelayMs is < 0 or > 10000)
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' has a screen delay outside 0-10000 ms");
+        }
+    }
+}
+
+/// <summary>
+/// The loadout macro: a screen, and the saved macros that click on it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Only the grid is shared, because only the grid is a fact about the machine rather than about a
+/// swap. Everything else belongs to a preset, and each preset is separately bindable - so they are
+/// really several macros that happen to agree about where the loadouts are.
+/// </para>
+/// <para>
+/// Every delay is in milliseconds because every one of them is a race against something drawing -
+/// the character screen appearing, the loadout page sliding in, the game registering a click. Those
+/// are tens of milliseconds apart, not tenths of a second, and a setting that cannot express the
+/// difference cannot be tuned.
+/// </para>
+/// </remarks>
+public sealed record MacroConfig
+{
+    /// <summary>Whether to host it at all. False and it does not appear in the window.</summary>
+    public bool Enabled { get; init; }
+
+    /// <summary>The window's own switch: hosted and listed, but refusing to run.</summary>
+    public bool ModuleEnabled { get; init; } = true;
+
+    /// <summary>Where the loadouts are on screen. Shared, since there is one screen.</summary>
+    public LoadoutGrid Grid { get; init; } = new();
+
+    /// <summary>The saved macros, each with its own key, timings and rotation.</summary>
+    public IReadOnlyList<MacroPreset> Presets { get; init; } =
+    [
+        new() { Name = "two swap", Order = [1, 2], EndOn = 1 },
+        new() { Name = "three swap", Order = [1, 2, 3], EndOn = 1 },
+        new() { Name = "preset 3" },
+        new() { Name = "preset 4" },
+        new() { Name = "preset 5" }
+    ];
 
     /// <summary>Checks the settings describe something runnable.</summary>
     public void Validate()
@@ -417,40 +468,9 @@ public sealed record MacroConfig
 
         Grid.Validate();
 
-        if (ClickDelayMs is < 0 or > 10000)
-        {
-            throw new ArgumentException(
-                $"macro clickDelayMs {ClickDelayMs} is outside 0-10000");
-        }
-
-        if (DurationMs is < 1 or > 600000)
-        {
-            throw new ArgumentException($"macro durationMs {DurationMs} is outside 1-600000");
-        }
-
-        if (OpenDelayMs is < 0 or > 10000 || PageDelayMs is < 0 or > 10000)
-        {
-            throw new ArgumentException("macro open and page delays must be within 0-10000 ms");
-        }
-
         foreach (var preset in Presets)
         {
-            foreach (var slot in preset.Order)
-            {
-                if (!Grid.Holds(slot))
-                {
-                    throw new ArgumentException(
-                        $"macro preset '{preset.Name}' uses loadout {slot}, "
-                        + $"and the grid holds 1 to {Grid.Count}");
-                }
-            }
-
-            if (preset.EndOn is { } end && !Grid.Holds(end))
-            {
-                throw new ArgumentException(
-                    $"macro preset '{preset.Name}' ends on loadout {end}, "
-                    + $"and the grid holds 1 to {Grid.Count}");
-            }
+            preset.Validate(Grid);
         }
     }
 }

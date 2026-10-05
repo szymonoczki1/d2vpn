@@ -31,7 +31,7 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel>
-                        <TextBlock Text="{Binding Name}" Style="{StaticResource Heading}" />
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource Heading}" />
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                             <TextBlock Text="{Binding KindLabel}" Style="{StaticResource Subtle}" />
                             <TextBlock Text="  ·  " Style="{StaticResource Subtle}" />
@@ -196,22 +196,7 @@
                     <StackPanel>
                         <TextBlock Text="ROTATION" Style="{StaticResource SectionLabel}" />
 
-                        <!-- An explicit ItemTemplate rather than DisplayMemberPath: that one
-                             leaves SelectionBoxItemTemplate null, so the closed dropdown rendered
-                             the record's ToString while the open list looked right. -->
-                        <ComboBox Style="{StaticResource Dropdown}"
-                                  ItemsSource="{Binding Presets}"
-                                  SelectedIndex="{Binding SelectedPreset, Mode=TwoWay}"
-                                  Margin="0,2,0,0"
-                                  HorizontalAlignment="Left" MinWidth="220">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Name}" />
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
-
-                        <Grid Margin="0,14,0,0">
+                        <Grid Margin="0,2,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="92" />
                                 <ColumnDefinition Width="*" />
@@ -255,10 +240,9 @@
                             <TextBlock Text="End on" VerticalAlignment="Center" />
                             <Button Grid.Column="1" Content="&#x2212;" Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="end-" Click="OnMacroNudge" />
-                            <TextBlock Grid.Column="2" Text="{Binding EndOn}"
-                                       Style="{StaticResource Mono}" FontSize="14"
-                                       Foreground="{StaticResource TextBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
+                                     Text="{Binding EndOn, Mode=TwoWay,
+                                            UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Column="3" Content="+" Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="end+" Click="OnMacroNudge" />
                             <TextBlock Grid.Column="4" Text="{Binding EndOnLabel}"
@@ -278,7 +262,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="140" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="72" />
+                                <ColumnDefinition Width="82" />
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
@@ -292,10 +276,9 @@
                             <TextBlock Text="Between clicks" VerticalAlignment="Center" Margin="0,5" />
                             <Button Grid.Column="1" Content="&#x2212;" Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="click-" Click="OnMacroNudge" />
-                            <TextBlock Grid.Column="2" Text="{Binding ClickDelayMs}"
-                                       Style="{StaticResource Mono}" FontSize="14"
-                                       Foreground="{StaticResource TextBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
+                                     Text="{Binding ClickDelayMs, Mode=TwoWay,
+                                            UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Column="3" Content="+" Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="click+" Click="OnMacroNudge" />
                             <TextBlock Grid.Column="4" Text="ms" Style="{StaticResource Subtle}"
@@ -306,10 +289,9 @@
                             <Button Grid.Row="1" Grid.Column="1" Content="&#x2212;"
                                     Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="duration-" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding DurationMs}"
-                                       Style="{StaticResource Mono}" FontSize="14"
-                                       Foreground="{StaticResource TextBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="1" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                     Text="{Binding DurationMs, Mode=TwoWay,
+                                            UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Row="1" Grid.Column="3" Content="+"
                                     Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="duration+" Click="OnMacroNudge" />
@@ -322,10 +304,9 @@
                             <Button Grid.Row="2" Grid.Column="1" Content="&#x2212;"
                                     Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="open-" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="2" Grid.Column="2" Text="{Binding OpenDelayMs}"
-                                       Style="{StaticResource Mono}" FontSize="14"
-                                       Foreground="{StaticResource TextBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="2" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                     Text="{Binding OpenDelayMs, Mode=TwoWay,
+                                            UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Row="2" Grid.Column="3" Content="+"
                                     Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="open+" Click="OnMacroNudge" />
@@ -338,10 +319,9 @@
                             <Button Grid.Row="3" Grid.Column="1" Content="&#x2212;"
                                     Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="page-" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="3" Grid.Column="2" Text="{Binding PageDelayMs}"
-                                       Style="{StaticResource Mono}" FontSize="14"
-                                       Foreground="{StaticResource TextBrush}"
-                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="3" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                     Text="{Binding PageDelayMs, Mode=TwoWay,
+                                            UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Row="3" Grid.Column="3" Content="+"
                                     Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="page+" Click="OnMacroNudge" />
@@ -352,6 +332,12 @@
 
                         <TextBlock Text="{Binding SwapEstimate}" Style="{StaticResource Subtle}"
                                    Foreground="{StaticResource TextBrush}" Margin="0,12,0,0" />
+
+                        <TextBlock Text="{Binding TimingWarning}" Style="{StaticResource Subtle}"
+                                   Foreground="{StaticResource HoldingBrush}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Visibility="{Binding TimingWarning,
+                                                Converter={StaticResource EmptyToVisibility}}" />
 
                         <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
                                    Text="The two screen delays are really how long this machine takes to draw those screens. A click sent before the screen is there goes to whatever was underneath it." />
@@ -374,6 +360,13 @@
 
                         <TextBlock Style="{StaticResource Subtle}" Margin="0,10,0,0"
                                    Text="Both are put back exactly as they were found when the run ends, however it ends - so a hold you started by hand stays held, and one the macro started does not." />
+
+                        <CheckBox Style="{StaticResource Switch}" Margin="0,16,0,4"
+                                  IsChecked="{Binding CloseAfter, Mode=TwoWay}"
+                                  Content="Close the character screen when it finishes" />
+
+                        <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
+                                   Text="Another F1, after the finishing click. On a run you stopped early as well, since an inventory left open sends your next key press to a menu." />
                     </StackPanel>
                 </Border>
 
@@ -950,7 +943,7 @@
 
                                     <StackPanel Opacity="{Binding IsEnabled,
                                                    Converter={StaticResource BoolToOpacity}}">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
                                         <TextBlock Text="{Binding SidebarDetail}"
                                                    FontSize="11">
                                             <TextBlock.Style>

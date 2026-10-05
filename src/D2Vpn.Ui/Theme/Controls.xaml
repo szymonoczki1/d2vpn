@@ -155,6 +155,33 @@
         </Setter>
     </Style>
 
+    <!-- A small number field. Typed rather than only nudged: the useful range for a click gap is
+         single milliseconds, and stepping there in fives both takes four clicks and cannot land on
+         7. The view model clamps whatever arrives, so there is nothing to validate here - a value
+         out of range comes straight back corrected. -->
+    <Style x:Key="NumberBox" TargetType="TextBox">
+        <Setter Property="Background" Value="{StaticResource CardBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource LineBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="FontFamily" Value="{StaticResource MonoFont}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="Margin" Value="4,3" />
+        <Setter Property="TextAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="CaretBrush" Value="{StaticResource TextBrush}" />
+        <Setter Property="SelectionBrush" Value="{StaticResource AccentBrush}" />
+        <Style.Triggers>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- A dropdown. Templated in full because the stock one is painted by the system theme and
          arrives white on a window that is not - the one control in here that ignores every brush
          it is given. -->

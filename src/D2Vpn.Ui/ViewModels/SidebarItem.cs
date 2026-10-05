@@ -24,6 +24,16 @@ public abstract class SidebarItem : ObservableObject
     /// <summary>The second line in the sidebar - a keybind, a timer, or a hint.</summary>
     public abstract string SidebarDetail { get; }
 
+    /// <summary>
+    /// What to call this on screen, which is not always its address.
+    /// </summary>
+    /// <remarks>
+    /// The same as <see cref="Name"/> for everything but a macro preset, which shows the name the
+    /// person gave it while keeping its address as macro-1. On the base so the sidebar can bind to
+    /// one property without knowing which kind of row it has.
+    /// </remarks>
+    public virtual string Title => Name;
+
     /// <summary>Whether to show the holding dot. False for anything that is not a module.</summary>
     /// <remarks>
     /// Settable on the base so the sidebar can bind two-way without knowing what it has. Anything
@@ -46,11 +56,13 @@ public abstract class SidebarItem : ObservableObject
     public virtual bool IsTiming => false;
 
     /// <summary>
-    /// The name, so a list row announces itself as something a person would recognise.
+    /// The title, so a list row announces itself as what the row actually says.
     /// </summary>
     /// <remarks>
     /// WPF falls back to <c>ToString</c> for a list item's accessible name, and without this every
-    /// row in the sidebar announced itself to a screen reader as its own class name.
+    /// row in the sidebar announced itself to a screen reader as its own class name. <see
+    /// cref="Title"/> rather than <see cref="Name"/>, so a renamed macro preset is announced as
+    /// "two swap" and not as the address it is stored under.
     /// </remarks>
-    public override string ToString() => Name;
+    public override string ToString() => Title;
 }

@@ -203,11 +203,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 _runners.Add(new MacroRunner(
                     MacroName,
                     new SyntheticInput(),
-                    () => _config.Macro.ToSettings(),
-                    () => Find(UplinkName))
-                {
-                    IsEnabled = _config.Macro.ModuleEnabled
-                });
+                    () => _config.Macro,
+                    () => Find(UplinkName)));
             }
 
             _host = new ModuleHost(_runners);
@@ -242,11 +239,18 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
         foreach (var controllable in _runners.SelectMany(r => r.Controls))
         {
+            var preset = PresetIndexOf(controllable.Name);
+
             var module = new ModuleViewModel(
                 controllable, byName.GetValueOrDefault(controllable.Name))
             {
-                Macro = controllable.Name == MacroName
-                    ? new MacroSettingsViewModel(_config.Macro, ApplyMacro)
+                // Read and written through the index rather than captured, so the panel always
+                // sees the preset as it stands now - including after a save from somewhere else.
+                Macro = preset is { } at
+                    ? new MacroSettingsViewModel(
+                        () => PresetAt(at),
+                        updated => ApplyPreset(at, updated),
+                        _config.Macro.Grid)
                     : null
             };
 
@@ -262,7 +266,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 module.BindKey = controllable.Name switch
                 {
                     PauseName => ParseOrNull(_config.Pause.Bind),
-                    MacroName => ParseOrNull(_config.Macro.Bind),
+                    _ when preset is { } bound => ParseOrNull(PresetAt(bound).Bind),
                     _ => ParseOrNull(ResetBindFor(controllable.Name))
                 };
             }
@@ -549,8 +553,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// <summary>The control-surface name game pause is hosted under.</summary>
     private const string PauseName = "pause";
 
-    /// <summary>The control-surface name the loadout macro is hosted under.</summary>
+    /// <summary>The stem of each macro control's address: macro-1, macro-2 and so on.</summary>
     private const string MacroName = "macro";
+
+    /// <summary>Which preset a macro control stands for, or null if it is not one.</summary>
+    /// <remarks>
+    /// By position rather than by name, so renaming a preset in the window does not change its
+    /// address and lose its key. A rename is not meant to be a re-bind.
+    /// </remarks>
+    private static int? PresetIndexOf(string controlName) =>
+        controlName.StartsWith(MacroName + "-", StringComparison.Ordinal)
+            && int.TryParse(
+                controlName[(MacroName.Length + 1)..],
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var number)
+            && number >= 1
+                ? number - 1
+                : null;
 
     /// <summary>The hold the macro ticks for the length of a run.</summary>
     private const string UplinkName = "3074-ul";
@@ -607,17 +626,42 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         Save();
     }
 
+    /// <summary>One preset by position, or a default if the list is shorter than that.</summary>
+    private MacroPreset PresetAt(int index)
+    {
+        var presets = _config.Macro.Presets;
+        return index < presets.Count ? presets[index] : new MacroPreset();
+    }
+
     /// <summary>
-    /// Takes a change from the macro's panel: saves it, and uses it on the next run.
+    /// Takes a change to one preset: saves it, and uses it on that preset's next run.
     /// </summary>
     /// <remarks>
-    /// Nothing is pushed at the running macro. Its settings are read when the key is pressed, so a
+    /// Nothing is pushed at a running macro. Its settings are read when the key is pressed, so a
     /// run in progress finishes the way it started rather than changing shape underneath itself.
     /// </remarks>
-    private void ApplyMacro(MacroConfig macro)
+    private void ApplyPreset(int index, MacroPreset preset)
     {
-        _config = _config with { Macro = macro };
+        var presets = _config.Macro.Presets.ToList();
+
+        // Grown rather than refused. A config hand-edited down to two presets still has five
+        // controls hosted, and the fifth one's panel should write a fifth preset rather than
+        // silently do nothing.
+        while (presets.Count <= index)
+        {
+            presets.Add(new MacroPreset { Name = $"preset {presets.Count + 1}" });
+        }
+
+        presets[index] = preset;
+
+        _config = _config with { Macro = _config.Macro with { Presets = presets } };
         Save();
+
+        // The heading and the sidebar carry the preset's name, so a rename has to reach them.
+        foreach (var module in Modules)
+        {
+            module.Refresh();
+        }
     }
 
     /// <summary>Raised when the timer's settings change.</summary>
@@ -687,13 +731,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                         Bind = KeyName.Describe(m.BindKey!.Value)
                     })]
                 : config.ResetBinds,
-            Macro = Modules.FirstOrDefault(m => m.Name == MacroName) is { } macro
-                ? config.Macro with
-                {
-                    Bind = macro.BindKey is { } macroKey ? KeyName.Describe(macroKey) : null,
-                    ModuleEnabled = macro.IsEnabled
-                }
-                : config.Macro,
+            Macro = WithMacroBinds(config.Macro),
             Pause = pause is null
                 ? config.Pause
                 : config.Pause with
@@ -706,6 +744,39 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 }
         };
     }
+
+    /// <summary>
+    /// Puts each macro control's key and switch back into its own preset.
+    /// </summary>
+    /// <remarks>
+    /// Per preset, since each is separately bindable. Presets with no control hosted - a config
+    /// listing more than were built - are left exactly as they were rather than dropped.
+    /// </remarks>
+    private IReadOnlyList<MacroPreset> PresetsWithBinds(MacroConfig macro)
+    {
+        var presets = macro.Presets.ToList();
+
+        foreach (var module in Modules)
+        {
+            if (PresetIndexOf(module.Name) is not { } at || at >= presets.Count)
+            {
+                continue;
+            }
+
+            presets[at] = presets[at] with
+            {
+                Bind = module.BindKey is { } key ? KeyName.Describe(key) : null
+            };
+        }
+
+        return presets;
+    }
+
+    /// <summary>The macro section with every hosted preset's key written back.</summary>
+    private MacroConfig WithMacroBinds(MacroConfig macro) =>
+        Modules.Any(m => PresetIndexOf(m.Name) is not null)
+            ? macro with { Presets = PresetsWithBinds(macro) }
+            : macro;
 
     /// <summary>The key a config bound to a reconnect, found by its group.</summary>
     /// <remarks>
