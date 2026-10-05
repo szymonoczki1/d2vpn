@@ -134,6 +134,24 @@ public sealed record TimerConfig
     /// the same server before this elapses continues the timer rather than restarting it.
     /// </remarks>
     public int EndAfterS { get; init; } = 45;
+
+    /// <summary>
+    /// Ask the Bungie API when the activity really started.
+    /// </summary>
+    /// <remarks>
+    /// A correction to the traffic timer, never a replacement for it: off, or failing, the timer
+    /// still runs. See docs/api.md.
+    /// </remarks>
+    public bool UseApi { get; init; }
+
+    /// <summary>
+    /// The account to follow, as <c>Name#1234</c>.
+    /// </summary>
+    /// <remarks>
+    /// Not a secret - it is the name other players see - so unlike the API key it belongs in the
+    /// config rather than in a file of its own.
+    /// </remarks>
+    public string? BungieName { get; init; }
 }
 
 /// <summary>

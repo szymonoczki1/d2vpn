@@ -192,6 +192,23 @@ public sealed class NotNullToVisibilityConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Shows an element only when the bound string has something in it.</summary>
+/// <remarks>
+/// For a separator between two labels, one of which is often blank. Collapsing the separator with
+/// its neighbour is the difference between "not in an activity" and "not in an activity  ·  ".
+/// </remarks>
+[ValueConversion(typeof(string), typeof(Visibility))]
+public sealed class EmptyToVisibilityConverter : IValueConverter
+{
+    /// <inheritdoc/>
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        string.IsNullOrEmpty(value as string) ? Visibility.Collapsed : Visibility.Visible;
+
+    /// <inheritdoc/>
+    public object ConvertBack(object? value, Type t, object? p, CultureInfo c) =>
+        throw new NotSupportedException();
+}
+
 [ValueConversion(typeof(bool), typeof(Visibility))]
 public sealed class BoolToVisibilityConverter : IValueConverter
 {

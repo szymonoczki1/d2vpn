@@ -1,4 +1,5 @@
-﻿using D2Vpn.Core.Hosting;
+﻿using D2Vpn.Core.Api;
+using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Ui.ViewModels;
@@ -16,6 +17,7 @@ public sealed class TimerSettingsViewModel : SidebarItem
 {
     private readonly Action<TimerConfig> _apply;
     private readonly InstanceWatcher _watcher;
+    private readonly Func<BungieActivityWatcher?> _api;
     private readonly bool _fed;
     private TimerConfig _config;
 
@@ -27,15 +29,108 @@ public sealed class TimerSettingsViewModel : SidebarItem
     /// settings for something that is not watching, which is worth saying rather than showing a
     /// timer that will never move.
     /// </param>
+    /// <param name="api">
+    /// The API corrector as it stands, read fresh each time. A function rather than the object,
+    /// because changing a setting replaces it and a captured reference would describe the one
+    /// that was torn down.
+    /// </param>
     /// <param name="apply">Called with every change, to save it and retune the watcher.</param>
     public TimerSettingsViewModel(
-        TimerConfig config, InstanceWatcher watcher, bool fed, Action<TimerConfig> apply)
+        TimerConfig config,
+        InstanceWatcher watcher,
+        bool fed,
+        Func<BungieActivityWatcher?> api,
+        Action<TimerConfig> apply)
     {
         _config = config;
         _watcher = watcher;
         _fed = fed;
+        _api = api;
         _apply = apply;
     }
+
+    /// <summary>Ask the Bungie API for the activity's real start time.</summary>
+    public bool UseApi
+    {
+        get => _config.UseApi;
+        set => Change(_config with { UseApi = value });
+    }
+
+    /// <summary>The account to follow, as Name#1234.</summary>
+    public string BungieName
+    {
+        get => _config.BungieName ?? string.Empty;
+        set => Change(_config with
+        {
+            BungieName = string.IsNullOrWhiteSpace(value) ? null : value.Trim()
+        });
+    }
+
+    /// <summary>Whether a key has been put in place, without showing it.</summary>
+    public string KeyState => BungieKey.Mask(BungieKey.Read());
+
+    /// <summary>Where to put the key.</summary>
+    public string KeyPath => BungieKey.Path;
+
+    /// <summary>
+    /// What the API half is doing, in a few words.
+    /// </summary>
+    /// <remarks>
+    /// Every way this can fail needs a different thing done about it - a key to paste, a name to
+    /// correct, a privacy setting to change - so "something went wrong" would be the one answer
+    /// that helps with none of them.
+    /// </remarks>
+    public string ApiState
+    {
+        get
+        {
+            if (!_config.Enabled)
+            {
+                return "the timer is off";
+            }
+
+            if (!_config.UseApi)
+            {
+                return "off - the timer runs on traffic alone";
+            }
+
+            if (BungieKey.Read() is null)
+            {
+                return $"no key yet - put one in {BungieKey.Path}";
+            }
+
+            if (BungieResponses.ParseBungieName(_config.BungieName) is null)
+            {
+                return "needs your Bungie name, as Name#1234";
+            }
+
+            if (_api() is not { } api)
+            {
+                return "not started - restart the window";
+            }
+
+            return api.LastFailure switch
+            {
+                BungieFailure.Key => "the key was not accepted",
+                BungieFailure.NoSuchPlayer => "that name matched no Destiny account",
+                BungieFailure.Private =>
+                    "your profile does not show activity anonymously - "
+                    + "bungie.net, Settings, Privacy",
+                BungieFailure.Throttled => "asked too often; it will try again",
+                BungieFailure.Unavailable => "could not reach bungie.net",
+                _ => api.Player is { } player
+                    ? $"following {player.DisplayName}"
+                    : "looking up that name"
+            };
+        }
+    }
+
+    /// <summary>Whether the figure on screen is the server's own start or this tool's guess.</summary>
+    public string Source => !_watcher.InInstance
+        ? string.Empty
+        : _watcher.IsCorrected
+            ? "from the server"
+            : "from traffic";
 
     /// <summary>
     /// The instance timer as it stands, for the one place it can be read without the game in front.
@@ -96,7 +191,8 @@ public sealed class TimerSettingsViewModel : SidebarItem
         + $"({_watcher.QuietEnds} by silence, {_watcher.Superseded} replaced)";
 
     /// <summary>Re-reads the running figures. Rides the window's fast tick.</summary>
-    public void Tick() => RaiseAll(nameof(Elapsed), nameof(State), nameof(Counts));
+    public void Tick() =>
+        RaiseAll(nameof(Elapsed), nameof(State), nameof(Counts), nameof(Source), nameof(ApiState));
 
     /// <inheritdoc/>
     public override string Name => "Timer";
@@ -196,6 +292,7 @@ public sealed class TimerSettingsViewModel : SidebarItem
 
         RaiseAll(
             nameof(IsEnabledSetting), nameof(HideAfterS), nameof(EndAfterS),
-            nameof(Summary), nameof(HideInBeats), nameof(EndInBeats), nameof(SidebarDetail));
+            nameof(Summary), nameof(HideInBeats), nameof(EndInBeats), nameof(SidebarDetail),
+            nameof(UseApi), nameof(BungieName), nameof(KeyState), nameof(ApiState));
     }
 }

@@ -1,4 +1,6 @@
-﻿using System.Runtime.Versioning;
+﻿using System.Diagnostics;
+using System.IO;
+using System.Runtime.Versioning;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -336,6 +338,32 @@ public partial class MainWindow : Window
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Opens the folder the API key goes in, creating it if this is the first time.
+    /// </summary>
+    /// <remarks>
+    /// Rather than a file picker. The key is pasted into a text file that may not exist yet, which
+    /// is a thing to do in Explorer, not something to choose - and the path is long enough that
+    /// typing it from the label would be its own small ordeal.
+    /// </remarks>
+    private void OnOpenKeyFolder(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            Directory.CreateDirectory(ConfigLocation.Folder);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = ConfigLocation.Folder,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _model.Flash($"could not open {ConfigLocation.Folder}: {ex.Message}");
+        }
     }
 
     /// <summary>The arrows on the timer page.</summary>

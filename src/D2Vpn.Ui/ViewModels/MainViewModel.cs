@@ -2,6 +2,7 @@
 using System.IO;
 using System.Runtime.Versioning;
 
+using D2Vpn.Core.Api;
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Input;
 using D2Vpn.Core.Interception;
@@ -37,6 +38,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     private HotkeyWatcher? _hotkeys;
     private List<IModuleRunner> _runners = [];
     private HostConfig _config;
+    private BungieActivityWatcher? _api;
     private TimerSettingsViewModel? _timerPage;
     private SidebarItem? _selected;
     private CategoryViewModel? _category;
@@ -233,11 +235,48 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         _ = _host.RunAsync(_shutdown.Token);
 
         BindKeys();
+        StartApi();
 
         Status = $"hosting {Modules.Count} module{(Modules.Count == 1 ? "" : "s")} "
             + $"across {_runners.Count} handle{(_runners.Count == 1 ? "" : "s")}";
         return true;
     }
+
+    /// <summary>
+    /// Starts following the API, if it is turned on and has what it needs.
+    /// </summary>
+    /// <remarks>
+    /// Silently does nothing when it is not set up. Every reason it might not be - no key, no
+    /// name, turned off - is already stated on the Timer page, and a session that hosts modules
+    /// perfectly well should not open with a complaint about an optional extra.
+    /// </remarks>
+    private void StartApi()
+    {
+        StopApi();
+
+        if (!_config.Timer.Enabled
+            || !_config.Timer.UseApi
+            || BungieResponses.ParseBungieName(_config.Timer.BungieName) is null
+            || BungieKey.Read() is not { } key)
+        {
+            return;
+        }
+
+        _api = new BungieActivityWatcher(
+            Instances, new BungieClient(key), _config.Timer.BungieName!);
+
+        _api.Start();
+    }
+
+    /// <summary>Stops following, and lets go of the connection.</summary>
+    private void StopApi()
+    {
+        _api?.Dispose();
+        _api = null;
+    }
+
+    /// <summary>What the API is doing, for the Timer page.</summary>
+    public BungieActivityWatcher? Api => _api;
 
     /// <summary>
     /// Hands a 30k packet to the instance watcher, unless the timer is turned off.
@@ -290,7 +329,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         // Kept, because it shows a running figure and so needs the fast tick. Everything else on
         // these pages only changes when something is clicked.
         _timerPage = new TimerSettingsViewModel(
-            _config.Timer, Instances, TimerIsFed, ApplyTimer);
+            _config.Timer, Instances, TimerIsFed, () => _api, ApplyTimer);
 
         settings.Items.Add(_timerPage);
 
@@ -483,6 +522,11 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             TimeSpan.FromSeconds(timer.EndAfterS),
             TimeSpan.FromSeconds(timer.HideAfterS));
 
+        // Rebuilt rather than reconfigured. The name, the key and whether it runs at all are all
+        // decided at construction, and this happens when somebody clicks a switch - not often
+        // enough for tearing down one HTTP client to be worth avoiding.
+        StartApi();
+
         TimerChanged?.Invoke(timer);
         Save();
     }
@@ -671,6 +715,10 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         // down, then release every hold, then close the handles.
         _hotkeys?.Dispose();
         _hotkeys = null;
+
+        // Before the handles, so an in-flight web request is cancelled rather than left holding a
+        // connection open after the window has gone.
+        StopApi();
 
         if (!_shutdown.IsCancellationRequested)
         {
