@@ -1,4 +1,4 @@
-using D2Vpn.Core.Modules;
+﻿using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Tests.Modules;
@@ -45,9 +45,10 @@ public class CrossDirectionTriggerTests
 
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0));
 
-        // The handshake crosses while the window is open, and stops once it closes.
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 4.0)));
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 4.6)));
+        // The handshake crosses while the window is open, and stops once it closes. The window is
+        // 5 s: the measured inbound handshake runs 3.1 s and 3.5 left only 0.3 s of margin.
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 5.5)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 6.1)));
     }
 
     [Fact]

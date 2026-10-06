@@ -54,12 +54,19 @@ public class MeasuredDefaultsTests
     public void Downlink_answers_the_handshake_rather_than_opening_the_gate()
     {
         // A resync that stops blocking entirely leaks the state the hold exists to defer: one
-        // packet carries a pickup. These are the sizes measured crossing a working resync.
+        // packet carries a pickup. These are the sizes measured crossing a working resync - the
+        // inbound reconnect handshake, captured clean, in the order it arrives.
         var down = MeasuredDefaults.Peer3074Downlink;
 
         Assert.NotNull(down.ResyncPassLengths);
-        Assert.Equal([51, 233], down.ResyncPassLengths!.Order());
+        Assert.Equal([36, 42, 51, 64, 98, 233, 301], down.ResyncPassLengths!.Order());
         Assert.Empty(down.PassLengths);
+
+        // And not the state flood behind it, which is the whole point of still holding.
+        foreach (var state in new[] { 1168, 1185, 1217, 1233 })
+        {
+            Assert.DoesNotContain(state, down.ResyncPassLengths!);
+        }
     }
 
     [Fact]

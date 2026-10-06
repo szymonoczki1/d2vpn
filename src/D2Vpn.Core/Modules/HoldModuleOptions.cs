@@ -433,19 +433,31 @@ public static class MeasuredDefaults
     {
         PassLengths = new HashSet<int>(),
 
-        // Let the handshake through and nothing else, so the exchange can complete without the
-        // hold leaking the state it exists to defer.
-        ResyncPassLengths = new HashSet<int> { 51, 233 },
+        // The inbound reconnect handshake, captured clean with no limiter running: 301, 42, 233,
+        // 51, 36, 51, 36, 36, 98, 64 - in that order, over 3.1 s - and then a flood of 1168-1233
+        // which is world state streaming back. The flood is deliberately not here. That is the
+        // traffic a downlink hold exists to defer, and passing it would make the window pointless.
+        //
+        // 51 and 233 alone were what this had, which is why fixing the trigger only moved the
+        // deadlock: the window opened and the peer's very first reply, the 301, was dropped inside
+        // it. The 301 then repeated once a second for as long as the hold was up.
+        //
+        // 36 and 51 also appear in the uplink pass list, which is the same handshake seen from the
+        // other side.
+        ResyncPassLengths = new HashSet<int> { 36, 42, 51, 64, 98, 233, 301 },
 
         // 425 opens a reconnect; 128 and 136 are the peer-went-quiet request, which during a
         // reconnect is never reached because it is the answer to the 425 being replied to.
         ResyncTriggerLengths = new HashSet<int> { 128, 136, 425 },
         ResyncTriggerDirection = PacketDirection.Outbound,
 
-        // The handshake takes 2.46s from the 425, measured twice within 13 ms. 3.5 covers it with
-        // about a second to spare, which matters because the cooldown after a window closes is 5 s
-        // of total block with nothing able to reopen it.
-        ResyncDuration = TimeSpan.FromSeconds(3.5),
+        // 5 s, not 3.5. The inbound handshake runs 3.1 s from the first reply, and the window
+        // opens a little before that on the outbound 425 - leaving about 0.3 s of margin at 3.5,
+        // which is not enough to rely on. A longer window costs little because what may cross
+        // inside it is this short list and nothing else; what it buys is that an exchange running
+        // slightly slow does not fall into the 5 s cooldown behind it, where nothing crosses and
+        // nothing can reopen the window.
+        ResyncDuration = TimeSpan.FromSeconds(5),
 
         // Removed: the resync is proven. A 60 second hold - twice the game's ceiling - blocked 96%
         // of downlink, survived without an error code, and deferred a pickup until release. The
@@ -485,13 +497,17 @@ public static class MeasuredDefaults
 
         // Downlink's handshake, as a starting point. Uplink's is not established, so a full hold
         // may need more - override with --resync-pass.
-        // 425 is in both lists here, unlike downlink. A full hold blocks the outbound opener too,
-        // and a trigger that opens a window and is then dropped by it never reaches the peer it
-        // was meant to reach - so it has to be passed as well as watched.
-        ResyncPassLengths = new HashSet<int> { 51, 233, 425 },
+        // Downlink's measured handshake plus the outbound opener. 425 is in both lists here,
+        // unlike downlink: a full hold blocks outbound too, and a trigger that opens a window and
+        // is then dropped by it never reaches the peer it was meant to reach.
+        //
+        // The inbound half is measured; the outbound half beyond 425 is not, so a full hold may
+        // still need more. It is the least used of the three and the easiest to re-measure when it
+        // matters.
+        ResyncPassLengths = new HashSet<int> { 36, 42, 51, 64, 98, 233, 301, 425 },
         ResyncTriggerLengths = new HashSet<int> { 128, 136, 425 },
         ResyncTriggerDirection = PacketDirection.Outbound,
-        ResyncDuration = TimeSpan.FromSeconds(3.5),
+        ResyncDuration = TimeSpan.FromSeconds(5),
         SafetyTimeout = TimeSpan.FromSeconds(25),
 
         // Slow on 3074 is a rate cap, not an offset. Both reference limiters do it this way -
