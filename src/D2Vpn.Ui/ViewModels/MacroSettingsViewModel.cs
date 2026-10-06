@@ -29,27 +29,27 @@ public sealed class MacroSettingsViewModel : ObservableObject
 {
     private readonly Func<MacroPreset> _read;
     private readonly Action<MacroPreset> _write;
-    private readonly Func<string, bool> _isHosted;
+    private readonly Func<string, IControllable?> _find;
     private readonly LoadoutGrid _grid;
 
     /// <summary>Creates the panel over one preset.</summary>
     /// <param name="read">The preset as it stands, read fresh so a save elsewhere is picked up.</param>
     /// <param name="write">Called with every change, to apply and save it.</param>
     /// <param name="grid">The shared screen, for checking slots are on it.</param>
-    /// <param name="isHosted">
-    /// Whether a named control is hosted this session, so choosing an uplink that is not can say
+    /// <param name="find">
+    /// Looks a named control up, so choosing an uplink that is missing - or switched off - can say
     /// so rather than silently holding nothing.
     /// </param>
     public MacroSettingsViewModel(
         Func<MacroPreset> read,
         Action<MacroPreset> write,
         LoadoutGrid grid,
-        Func<string, bool> isHosted)
+        Func<string, IControllable?> find)
     {
         _read = read;
         _write = write;
         _grid = grid;
-        _isHosted = isHosted;
+        _find = find;
     }
 
     /// <summary>Which uplink hold this preset drives.</summary>
@@ -99,10 +99,41 @@ public sealed class MacroSettingsViewModel : ObservableObject
     /// symptom at all. The macro still clicks, because refusing to run over a missing traffic
     /// module would be worse than running unhidden.
     /// </remarks>
-    public string UplinkProblem =>
-        (Preset.TickUplink || Preset.DisableBuffer) && !_isHosted(Uplink)
-            ? $"{Uplink} is not hosted this session, so nothing will be held"
-            : string.Empty;
+    public string UplinkProblem
+    {
+        get
+        {
+            if (!Preset.TickUplink && !Preset.DisableBuffer)
+            {
+                return string.Empty;
+            }
+
+            return _find(Uplink) switch
+            {
+                null => $"{Uplink} is not hosted this session, so nothing will be held",
+
+                // Disabled is the likelier of the two and the harder to spot: the module is right
+                // there in the sidebar, so nothing looks missing. The macro does not override it -
+                // switching a module off has to mean off, whichever route asks.
+                { IsEnabled: false } =>
+                    $"{Uplink} is switched off, so nothing will be held. Turn it back on in its "
+                    + "own panel.",
+
+                _ => string.Empty
+            };
+        }
+    }
+
+    /// <summary>
+    /// Re-reads only whether the chosen uplink is available.
+    /// </summary>
+    /// <remarks>
+    /// Rides the window's slow tick, because the answer changes when another module is switched
+    /// off and nothing tells this panel. Deliberately not everything: the delay boxes commit on
+    /// losing focus, so raising those while somebody is typing in one would put the stored value
+    /// back under their cursor.
+    /// </remarks>
+    public void RefreshUplink() => Raise(nameof(UplinkProblem));
 
     private MacroPreset Preset => _read();
 

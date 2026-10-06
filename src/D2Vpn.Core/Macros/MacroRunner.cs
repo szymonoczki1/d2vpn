@@ -201,8 +201,14 @@ public sealed class MacroRunner : IModuleRunner
         /// <summary>Why the last run stopped early, or null if it finished.</summary>
         public string? LastError { get; private set; }
 
-        /// <summary>The uplink the last run wanted and could not find, or null if it found it.</summary>
-        public string? Missing { get; private set; }
+        /// <summary>
+        /// Why the last run held nothing, or null if it held what it asked for.
+        /// </summary>
+        /// <remarks>
+        /// A hold that is missing and a hold that is switched off are different things to do
+        /// something about, so they are said differently.
+        /// </remarks>
+        public string? Unavailable { get; private set; }
 
         public DateTimeOffset? ActiveSince
         {
@@ -336,12 +342,21 @@ public sealed class MacroRunner : IModuleRunner
         private void Execute(MacroSettings settings, CancellationToken token)
         {
             var wanted = settings.TickUplink || settings.DisableBuffer;
-            var uplink = wanted ? owner._uplink(settings.Uplink) : null;
+            var found = wanted ? owner._uplink(settings.Uplink) : null;
 
-            // Asked for a hold that is not hosted. The clicks still happen - a macro that refused
-            // to run because a traffic module was missing would be worse - but it must not look
-            // like the hold happened.
-            Missing = wanted && uplink is null ? settings.Uplink : null;
+            // A disabled hold is not a hold. IsEnabled is enforced by ModuleHost, which the macro
+            // does not go through - it writes to the control directly, so without this the macro
+            // was a third way in that nobody had closed, and it would hold a module the operator
+            // had switched off.
+            var uplink = found is { IsEnabled: true } ? found : null;
+
+            // The clicks still happen either way - a macro that refused to run because a traffic
+            // module was missing would be worse - but it must not look like the hold happened.
+            Unavailable = !wanted || uplink is not null
+                ? null
+                : found is null
+                    ? $"{settings.Uplink} is not hosted"
+                    : $"{settings.Uplink} is disabled";
 
             // Remembered rather than assumed. Turning the hold off afterwards when it was already
             // on before would release a hold the operator had started by hand.

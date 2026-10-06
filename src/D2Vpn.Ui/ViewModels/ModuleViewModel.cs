@@ -354,6 +354,10 @@ public sealed class ModuleViewModel : SidebarItem
         RaiseAll(
             nameof(IsEnabled), nameof(CanHold), nameof(Title),
             nameof(ResyncEnabled), nameof(BufferEnabled), nameof(Metrics));
+
+        // Whether a macro's chosen uplink is available depends on another module's switch, which
+        // this panel is never told about. Only that one property - see RefreshUplink.
+        Macro?.RefreshUplink();
     }
 
     /// <summary>

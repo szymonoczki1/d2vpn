@@ -250,7 +250,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                         () => PresetAt(at),
                         updated => ApplyPreset(at, updated),
                         _config.Macro.Grid,
-                        hold => Find(hold) is not null)
+                        Find)
                     : null
             };
 
