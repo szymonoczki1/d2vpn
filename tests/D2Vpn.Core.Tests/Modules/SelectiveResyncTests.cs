@@ -1,4 +1,4 @@
-using D2Vpn.Core.Modules;
+﻿using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Tests.Modules;
@@ -67,13 +67,29 @@ public class SelectiveResyncTests
     }
 
     [Fact]
-    public void Handshake_sizes_are_blocked_outside_a_window()
+    public void Handshake_sizes_cross_outside_a_window_too()
     {
-        // They are the resync, not a standing exemption: outside one there is nothing to complete.
+        // They used to be blocked outside one, on the reading that they are the resync rather than
+        // a standing exemption. That left the game asking into silence and re-asking once a second
+        // for the length of a hold, which is what made the world slow to come back on release.
         var module = Downlink();
         module.IsActive = true;
 
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Handshake, 0.5)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, Handshake, 0.5)));
+    }
+
+    [Fact]
+    public void Game_state_is_still_blocked_outside_a_window()
+    {
+        // The standing list is five control sizes, not an opening. What a downlink hold defers is
+        // everything else, and that is unchanged.
+        var module = Downlink();
+        module.IsActive = true;
+
+        foreach (var state in new[] { 68, 89, 166, 174, 1168, 1217 })
+        {
+            Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, state, 0.5)));
+        }
     }
 
     [Fact]

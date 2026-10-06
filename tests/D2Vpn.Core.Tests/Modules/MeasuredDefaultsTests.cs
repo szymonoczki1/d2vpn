@@ -16,13 +16,26 @@ public class MeasuredDefaultsTests
     }
 
     [Fact]
-    public void Downlink_ships_no_pass_list_because_nothing_is_known_to_need_passing()
+    public void Downlink_passes_the_handshake_standing_so_the_game_is_not_left_asking()
     {
-        // Two runs with a reference limiter's resync enabled showed 51 and 233 crossing, and an
-        // earlier version shipped them. A third run with that resync disabled passed nothing at
-        // all for nineteen seconds, so those sizes were resync-window traffic, not a pass list.
-        // Inventing a pass list from them would tell a module to leak packets for no reason.
-        Assert.Empty(MeasuredDefaults.Peer3074Downlink.PassLengths);
+        // This shipped empty on the reading that nothing needs to cross. The outbound stream says
+        // otherwise: during a hold the game asks, gets no answer and re-asks once a second - 1166
+        // at 15.37 and 16.37, 51 at 18.85 and 19.85. Against the reference limiter the same
+        // exchange ran once each with no repeat, because its sizes cross throughout a hold rather
+        // than only inside a window.
+        Assert.Equal(
+            [42, 51, 98, 233, 301],
+            MeasuredDefaults.Peer3074Downlink.PassLengths.Order());
+    }
+
+    [Fact]
+    public void Downlink_keeps_the_commonest_size_out_of_the_standing_list()
+    {
+        // 36 was 21% of ordinary downlink in the capture these came from, so passing it standing
+        // would leak a fifth of normal traffic. It crosses inside a window instead, where the
+        // window itself is the bound.
+        Assert.DoesNotContain(36, MeasuredDefaults.Peer3074Downlink.PassLengths);
+        Assert.Contains(36, MeasuredDefaults.Peer3074Downlink.ResyncPassLengths!);
     }
 
     [Fact]
@@ -60,7 +73,6 @@ public class MeasuredDefaultsTests
 
         Assert.NotNull(down.ResyncPassLengths);
         Assert.Equal([36, 42, 51, 64, 98, 233, 301], down.ResyncPassLengths!.Order());
-        Assert.Empty(down.PassLengths);
 
         // And not the state flood behind it, which is the whole point of still holding.
         foreach (var state in new[] { 1168, 1185, 1217, 1233 })

@@ -431,7 +431,25 @@ public static class MeasuredDefaults
     /// </remarks>
     public static HoldModuleOptions Peer3074Downlink { get; } = new()
     {
-        PassLengths = new HashSet<int>(),
+        // A standing pass list, where this used to have none. "Nothing needs to cross" was wrong,
+        // and the way it was wrong only shows in the outbound stream: during a hold the game asks,
+        // gets no answer, and re-asks once a second. Captured against this module, 1166 went out
+        // at 15.37 and again at 16.37, and 51 at 18.85 and again at 19.85. Against the reference
+        // limiter the same exchange - 42, 128, 136, 51, 57, 1166 - ran once each in 2.85 s with no
+        // repeat at all, because its own calibration shows these sizes trickling throughout a hold
+        // rather than in bursts.
+        //
+        // Windows alone cannot do that: two opened in 25 s, with a 5 s cooldown behind each, so a
+        // request made outside one is simply unanswered until the next. The retries are what make
+        // the world slow to come back on release - the client arrives at the release still
+        // mid-handshake instead of done with it.
+        //
+        // 36 is deliberately not here. It was 21% of ordinary downlink in this capture, so passing
+        // it standing would leak a fifth of normal traffic; it crosses inside a window instead.
+        // These five were never, or almost never, seen outside a hold: 42 and 301 never, 233 at
+        // 0.3%, 51 at 2.9%. That puts the standing leak near 3%, against the reference limiter's
+        // measured 7% of normal.
+        PassLengths = new HashSet<int> { 42, 51, 98, 233, 301 },
 
         // The inbound reconnect handshake, captured clean with no limiter running: 301, 42, 233,
         // 51, 36, 51, 36, 36, 98, 64 - in that order, over 3.1 s - and then a flood of 1168-1233
