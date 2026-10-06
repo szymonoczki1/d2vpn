@@ -189,251 +189,257 @@
 
                 <!-- The macro, which only the macro module has. Kept beside its switch rather
                      than on a Settings page: these are what you change while tuning a swap that is
-                     not working, and walking to another page between attempts loses the thread. -->
-                <Border Style="{StaticResource Card}"
-                        Visibility="{Binding IsMacro, Converter={StaticResource BoolToVisibility}}"
-                        DataContext="{Binding Macro}">
-                    <StackPanel>
-                        <TextBlock Text="ROTATION" Style="{StaticResource SectionLabel}" />
+                     not working, and walking to another page between attempts loses the thread.
 
-                        <Grid Margin="0,2,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="92" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                     Two nested panels, not one. Setting DataContext on an element makes every
+                     other binding on that same element resolve against the new context - so a
+                     Visibility bound to IsMacro alongside a DataContext of Macro looked for
+                     IsMacro on the settings object, found nothing, and fell back to the default
+                     of Visible. The cards showed on every module in the window. -->
+                <StackPanel Visibility="{Binding Macro,
+                            Converter={StaticResource NotNullToVisibility}}">
+                    <StackPanel DataContext="{Binding Macro}">
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="ROTATION" Style="{StaticResource SectionLabel}" />
 
-                            <TextBlock Text="Name" VerticalAlignment="Center" />
-                            <TextBox Grid.Column="1" Padding="10,7"
-                                     Background="{StaticResource CardBrush}"
-                                     Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource LineBrush}"
-                                     BorderThickness="1"
-                                     Text="{Binding PresetName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                            <Grid Margin="0,2,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="92" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="1" Text="Order"
-                                       VerticalAlignment="Center" Margin="0,10,0,0" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Padding="10,7" Margin="0,10,0,0"
-                                     Background="{StaticResource CardBrush}"
-                                     Foreground="{StaticResource TextBrush}"
-                                     BorderBrush="{StaticResource LineBrush}"
-                                     BorderThickness="1"
-                                     FontFamily="{StaticResource MonoFont}"
-                                     Text="{Binding OrderText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
-                        </Grid>
+                                <TextBlock Text="Name" VerticalAlignment="Center" />
+                                <TextBox Grid.Column="1" Padding="10,7"
+                                         Background="{StaticResource CardBrush}"
+                                         Foreground="{StaticResource TextBrush}"
+                                         BorderBrush="{StaticResource LineBrush}"
+                                         BorderThickness="1"
+                                         Text="{Binding PresetName, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
 
-                        <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
-                                   Text="Loadout numbers in the order they are clicked, repeating until the duration is up. Slot 1 is top left, 4 is the end of the first row, 5 is below 1. A number may appear more than once." />
+                                <TextBlock Grid.Row="1" Text="Order"
+                                           VerticalAlignment="Center" Margin="0,10,0,0" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Padding="10,7" Margin="0,10,0,0"
+                                         Background="{StaticResource CardBrush}"
+                                         Foreground="{StaticResource TextBrush}"
+                                         BorderBrush="{StaticResource LineBrush}"
+                                         BorderThickness="1"
+                                         FontFamily="{StaticResource MonoFont}"
+                                         Text="{Binding OrderText, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" />
+                            </Grid>
 
-                        <Grid Margin="0,14,0,0" HorizontalAlignment="Left">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="92" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="56" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
+                                       Text="Loadout numbers in the order they are clicked, repeating until the duration is up. Slot 1 is top left, 4 is the end of the first row, 5 is below 1. A number may appear more than once." />
 
-                            <TextBlock Text="End on" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Content="&#x2212;" Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="end-" Click="OnMacroNudge" />
-                            <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding EndOn, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Column="3" Content="+" Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="end+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Column="4" Text="{Binding EndOnLabel}"
-                                       Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="12,0,0,0" />
-                        </Grid>
+                            <Grid Margin="0,14,0,0" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="92" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="56" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text="End on" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="&#x2212;" Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="end-" Click="OnMacroNudge" />
+                                <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding EndOn, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Column="3" Content="+" Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="end+" Click="OnMacroNudge" />
+                                <TextBlock Grid.Column="4" Text="{Binding EndOnLabel}"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="TIMING" Style="{StaticResource SectionLabel}" />
+
+                            <Grid Margin="0,2,0,0" HorizontalAlignment="Left">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="82" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Text="Between clicks" VerticalAlignment="Center" Margin="0,5" />
+                                <Button Grid.Column="1" Content="&#x2212;" Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="click-" Click="OnMacroNudge" />
+                                <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding ClickDelayMs, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Column="3" Content="+" Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="click+" Click="OnMacroNudge" />
+                                <TextBlock Grid.Column="4" Text="ms" Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                                <TextBlock Grid.Row="1" Text="Runs for"
+                                           VerticalAlignment="Center" Margin="0,5" />
+                                <Button Grid.Row="1" Grid.Column="1" Content="&#x2212;"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="duration-" Click="OnMacroNudge" />
+                                <TextBox Grid.Row="1" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding DurationMs, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Row="1" Grid.Column="3" Content="+"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="duration+" Click="OnMacroNudge" />
+                                <TextBlock Grid.Row="1" Grid.Column="4" Text="{Binding DurationLabel}"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                                <TextBlock Grid.Row="2" Text="Character screen"
+                                           VerticalAlignment="Center" Margin="0,5" />
+                                <Button Grid.Row="2" Grid.Column="1" Content="&#x2212;"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="open-" Click="OnMacroNudge" />
+                                <TextBox Grid.Row="2" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding OpenDelayMs, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Row="2" Grid.Column="3" Content="+"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="open+" Click="OnMacroNudge" />
+                                <TextBlock Grid.Row="2" Grid.Column="4" Text="ms after F1"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                                <TextBlock Grid.Row="3" Text="Loadout page"
+                                           VerticalAlignment="Center" Margin="0,5" />
+                                <Button Grid.Row="3" Grid.Column="1" Content="&#x2212;"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="page-" Click="OnMacroNudge" />
+                                <TextBox Grid.Row="3" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding PageDelayMs, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Row="3" Grid.Column="3" Content="+"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="page+" Click="OnMacroNudge" />
+                                <TextBlock Grid.Row="3" Grid.Column="4" Text="ms after left arrow"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                                <TextBlock Grid.Row="4" Text="End loadout clicks"
+                                           VerticalAlignment="Center" Margin="0,5" />
+                                <Button Grid.Row="4" Grid.Column="1" Content="&#x2212;"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="end-clicks-"
+                                        Click="OnMacroNudge" />
+                                <TextBox Grid.Row="4" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding EndClicks, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Row="4" Grid.Column="3" Content="+"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="end-clicks+"
+                                        Click="OnMacroNudge" />
+                                <TextBlock Grid.Row="4" Grid.Column="4" Text="times, to be sure it lands"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                                <TextBlock Grid.Row="5" Text="Loadout settle"
+                                           VerticalAlignment="Center" Margin="0,5" />
+                                <Button Grid.Row="5" Grid.Column="1" Content="&#x2212;"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="settle-" Click="OnMacroNudge" />
+                                <TextBox Grid.Row="5" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding SettleMs, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Row="5" Grid.Column="3" Content="+"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="settle+" Click="OnMacroNudge" />
+                                <TextBlock Grid.Row="5" Grid.Column="4" Text="ms around each of them"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="8,0,0,0" />
+                            </Grid>
+
+                            <TextBlock Text="{Binding SwapEstimate}" Style="{StaticResource Subtle}"
+                                       Foreground="{StaticResource TextBrush}" Margin="0,12,0,0" />
+
+                            <TextBlock Text="{Binding TimingWarning}" Style="{StaticResource Subtle}"
+                                       Foreground="{StaticResource HoldingBrush}"
+                                       TextWrapping="Wrap" Margin="0,6,0,0"
+                                       Visibility="{Binding TimingWarning,
+                                                    Converter={StaticResource EmptyToVisibility}}" />
+
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
+                                       Text="The two screen delays are really how long this machine takes to draw those screens. A click sent before the screen is there goes to whatever was underneath it." />
+
+                            <TextBlock Text="{Binding TailLabel}" Style="{StaticResource Subtle}"
+                                       Foreground="{StaticResource TextBrush}" Margin="0,6,0,0" />
+
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,6,0,0"
+                                       Text="The settle is waited before each finishing click and again before the screen closes. A loadout applies over several frames, so clicking the end loadout more than once only helps if the attempts are that far apart - otherwise they land in the same frame and count as one." />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource Card}">
+                        <StackPanel>
+                            <TextBlock Text="WHILE IT RUNS" Style="{StaticResource SectionLabel}" />
+
+                            <CheckBox Style="{StaticResource Switch}" Margin="0,4"
+                                      IsChecked="{Binding TickUplink, Mode=TwoWay}"
+                                      Content="Hold 3074 uplink for the whole run" />
+
+                            <Grid Margin="22,8,0,0" HorizontalAlignment="Left"
+                                  IsEnabled="{Binding TickUplink}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="118" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="82" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <TextBlock Text="Keep it on for" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="&#x2212;"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="uplink-" Click="OnMacroNudge" />
+                                <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
+                                         Text="{Binding UplinkAfterMs, Mode=TwoWay,
+                                                UpdateSourceTrigger=LostFocus}" />
+                                <Button Grid.Column="3" Content="+"
+                                        Style="{StaticResource FlatButton}"
+                                        Margin="0,3" Padding="12,4" Tag="uplink+" Click="OnMacroNudge" />
+                                <TextBlock Grid.Column="4" Text="{Binding UplinkAfterLabel}"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="10,0,0,0" />
+                            </Grid>
+
+                            <CheckBox Style="{StaticResource Switch}" Margin="0,10,0,4"
+                                      IsChecked="{Binding DisableBuffer, Mode=TwoWay}"
+                                      Content="Turn its buffer off for the whole run" />
+
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,10,0,0"
+                                       Text="Both are put back exactly as they were found when the run ends, however it ends - so a hold you started by hand stays held, and one the macro started does not. Stopping a run early does not cut the extra hold short; only closing the window does." />
+
+                            <CheckBox Style="{StaticResource Switch}" Margin="0,16,0,4"
+                                      IsChecked="{Binding CloseAfter, Mode=TwoWay}"
+                                      Content="Close the character screen when it finishes" />
+
+                            <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
+                                       Text="Another F1, after the finishing click. On a run you stopped early as well, since an inventory left open sends your next key press to a menu." />
+                        </StackPanel>
+                    </Border>
+
                     </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource Card}"
-                        Visibility="{Binding IsMacro, Converter={StaticResource BoolToVisibility}}"
-                        DataContext="{Binding Macro}">
-                    <StackPanel>
-                        <TextBlock Text="TIMING" Style="{StaticResource SectionLabel}" />
-
-                        <Grid Margin="0,2,0,0" HorizontalAlignment="Left">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="140" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="82" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <TextBlock Text="Between clicks" VerticalAlignment="Center" Margin="0,5" />
-                            <Button Grid.Column="1" Content="&#x2212;" Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="click-" Click="OnMacroNudge" />
-                            <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding ClickDelayMs, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Column="3" Content="+" Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="click+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Column="4" Text="ms" Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="8,0,0,0" />
-
-                            <TextBlock Grid.Row="1" Text="Runs for"
-                                       VerticalAlignment="Center" Margin="0,5" />
-                            <Button Grid.Row="1" Grid.Column="1" Content="&#x2212;"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="duration-" Click="OnMacroNudge" />
-                            <TextBox Grid.Row="1" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding DurationMs, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Row="1" Grid.Column="3" Content="+"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="duration+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="1" Grid.Column="4" Text="{Binding DurationLabel}"
-                                       Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="8,0,0,0" />
-
-                            <TextBlock Grid.Row="2" Text="Character screen"
-                                       VerticalAlignment="Center" Margin="0,5" />
-                            <Button Grid.Row="2" Grid.Column="1" Content="&#x2212;"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="open-" Click="OnMacroNudge" />
-                            <TextBox Grid.Row="2" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding OpenDelayMs, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Row="2" Grid.Column="3" Content="+"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="open+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="2" Grid.Column="4" Text="ms after F1"
-                                       Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="8,0,0,0" />
-
-                            <TextBlock Grid.Row="3" Text="Loadout page"
-                                       VerticalAlignment="Center" Margin="0,5" />
-                            <Button Grid.Row="3" Grid.Column="1" Content="&#x2212;"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="page-" Click="OnMacroNudge" />
-                            <TextBox Grid.Row="3" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding PageDelayMs, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Row="3" Grid.Column="3" Content="+"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="page+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="3" Grid.Column="4" Text="ms after left arrow"
-                                       Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="8,0,0,0" />
-
-                            <TextBlock Grid.Row="4" Text="End loadout clicks"
-                                       VerticalAlignment="Center" Margin="0,5" />
-                            <Button Grid.Row="4" Grid.Column="1" Content="&#x2212;"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="end-clicks-"
-                                    Click="OnMacroNudge" />
-                            <TextBox Grid.Row="4" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding EndClicks, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Row="4" Grid.Column="3" Content="+"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="end-clicks+"
-                                    Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="4" Grid.Column="4" Text="times, to be sure it lands"
-                                       Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="8,0,0,0" />
-
-                            <TextBlock Grid.Row="5" Text="Loadout settle"
-                                       VerticalAlignment="Center" Margin="0,5" />
-                            <Button Grid.Row="5" Grid.Column="1" Content="&#x2212;"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="settle-" Click="OnMacroNudge" />
-                            <TextBox Grid.Row="5" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding SettleMs, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Row="5" Grid.Column="3" Content="+"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="settle+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="5" Grid.Column="4" Text="ms around each of them"
-                                       Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="8,0,0,0" />
-                        </Grid>
-
-                        <TextBlock Text="{Binding SwapEstimate}" Style="{StaticResource Subtle}"
-                                   Foreground="{StaticResource TextBrush}" Margin="0,12,0,0" />
-
-                        <TextBlock Text="{Binding TimingWarning}" Style="{StaticResource Subtle}"
-                                   Foreground="{StaticResource HoldingBrush}"
-                                   TextWrapping="Wrap" Margin="0,6,0,0"
-                                   Visibility="{Binding TimingWarning,
-                                                Converter={StaticResource EmptyToVisibility}}" />
-
-                        <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
-                                   Text="The two screen delays are really how long this machine takes to draw those screens. A click sent before the screen is there goes to whatever was underneath it." />
-
-                        <TextBlock Text="{Binding TailLabel}" Style="{StaticResource Subtle}"
-                                   Foreground="{StaticResource TextBrush}" Margin="0,6,0,0" />
-
-                        <TextBlock Style="{StaticResource Subtle}" Margin="0,6,0,0"
-                                   Text="The settle is waited before each finishing click and again before the screen closes. A loadout applies over several frames, so clicking the end loadout more than once only helps if the attempts are that far apart - otherwise they land in the same frame and count as one." />
-                    </StackPanel>
-                </Border>
-
-                <Border Style="{StaticResource Card}"
-                        Visibility="{Binding IsMacro, Converter={StaticResource BoolToVisibility}}"
-                        DataContext="{Binding Macro}">
-                    <StackPanel>
-                        <TextBlock Text="WHILE IT RUNS" Style="{StaticResource SectionLabel}" />
-
-                        <CheckBox Style="{StaticResource Switch}" Margin="0,4"
-                                  IsChecked="{Binding TickUplink, Mode=TwoWay}"
-                                  Content="Hold 3074 uplink for the whole run" />
-
-                        <Grid Margin="22,8,0,0" HorizontalAlignment="Left"
-                              IsEnabled="{Binding TickUplink}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="118" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="82" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-
-                            <TextBlock Text="Keep it on for" VerticalAlignment="Center" />
-                            <Button Grid.Column="1" Content="&#x2212;"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="uplink-" Click="OnMacroNudge" />
-                            <TextBox Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding UplinkAfterMs, Mode=TwoWay,
-                                            UpdateSourceTrigger=LostFocus}" />
-                            <Button Grid.Column="3" Content="+"
-                                    Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="uplink+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Column="4" Text="{Binding UplinkAfterLabel}"
-                                       Style="{StaticResource Subtle}"
-                                       VerticalAlignment="Center" Margin="10,0,0,0" />
-                        </Grid>
-
-                        <CheckBox Style="{StaticResource Switch}" Margin="0,10,0,4"
-                                  IsChecked="{Binding DisableBuffer, Mode=TwoWay}"
-                                  Content="Turn its buffer off for the whole run" />
-
-                        <TextBlock Style="{StaticResource Subtle}" Margin="0,10,0,0"
-                                   Text="Both are put back exactly as they were found when the run ends, however it ends - so a hold you started by hand stays held, and one the macro started does not. Stopping a run early does not cut the extra hold short; only closing the window does." />
-
-                        <CheckBox Style="{StaticResource Switch}" Margin="0,16,0,4"
-                                  IsChecked="{Binding CloseAfter, Mode=TwoWay}"
-                                  Content="Close the character screen when it finishes" />
-
-                        <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
-                                   Text="Another F1, after the finishing click. On a run you stopped early as well, since an inventory left open sends your next key press to a menu." />
-                    </StackPanel>
-                </Border>
+                </StackPanel>
 
                 <!-- What this module measures, which is not the same for all of them. -->
                 <Border Style="{StaticResource Card}">

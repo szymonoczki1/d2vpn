@@ -163,27 +163,22 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// </summary>
     public bool Start()
     {
-        // The traffic modules on their own, because they are the only part that can fail this way.
-        // Opening a WinDivert handle needs elevation and needs no other limiter to be holding an
-        // overlapping filter; nothing else here needs either. Hosting them in the same try as
-        // everything else meant one refused handle took game pause and the macro with it - neither
-        // of which touches a packet.
-        try
-        {
-            _runners = [.. ModuleRunnerFactory.CreateAll(_config.Resolve())];
-            _trafficHosted = true;
-        }
-        catch (Exception ex)
-        {
-            // Said, not thrown. The window is still worth having for what did start, and this is
-            // the common failure - another limiter still running, or the driver refusing.
-            Status = ex.Message;
-            Failed = true;
-        }
+        // One try each, because the three fail for unrelated reasons and none of them is a reason
+        // to lose the others. A WinDivert handle needs elevation and no other limiter holding an
+        // overlapping filter; game pause needs the game to be running; the macro needs neither.
+        // Sharing a try meant the game being closed cost you the macro, which does not know the
+        // game exists.
+        List<string> refused = [];
 
-        try
+        Host(refused, "traffic", () =>
         {
-            if (_config.Pause.Enabled)
+            _runners.AddRange(ModuleRunnerFactory.CreateAll(_config.Resolve()));
+            _trafficHosted = true;
+        });
+
+        if (_config.Pause.Enabled)
+        {
+            Host(refused, "game pause", () =>
             {
                 var process = NtProcessControl.Open(_config.Pause.Process);
                 var timeout = _config.Pause.SafetyTimeoutS > 0
@@ -194,19 +189,23 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                 {
                     IsEnabled = _config.Pause.ModuleEnabled
                 });
-            }
+            });
+        }
 
-            if (_config.Macro.Enabled)
-            {
+        if (_config.Macro.Enabled)
+        {
+            Host(refused, "the macro", () =>
                 // The uplink is resolved when the macro runs rather than now, because the traffic
                 // runners are built in the same breath as this one and the lookup has to see them.
                 _runners.Add(new MacroRunner(
                     MacroName,
                     new SyntheticInput(),
                     () => _config.Macro,
-                    () => Find(UplinkName)));
-            }
+                    () => Find(UplinkName))));
+        }
 
+        try
+        {
             _host = new ModuleHost(_runners);
 
             // From inside the handle the 30k modules already own, which is the only place a
@@ -287,15 +286,34 @@ public sealed class MainViewModel : ObservableObject, IDisposable
         BindKeys();
         StartApi();
 
-        // The traffic failure keeps the status line if there was one: what did not start matters
-        // more than what did, and it has nowhere else to appear.
-        if (!Failed)
-        {
-            Status = $"hosting {Modules.Count} module{(Modules.Count == 1 ? "" : "s")} "
+        // What did not start matters more than what did, and it has nowhere else to appear.
+        Status = refused.Count > 0
+            ? string.Join("  ·  ", refused)
+            : $"hosting {Modules.Count} module{(Modules.Count == 1 ? "" : "s")} "
                 + $"across {_runners.Count} handle{(_runners.Count == 1 ? "" : "s")}";
-        }
 
         return !Failed;
+    }
+
+    /// <summary>
+    /// Hosts one group of modules, noting rather than throwing if it will not start.
+    /// </summary>
+    /// <remarks>
+    /// So a failure costs only the group it belongs to. The window is still worth having for
+    /// whatever did start, and the thing that refused has to be said somewhere - the status line
+    /// is the only place it can appear.
+    /// </remarks>
+    private void Host(List<string> refused, string what, Action build)
+    {
+        try
+        {
+            build();
+        }
+        catch (Exception ex)
+        {
+            refused.Add($"{what}: {ex.Message}");
+            Failed = true;
+        }
     }
 
     /// <summary>
