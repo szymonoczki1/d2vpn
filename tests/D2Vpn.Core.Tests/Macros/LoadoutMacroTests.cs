@@ -56,8 +56,8 @@ public class LoadoutMacroTests
         int? endOn = null,
         TimeSpan? duration = null,
         bool closeAfter = false,
-        TimeSpan? closeDelay = null,
-        TimeSpan? endDelay = null) =>
+        TimeSpan? settle = null,
+        int endClicks = 1) =>
         new(
             Grid,
             order,
@@ -67,8 +67,8 @@ public class LoadoutMacroTests
             TimeSpan.FromMilliseconds(400),
             TimeSpan.FromMilliseconds(120),
             closeAfter,
-            closeDelay ?? TimeSpan.FromMilliseconds(50),
-            endDelay ?? TimeSpan.FromMilliseconds(50));
+            settle ?? TimeSpan.FromMilliseconds(50),
+            endClicks);
 
     // ---- the grid ----
 
@@ -208,11 +208,26 @@ public class LoadoutMacroTests
     }
 
     [Fact]
-    public void The_rotation_stops_before_the_finishing_click()
+    public void The_finishing_loadout_is_clicked_as_many_times_as_asked()
     {
-        // Its own pause, not a click gap. Out of a stream going every few milliseconds the
-        // finishing swap is one more in the queue and as droppable as the rest - and the point of
-        // naming a loadout to end on is that this one has to land.
+        // Redundancy rather than patience: waiting longer before the click that decides the
+        // outcome does not help if the click itself is what goes missing.
+        var sink = new Recorder();
+
+        new LoadoutMacro(sink, sink).Run(
+            Plan([5, 2], endOn: 1, endClicks: 3, settle: TimeSpan.FromMilliseconds(40)),
+            CancellationToken.None);
+
+        Assert.Equal(
+            ["click 117,385", "click 117,385", "click 117,385"],
+            sink.Events.TakeLast(3));
+    }
+
+    [Fact]
+    public void Each_finishing_click_gets_a_settle_of_its_own()
+    {
+        // What makes a repeat a retry. Three clicks in the same frame are one event, so the gap
+        // between them is the whole point of there being three.
         var sink = new Recorder();
 
         new LoadoutMacro(sink, sink).Run(
@@ -220,15 +235,19 @@ public class LoadoutMacroTests
                 [5, 2],
                 endOn: 1,
                 closeAfter: true,
-                closeDelay: TimeSpan.FromMilliseconds(80),
-                endDelay: TimeSpan.FromMilliseconds(40)),
+                endClicks: 2,
+                settle: TimeSpan.FromMilliseconds(40)),
             CancellationToken.None);
 
-        // ... 40 ms, the finishing click, 80 ms, then the key that closes the screen.
-        Assert.Equal(TimeSpan.FromMilliseconds(40), sink.Waits[^2]);
-        Assert.Equal(TimeSpan.FromMilliseconds(80), sink.Waits[^1]);
-        Assert.Equal("click 117,385", sink.Events[^2]);
+        // Settle, click, settle, click, settle, close.
+        Assert.Equal(
+            [TimeSpan.FromMilliseconds(40), TimeSpan.FromMilliseconds(40),
+             TimeSpan.FromMilliseconds(40)],
+            sink.Waits.TakeLast(3));
+
         Assert.Equal($"key {F1:X2}", sink.Events[^1]);
+        Assert.Equal("click 117,385", sink.Events[^2]);
+        Assert.Equal("click 117,385", sink.Events[^3]);
     }
 
     [Fact]
@@ -241,7 +260,7 @@ public class LoadoutMacroTests
         var sink = new Recorder();
 
         new LoadoutMacro(sink, sink).Run(
-            Plan([5, 2], endOn: 1, closeAfter: true, closeDelay: TimeSpan.FromMilliseconds(80)),
+            Plan([5, 2], endOn: 1, closeAfter: true, settle: TimeSpan.FromMilliseconds(80)),
             CancellationToken.None);
 
         Assert.Equal(TimeSpan.FromMilliseconds(80), sink.Waits[^1]);

@@ -40,11 +40,11 @@ public readonly record struct MacroSettings
     /// <summary>Press F1 again at the end, closing the character screen.</summary>
     public bool CloseAfter { get; init; }
 
-    /// <summary>How long to pause before the finishing click.</summary>
-    public TimeSpan EndDelay { get; init; }
+    /// <summary>How many times to click the finishing loadout.</summary>
+    public int EndClicks { get; init; }
 
-    /// <summary>How long to leave the screen up after the finishing click.</summary>
-    public TimeSpan CloseDelay { get; init; }
+    /// <summary>How long a loadout needs to apply.</summary>
+    public TimeSpan Settle { get; init; }
 
     /// <summary>How long the uplink stays held after the clicking stops.</summary>
     public TimeSpan UplinkAfter { get; init; }
@@ -57,5 +57,5 @@ public readonly record struct MacroSettings
     /// </remarks>
     public MacroPlan ToPlan() => new(
         Grid, Order, EndOn, Duration, ClickDelay, OpenDelay, PageDelay,
-        CloseAfter, CloseDelay, EndDelay);
+        CloseAfter, Settle, EndClicks);
 }

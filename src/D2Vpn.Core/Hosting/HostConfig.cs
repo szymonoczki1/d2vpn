@@ -367,27 +367,27 @@ public sealed record MacroPreset
     public bool CloseAfter { get; init; } = true;
 
     /// <summary>
-    /// How long to pause before the finishing click.
+    /// How many times to click the finishing loadout.
     /// </summary>
     /// <remarks>
-    /// So the rotation has stopped before the one click that decides the outcome. Clicked straight
-    /// out of a stream going every few milliseconds, the finishing swap is just one more in the
-    /// queue and as droppable as the rest - and the whole point of naming a loadout to end on is
-    /// that this is the one that must land.
+    /// Redundancy rather than patience. Waiting longer before the one click that decides the
+    /// outcome does not help if the click itself is what goes missing, so this clicks it again -
+    /// each attempt separated by <see cref="SettleMs"/>, which is what makes a repeat a retry
+    /// rather than three events in the same frame.
     /// </remarks>
-    public int EndDelayMs { get; init; } = 50;
+    public int EndClicks { get; init; } = 3;
 
     /// <summary>
-    /// How long to leave the character screen up after the finishing click.
+    /// How long a loadout needs to apply, in milliseconds.
     /// </summary>
     /// <remarks>
-    /// Its own setting rather than another click gap, and much longer than one. A loadout applies
-    /// over several frames; closing the screen immediately after the click meant the last swap -
-    /// the one that decides what you are left wearing - never went through at all. The gap between
-    /// clicks can be single milliseconds precisely because those swaps are not the one that has to
-    /// survive.
+    /// Used wherever the macro has to let one land: before and between the finishing clicks, and
+    /// again before the screen closes. Much longer than a click gap, and for a different reason -
+    /// a loadout applies over several frames, so closing the screen straight after the click meant
+    /// the swap that decides what you are left wearing never went through at all. The rotation can
+    /// run at single milliseconds precisely because those swaps do not have to survive anything.
     /// </remarks>
-    public int CloseDelayMs { get; init; } = 50;
+    public int SettleMs { get; init; } = 50;
 
     /// <summary>
     /// How long 3074's uplink stays held after the clicking stops.
@@ -412,8 +412,8 @@ public sealed record MacroPreset
         TickUplink = TickUplink,
         DisableBuffer = DisableBuffer,
         CloseAfter = CloseAfter,
-        EndDelay = TimeSpan.FromMilliseconds(EndDelayMs),
-        CloseDelay = TimeSpan.FromMilliseconds(CloseDelayMs),
+        EndClicks = EndClicks,
+        Settle = TimeSpan.FromMilliseconds(SettleMs),
         UplinkAfter = TimeSpan.FromMilliseconds(UplinkAfterMs)
     };
 
@@ -455,16 +455,17 @@ public sealed record MacroPreset
                 $"macro preset '{Name}' has a screen delay outside 0-10000 ms");
         }
 
-        if (EndDelayMs is < 0 or > 10000)
+        if (EndClicks is < 1 or > 20)
         {
             throw new ArgumentException(
-                $"macro preset '{Name}' has endDelayMs {EndDelayMs}, outside 0-10000");
+                $"macro preset '{Name}' has endClicks {EndClicks}, outside 1-20. "
+                + "Use endOn: null to not click a finishing loadout at all.");
         }
 
-        if (CloseDelayMs is < 0 or > 10000)
+        if (SettleMs is < 0 or > 10000)
         {
             throw new ArgumentException(
-                $"macro preset '{Name}' has closeDelayMs {CloseDelayMs}, outside 0-10000");
+                $"macro preset '{Name}' has settleMs {SettleMs}, outside 0-10000");
         }
 
         if (UplinkAfterMs is < 0 or > 10000)

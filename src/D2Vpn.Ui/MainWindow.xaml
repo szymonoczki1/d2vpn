@@ -331,36 +331,35 @@
                                        Style="{StaticResource Subtle}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" />
 
-                            <TextBlock Grid.Row="4" Text="Before last swap"
+                            <TextBlock Grid.Row="4" Text="End loadout clicks"
                                        VerticalAlignment="Center" Margin="0,5" />
                             <Button Grid.Row="4" Grid.Column="1" Content="&#x2212;"
                                     Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="end-delay-"
+                                    Margin="0,3" Padding="12,4" Tag="end-clicks-"
                                     Click="OnMacroNudge" />
                             <TextBox Grid.Row="4" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     Text="{Binding EndDelayMs, Mode=TwoWay,
+                                     Text="{Binding EndClicks, Mode=TwoWay,
                                             UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Row="4" Grid.Column="3" Content="+"
                                     Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="end-delay+"
+                                    Margin="0,3" Padding="12,4" Tag="end-clicks+"
                                     Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="4" Grid.Column="4" Text="ms before the end loadout"
+                            <TextBlock Grid.Row="4" Grid.Column="4" Text="times, to be sure it lands"
                                        Style="{StaticResource Subtle}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" />
 
-                            <TextBlock Grid.Row="5" Text="Before closing"
+                            <TextBlock Grid.Row="5" Text="Loadout settle"
                                        VerticalAlignment="Center" Margin="0,5" />
                             <Button Grid.Row="5" Grid.Column="1" Content="&#x2212;"
                                     Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="close-" Click="OnMacroNudge" />
+                                    Margin="0,3" Padding="12,4" Tag="settle-" Click="OnMacroNudge" />
                             <TextBox Grid.Row="5" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     IsEnabled="{Binding CloseAfter}"
-                                     Text="{Binding CloseDelayMs, Mode=TwoWay,
+                                     Text="{Binding SettleMs, Mode=TwoWay,
                                             UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Row="5" Grid.Column="3" Content="+"
                                     Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="close+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="5" Grid.Column="4" Text="ms after the last click"
+                                    Margin="0,3" Padding="12,4" Tag="settle+" Click="OnMacroNudge" />
+                            <TextBlock Grid.Row="5" Grid.Column="4" Text="ms around each of them"
                                        Style="{StaticResource Subtle}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" />
                         </Grid>
@@ -377,8 +376,11 @@
                         <TextBlock Style="{StaticResource Subtle}" Margin="0,8,0,0"
                                    Text="The two screen delays are really how long this machine takes to draw those screens. A click sent before the screen is there goes to whatever was underneath it." />
 
+                        <TextBlock Text="{Binding TailLabel}" Style="{StaticResource Subtle}"
+                                   Foreground="{StaticResource TextBrush}" Margin="0,6,0,0" />
+
                         <TextBlock Style="{StaticResource Subtle}" Margin="0,6,0,0"
-                                   Text="The last two are longer than a click gap on purpose. A loadout applies over several frames, so the finishing swap needs the rotation to have stopped before it, and the screen to stay up after it. Neither is true at the speed the rotation itself runs." />
+                                   Text="The settle is waited before each finishing click and again before the screen closes. A loadout applies over several frames, so clicking the end loadout more than once only helps if the attempts are that far apart - otherwise they land in the same frame and count as one." />
                     </StackPanel>
                 </Border>
 

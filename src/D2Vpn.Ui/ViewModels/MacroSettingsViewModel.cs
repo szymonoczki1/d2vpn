@@ -152,30 +152,44 @@ public sealed class MacroSettingsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// How long to pause before the finishing click.
+    /// How many times to click the finishing loadout.
     /// </summary>
     /// <remarks>
-    /// So the rotation has stopped before the click that decides the outcome. Out of a stream
-    /// going every few milliseconds, the finishing swap is as droppable as any other.
+    /// Redundancy rather than patience. Waiting longer before the click that decides the outcome
+    /// does not help if the click itself is what goes missing.
     /// </remarks>
-    public int EndDelayMs
+    public int EndClicks
     {
-        get => Preset.EndDelayMs;
-        set => Change(Preset with { EndDelayMs = Math.Clamp(value, 0, 10000) });
+        get => Preset.EndClicks;
+        set => Change(Preset with { EndClicks = Math.Clamp(value, 1, 20) });
     }
 
     /// <summary>
-    /// How long to leave the character screen up after the finishing click.
+    /// How long a loadout needs to apply, in milliseconds.
     /// </summary>
     /// <remarks>
     /// Separate from the click gap, and much longer. A loadout applies over several frames, so
-    /// closing the screen straight after the click lost the last swap - the one that decides what
-    /// you are left wearing.
+    /// this is the wait before each finishing click and again before the screen closes - which is
+    /// what makes a repeated click a retry rather than three events in the same frame.
     /// </remarks>
-    public int CloseDelayMs
+    public int SettleMs
     {
-        get => Preset.CloseDelayMs;
-        set => Change(Preset with { CloseDelayMs = Math.Clamp(value, 0, 10000) });
+        get => Preset.SettleMs;
+        set => Change(Preset with { SettleMs = Math.Clamp(value, 0, 10000) });
+    }
+
+    /// <summary>What the tail of a run costs, since it is no longer one wait.</summary>
+    public string TailLabel
+    {
+        get
+        {
+            var clicks = EndClicks == 1 ? "1 click" : $"{EndClicks} clicks";
+            var total = SettleMs * (EndClicks + (CloseAfter ? 1 : 0));
+
+            return Preset.EndOn is null
+                ? "no finishing loadout, so the run just stops"
+                : $"{clicks} on the end loadout, {SettleMs} ms apart  ·  {total} ms after the rotation";
+        }
     }
 
     /// <summary>How long 3074's uplink stays held after the clicking stops.</summary>
@@ -253,8 +267,8 @@ public sealed class MacroSettingsViewModel : ObservableObject
             case "duration": DurationMs += by; break;
             case "open": OpenDelayMs += by; break;
             case "page": PageDelayMs += by; break;
-            case "end-delay": EndDelayMs += by; break;
-            case "close": CloseDelayMs += by; break;
+            case "end-clicks": EndClicks += by; break;
+            case "settle": SettleMs += by; break;
             case "uplink": UplinkAfterMs += by; break;
             case "end": EndOn += by; break;
         }
@@ -315,7 +329,7 @@ public sealed class MacroSettingsViewModel : ObservableObject
         nameof(PresetName), nameof(ClickDelayMs), nameof(DurationMs), nameof(DurationLabel),
         nameof(OpenDelayMs), nameof(PageDelayMs), nameof(SwapEstimate), nameof(TimingWarning),
         nameof(TickUplink), nameof(DisableBuffer), nameof(CloseAfter),
-        nameof(EndDelayMs), nameof(CloseDelayMs),
+        nameof(EndClicks), nameof(SettleMs), nameof(TailLabel),
         nameof(UplinkAfterMs), nameof(UplinkAfterLabel),
         nameof(OrderText), nameof(OrderProblem), nameof(EndOn), nameof(EndOnLabel));
 }

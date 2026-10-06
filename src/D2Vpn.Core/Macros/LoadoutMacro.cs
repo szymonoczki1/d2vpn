@@ -116,22 +116,26 @@ public sealed class LoadoutMacro
     {
         if (plan.EndOn is { } slot)
         {
-            // Its own pause, not a click gap. Clicked straight out of a stream going every few
-            // milliseconds, the finishing swap is one more in the queue and as droppable as the
-            // rest - and the point of naming a loadout to end on is that this one must land.
-            _clock.Wait(plan.EndDelay, token);
-
             var (x, y) = plan.Grid.PointFor(slot);
-            _input.ClickAt(x, y);
-            Swaps++;
+
+            // Clicked again rather than waited longer. Each attempt gets a settle first: the one
+            // before the first is what separates it from a rotation running every few
+            // milliseconds, and the ones between the rest are what make a repeat a retry instead
+            // of three events landing in the same frame.
+            for (var i = 0; i < Math.Max(1, plan.EndClicks); i++)
+            {
+                _clock.Wait(plan.Settle, token);
+                _input.ClickAt(x, y);
+                Swaps++;
+            }
         }
 
         if (plan.CloseAfter)
         {
-            // The same key that opened it, after its own settle - not after a click gap. A loadout
-            // applies over several frames, and closing the screen straight after the click meant
-            // the last swap, the one that decides what you are left wearing, never went through.
-            _clock.Wait(plan.CloseDelay, token);
+            // The same key that opened it, after one more settle. A loadout applies over several
+            // frames, and closing the screen straight after the click meant the swap that decides
+            // what you are left wearing never went through.
+            _clock.Wait(plan.Settle, token);
             _input.PressKey(VkF1);
         }
 
@@ -148,8 +152,8 @@ public sealed class LoadoutMacro
 /// <param name="OpenDelay">How long to wait after F1 for the character screen.</param>
 /// <param name="PageDelay">How long to wait after the left arrow for the loadouts.</param>
 /// <param name="CloseAfter">Press F1 again at the end, closing the character screen.</param>
-/// <param name="CloseDelay">How long to leave the screen up after the finishing click.</param>
-/// <param name="EndDelay">How long to pause before the finishing click.</param>
+/// <param name="Settle">How long a loadout needs to apply.</param>
+/// <param name="EndClicks">How many times to click the finishing loadout.</param>
 public readonly record struct MacroPlan(
     LoadoutGrid Grid,
     IReadOnlyList<int> Order,
@@ -159,8 +163,8 @@ public readonly record struct MacroPlan(
     TimeSpan OpenDelay,
     TimeSpan PageDelay,
     bool CloseAfter = false,
-    TimeSpan CloseDelay = default,
-    TimeSpan EndDelay = default)
+    TimeSpan Settle = default,
+    int EndClicks = 1)
 {
     /// <summary>Checks the plan can be run, with a message saying what to change if not.</summary>
     public void Validate()
