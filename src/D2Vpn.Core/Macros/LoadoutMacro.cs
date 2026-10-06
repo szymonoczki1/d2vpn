@@ -125,9 +125,10 @@ public sealed class LoadoutMacro
 
         if (plan.CloseAfter)
         {
-            // The same key that opened it. After the click and its gap, so the game has been given
-            // the swap before the screen it was made on goes away.
-            _clock.Wait(plan.ClickDelay, token);
+            // The same key that opened it, after its own settle - not after a click gap. A loadout
+            // applies over several frames, and closing the screen straight after the click meant
+            // the last swap, the one that decides what you are left wearing, never went through.
+            _clock.Wait(plan.CloseDelay, token);
             _input.PressKey(VkF1);
         }
 
@@ -144,6 +145,7 @@ public sealed class LoadoutMacro
 /// <param name="OpenDelay">How long to wait after F1 for the character screen.</param>
 /// <param name="PageDelay">How long to wait after the left arrow for the loadouts.</param>
 /// <param name="CloseAfter">Press F1 again at the end, closing the character screen.</param>
+/// <param name="CloseDelay">How long to leave the screen up after the finishing click.</param>
 public readonly record struct MacroPlan(
     LoadoutGrid Grid,
     IReadOnlyList<int> Order,
@@ -152,7 +154,8 @@ public readonly record struct MacroPlan(
     TimeSpan ClickDelay,
     TimeSpan OpenDelay,
     TimeSpan PageDelay,
-    bool CloseAfter = false)
+    bool CloseAfter = false,
+    TimeSpan CloseDelay = default)
 {
     /// <summary>Checks the plan can be run, with a message saying what to change if not.</summary>
     public void Validate()

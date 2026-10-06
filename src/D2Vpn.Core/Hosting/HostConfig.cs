@@ -366,6 +366,28 @@ public sealed record MacroPreset
     /// </remarks>
     public bool CloseAfter { get; init; } = true;
 
+    /// <summary>
+    /// How long to leave the character screen up after the finishing click.
+    /// </summary>
+    /// <remarks>
+    /// Its own setting rather than another click gap, and much longer than one. A loadout applies
+    /// over several frames; closing the screen immediately after the click meant the last swap -
+    /// the one that decides what you are left wearing - never went through at all. The gap between
+    /// clicks can be single milliseconds precisely because those swaps are not the one that has to
+    /// survive.
+    /// </remarks>
+    public int CloseDelayMs { get; init; } = 50;
+
+    /// <summary>
+    /// How long 3074's uplink stays held after the clicking stops.
+    /// </summary>
+    /// <remarks>
+    /// Zero by default, which releases it as soon as the sequence ends. The hold is what the swap
+    /// is hidden behind, and the last click needs to be inside it as much as the first - so this
+    /// is the margin for the game still catching up when the macro has finished.
+    /// </remarks>
+    public int UplinkAfterMs { get; init; }
+
     /// <summary>What the runner needs, against a given screen.</summary>
     public MacroSettings ToSettings(LoadoutGrid grid) => new()
     {
@@ -378,7 +400,9 @@ public sealed record MacroPreset
         PageDelay = TimeSpan.FromMilliseconds(PageDelayMs),
         TickUplink = TickUplink,
         DisableBuffer = DisableBuffer,
-        CloseAfter = CloseAfter
+        CloseAfter = CloseAfter,
+        CloseDelay = TimeSpan.FromMilliseconds(CloseDelayMs),
+        UplinkAfter = TimeSpan.FromMilliseconds(UplinkAfterMs)
     };
 
     /// <summary>Checks this one can run, naming itself if not.</summary>
@@ -417,6 +441,18 @@ public sealed record MacroPreset
         {
             throw new ArgumentException(
                 $"macro preset '{Name}' has a screen delay outside 0-10000 ms");
+        }
+
+        if (CloseDelayMs is < 0 or > 10000)
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' has closeDelayMs {CloseDelayMs}, outside 0-10000");
+        }
+
+        if (UplinkAfterMs is < 0 or > 10000)
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' has uplinkAfterMs {UplinkAfterMs}, outside 0-10000");
         }
     }
 }

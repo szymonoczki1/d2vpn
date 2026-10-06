@@ -40,7 +40,18 @@ public readonly record struct MacroSettings
     /// <summary>Press F1 again at the end, closing the character screen.</summary>
     public bool CloseAfter { get; init; }
 
+    /// <summary>How long to leave the screen up after the finishing click.</summary>
+    public TimeSpan CloseDelay { get; init; }
+
+    /// <summary>How long the uplink stays held after the clicking stops.</summary>
+    public TimeSpan UplinkAfter { get; init; }
+
     /// <summary>The plan this describes.</summary>
-    public MacroPlan ToPlan() =>
-        new(Grid, Order, EndOn, Duration, ClickDelay, OpenDelay, PageDelay, CloseAfter);
+    /// <remarks>
+    /// <see cref="UplinkAfter"/> is not in it. The plan is the click sequence, and what happens to
+    /// a traffic hold afterwards is the runner's business - the macro itself knows nothing about
+    /// holds.
+    /// </remarks>
+    public MacroPlan ToPlan() => new(
+        Grid, Order, EndOn, Duration, ClickDelay, OpenDelay, PageDelay, CloseAfter, CloseDelay);
 }

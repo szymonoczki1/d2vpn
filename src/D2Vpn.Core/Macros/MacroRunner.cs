@@ -1,4 +1,4 @@
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
 using D2Vpn.Core.Hosting;
 using D2Vpn.Core.Input;
@@ -34,6 +34,16 @@ public sealed class MacroRunner : IModuleRunner
     private readonly Func<IMacroClock> _clocks;
     private readonly List<PresetControl> _controls = [];
     private readonly Lock _gate = new();
+
+    /// <summary>
+    /// Cancelled only when the module is torn down, never by a run being stopped.
+    /// </summary>
+    /// <remarks>
+    /// What the uplink linger waits on. Stopping a macro is a reason to stop clicking, not a
+    /// reason to drop the hold early - that is the whole point of a setting for how long it stays
+    /// held afterwards. Closing the window is a different matter: nothing should keep it open.
+    /// </remarks>
+    private readonly CancellationTokenSource _shutdown = new();
 
     private PresetControl? _running;
 
@@ -97,10 +107,16 @@ public sealed class MacroRunner : IModuleRunner
             control.Stop();
         }
 
+        // After the stops, so a run that is lingering on its uplink gives it up now rather than
+        // holding the window open for the rest of its wait.
+        _shutdown.Cancel();
+
         foreach (var control in _controls)
         {
             control.AwaitEnd();
         }
+
+        _shutdown.Dispose();
     }
 
     /// <summary>The preset a control stands for, or a default if it has been deleted.</summary>
@@ -350,6 +366,17 @@ public sealed class MacroRunner : IModuleRunner
             }
             finally
             {
+                // Held past the end of the clicking, if asked. The hold is what the swap is hidden
+                // behind and the last click needs to be inside it as much as the first, so this is
+                // the margin for the game still catching up once the macro has finished.
+                //
+                // On the shutdown token rather than the run's own: a stop ends the clicking, and
+                // dropping the hold early would be the one thing this setting exists to prevent.
+                if (settings.UplinkAfter > TimeSpan.Zero && wasActive is false)
+                {
+                    PreciseWait.Wait(settings.UplinkAfter, owner._shutdown.Token);
+                }
+
                 Restore(uplink, wasActive, hadBuffer);
 
                 lock (_gate)

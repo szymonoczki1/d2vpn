@@ -151,6 +151,32 @@ public sealed class MacroSettingsViewModel : ObservableObject
         set => Change(Preset with { CloseAfter = value });
     }
 
+    /// <summary>
+    /// How long to leave the character screen up after the finishing click.
+    /// </summary>
+    /// <remarks>
+    /// Separate from the click gap, and much longer. A loadout applies over several frames, so
+    /// closing the screen straight after the click lost the last swap - the one that decides what
+    /// you are left wearing.
+    /// </remarks>
+    public int CloseDelayMs
+    {
+        get => Preset.CloseDelayMs;
+        set => Change(Preset with { CloseDelayMs = Math.Clamp(value, 0, 10000) });
+    }
+
+    /// <summary>How long 3074's uplink stays held after the clicking stops.</summary>
+    public int UplinkAfterMs
+    {
+        get => Preset.UplinkAfterMs;
+        set => Change(Preset with { UplinkAfterMs = Math.Clamp(value, 0, 10000) });
+    }
+
+    /// <summary>What the linger means in words, since 0 does not read as "straight away".</summary>
+    public string UplinkAfterLabel => UplinkAfterMs == 0
+        ? "released as soon as the clicking stops"
+        : $"held {UplinkAfterMs} ms past the last click";
+
     // ---- the rotation ----
 
     /// <summary>
@@ -214,6 +240,8 @@ public sealed class MacroSettingsViewModel : ObservableObject
             case "duration": DurationMs += by; break;
             case "open": OpenDelayMs += by; break;
             case "page": PageDelayMs += by; break;
+            case "close": CloseDelayMs += by; break;
+            case "uplink": UplinkAfterMs += by; break;
             case "end": EndOn += by; break;
         }
     }
@@ -273,5 +301,6 @@ public sealed class MacroSettingsViewModel : ObservableObject
         nameof(PresetName), nameof(ClickDelayMs), nameof(DurationMs), nameof(DurationLabel),
         nameof(OpenDelayMs), nameof(PageDelayMs), nameof(SwapEstimate), nameof(TimingWarning),
         nameof(TickUplink), nameof(DisableBuffer), nameof(CloseAfter),
+        nameof(CloseDelayMs), nameof(UplinkAfterMs), nameof(UplinkAfterLabel),
         nameof(OrderText), nameof(OrderProblem), nameof(EndOn), nameof(EndOnLabel));
 }

@@ -55,7 +55,8 @@ public class LoadoutMacroTests
         IReadOnlyList<int> order,
         int? endOn = null,
         TimeSpan? duration = null,
-        bool closeAfter = false) =>
+        bool closeAfter = false,
+        TimeSpan? closeDelay = null) =>
         new(
             Grid,
             order,
@@ -64,7 +65,8 @@ public class LoadoutMacroTests
             TimeSpan.FromMilliseconds(30),
             TimeSpan.FromMilliseconds(400),
             TimeSpan.FromMilliseconds(120),
-            closeAfter);
+            closeAfter,
+            closeDelay ?? TimeSpan.FromMilliseconds(50));
 
     // ---- the grid ----
 
@@ -201,6 +203,23 @@ public class LoadoutMacroTests
 
         Assert.Equal($"key {F1:X2}", sink.Events[^1]);
         Assert.Equal("click 117,385", sink.Events[^2]);
+    }
+
+    [Fact]
+    public void The_screen_stays_up_for_its_own_settle_not_a_click_gap()
+    {
+        // The bug this exists for: a loadout applies over several frames, so closing straight
+        // after the click lost the last swap - the one that decides what you are left wearing.
+        // The click gap can be single milliseconds precisely because those swaps do not have to
+        // survive the screen going away.
+        var sink = new Recorder();
+
+        new LoadoutMacro(sink, sink).Run(
+            Plan([5, 2], endOn: 1, closeAfter: true, closeDelay: TimeSpan.FromMilliseconds(80)),
+            CancellationToken.None);
+
+        Assert.Equal(TimeSpan.FromMilliseconds(80), sink.Waits[^1]);
+        Assert.Equal($"key {F1:X2}", sink.Events[^1]);
     }
 
     [Fact]
