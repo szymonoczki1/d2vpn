@@ -190,6 +190,16 @@ public sealed class WinDivertModuleRunner : IModuleRunner, IPacketFeed
             new("withheld", $"{slot.Dropped}"),
             new("buffered", $"{slot.Buffered}"),
             new("replayed", $"{slot.Replayed}"),
+
+            // TEMPORARY: what the last release cost, for measuring the stall a big backlog
+            // causes. Remove with ModuleSlot.CountDrain once the replay drains in chunks.
+            new("last drain", slot.LastDrainCount == 0
+                ? "-"
+                : $"{slot.LastDrainCount} in {slot.LastDrainDuration.TotalMilliseconds:N0}ms"),
+            new("slowest drain", slot.SlowestDrain == TimeSpan.Zero
+                ? "-"
+                : $"{slot.SlowestDrain.TotalMilliseconds:N0}ms"),
+
             new("total held", ModuleMetrics.Seconds(TotalActive))
         ];
 

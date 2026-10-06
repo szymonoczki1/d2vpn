@@ -73,6 +73,41 @@ public sealed class ModuleSlot : IDisposable
     /// <summary>Records replayed packets.</summary>
     public void CountReplayed(int count) => Replayed += count;
 
+    // ---- TEMPORARY: drain cost, for measuring the release stall --------------------------
+    //
+    // A release replays the whole buffer in one pass on the receive thread, so a large backlog
+    // both takes time and stops live traffic being read while it runs. Measured in game as
+    // instant under ~100 packets and noticeable above ~150. These two exist to put a number on
+    // that before it is fixed by draining in chunks, and should come out once it is.
+
+    /// <summary>How many packets the last release replayed.</summary>
+    public int LastDrainCount { get; private set; }
+
+    /// <summary>How long the last release took to replay them.</summary>
+    public TimeSpan LastDrainDuration { get; private set; }
+
+    /// <summary>The slowest release this slot has had.</summary>
+    public TimeSpan SlowestDrain { get; private set; }
+
+    /// <summary>Records what a release cost.</summary>
+    public void CountDrain(int sent, TimeSpan took)
+    {
+        if (sent == 0)
+        {
+            return;
+        }
+
+        LastDrainCount = sent;
+        LastDrainDuration = took;
+
+        if (took > SlowestDrain)
+        {
+            SlowestDrain = took;
+        }
+    }
+
+    // ---- end TEMPORARY ------------------------------------------------------------------
+
     /// <summary>
     /// True when this slot has just been turned off and owes its held packets a replay.
     /// </summary>

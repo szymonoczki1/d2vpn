@@ -442,6 +442,10 @@ public sealed class WinDivertTrafficController : IDisposable
         }
 
         slot.CountReplayed(sent);
+
+        // TEMPORARY: per slot as well as per handle, so the figure names the module that paid it.
+        slot.CountDrain(sent, started.Elapsed);
+
         Report(sent, started.Elapsed);
     }
 
@@ -611,6 +615,10 @@ public sealed class WinDivertTrafficController : IDisposable
         }
 
         slot.CountReplayed(sent);
+
+        // TEMPORARY: per slot as well as per handle, so the figure names the module that paid it.
+        slot.CountDrain(sent, started.Elapsed);
+
         Report(sent, started.Elapsed);
     }
 
