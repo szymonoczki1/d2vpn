@@ -403,6 +403,19 @@ public static class MeasuredDefaults
     /// to watch a direction it is not blocking.
     /// </para>
     /// <para>
+    /// <b>425 is the other trigger, and it is the one a reconnect needs.</b> Measured over three
+    /// captures of the same event: a reconnect opens with an outbound 425, and the 128 follows
+    /// 230 ms later - but only if the 425 was answered. With downlink held the reply is blocked,
+    /// no 128 is ever sent, and the 425 repeats every second indefinitely; fifteen in a row were
+    /// captured before the hold was lifted by hand. 128 alone is therefore unreachable during a
+    /// reconnect: it is downstream of the very traffic the window exists to let through, so the
+    /// window could never open. With no safety timeout on this module, that deadlock is permanent.
+    /// </para>
+    /// <para>
+    /// 425 appeared in none of the three captures outside a reconnect, so it opens a window
+    /// exactly when one is wanted rather than weakening the hold in ordinary play.
+    /// </para>
+    /// <para>
     /// Nothing crosses outside a resync window. Inside one, only the handshake does - see
     /// <see cref="HoldModuleOptions.ResyncPassLengths"/> - which keeps the block near-total while
     /// still letting the exchange complete. Validated at 96% blocked over a 60 second hold, twice
@@ -423,8 +436,15 @@ public static class MeasuredDefaults
         // Let the handshake through and nothing else, so the exchange can complete without the
         // hold leaking the state it exists to defer.
         ResyncPassLengths = new HashSet<int> { 51, 233 },
-        ResyncTriggerLengths = new HashSet<int> { 128, 136 },
+
+        // 425 opens a reconnect; 128 and 136 are the peer-went-quiet request, which during a
+        // reconnect is never reached because it is the answer to the 425 being replied to.
+        ResyncTriggerLengths = new HashSet<int> { 128, 136, 425 },
         ResyncTriggerDirection = PacketDirection.Outbound,
+
+        // The handshake takes 2.46s from the 425, measured twice within 13 ms. 3.5 covers it with
+        // about a second to spare, which matters because the cooldown after a window closes is 5 s
+        // of total block with nothing able to reopen it.
         ResyncDuration = TimeSpan.FromSeconds(3.5),
 
         // Removed: the resync is proven. A 60 second hold - twice the game's ceiling - blocked 96%
@@ -465,8 +485,11 @@ public static class MeasuredDefaults
 
         // Downlink's handshake, as a starting point. Uplink's is not established, so a full hold
         // may need more - override with --resync-pass.
-        ResyncPassLengths = new HashSet<int> { 51, 233 },
-        ResyncTriggerLengths = new HashSet<int> { 128, 136 },
+        // 425 is in both lists here, unlike downlink. A full hold blocks the outbound opener too,
+        // and a trigger that opens a window and is then dropped by it never reaches the peer it
+        // was meant to reach - so it has to be passed as well as watched.
+        ResyncPassLengths = new HashSet<int> { 51, 233, 425 },
+        ResyncTriggerLengths = new HashSet<int> { 128, 136, 425 },
         ResyncTriggerDirection = PacketDirection.Outbound,
         ResyncDuration = TimeSpan.FromSeconds(3.5),
         SafetyTimeout = TimeSpan.FromSeconds(25),

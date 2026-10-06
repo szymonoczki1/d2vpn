@@ -116,6 +116,51 @@ public class HoldDirectionTests
     }
 
     [Fact]
+    public void A_reconnect_opens_the_downlink_window_on_its_own_opener()
+    {
+        // The deadlock this exists for. A reconnect opens with an outbound 425 and the 128 only
+        // follows once that 425 has been answered - so with downlink held, blocking the answer
+        // meant no 128 was ever sent, the window never opened, and the 425 repeated every second
+        // until the hold was lifted by hand. Fifteen in a row were captured.
+        var module = new HoldModule("test", DestinyPorts.Peer, MeasuredDefaults.Peer3074Downlink);
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
+
+        // The opener. Outbound, so a downlink hold passes it - and it has to open the window on
+        // the way through, because nothing later will.
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 425, 1.0)));
+
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 51, 1.1)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 1.2)));
+    }
+
+    [Fact]
+    public void The_window_outlasts_the_measured_reconnect_handshake()
+    {
+        // 2.46s from the 425 to normal traffic, measured twice within 13 ms. The window is 3.5s,
+        // and what makes the margin matter is the cooldown behind it: once a window closes there
+        // are 5s during which nothing reopens it and nothing crosses.
+        var module = new HoldModule("test", DestinyPorts.Peer, MeasuredDefaults.Peer3074Downlink);
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 425, 0)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 51, 2.46)));
+    }
+
+    [Fact]
+    public void A_full_hold_passes_the_opener_it_triggers_on()
+    {
+        // A full hold blocks outbound too, so the opener would otherwise open a window and then be
+        // dropped by it - never reaching the peer it was meant to reach.
+        var module = new HoldModule("test", DestinyPorts.Peer, MeasuredDefaults.Peer3074Full);
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, Ordinary, 0)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 425, 1.0)));
+    }
+
+    [Fact]
     public void Default_options_hold_uplink()
     {
         Assert.Equal(HoldDirection.Uplink, MeasuredDefaults.Peer3074.Direction);
