@@ -29,19 +29,80 @@ public sealed class MacroSettingsViewModel : ObservableObject
 {
     private readonly Func<MacroPreset> _read;
     private readonly Action<MacroPreset> _write;
+    private readonly Func<string, bool> _isHosted;
     private readonly LoadoutGrid _grid;
 
     /// <summary>Creates the panel over one preset.</summary>
     /// <param name="read">The preset as it stands, read fresh so a save elsewhere is picked up.</param>
     /// <param name="write">Called with every change, to apply and save it.</param>
     /// <param name="grid">The shared screen, for checking slots are on it.</param>
+    /// <param name="isHosted">
+    /// Whether a named control is hosted this session, so choosing an uplink that is not can say
+    /// so rather than silently holding nothing.
+    /// </param>
     public MacroSettingsViewModel(
-        Func<MacroPreset> read, Action<MacroPreset> write, LoadoutGrid grid)
+        Func<MacroPreset> read,
+        Action<MacroPreset> write,
+        LoadoutGrid grid,
+        Func<string, bool> isHosted)
     {
         _read = read;
         _write = write;
         _grid = grid;
+        _isHosted = isHosted;
     }
+
+    /// <summary>Which uplink hold this preset drives.</summary>
+    public string Uplink
+    {
+        get => Preset.Uplink;
+        set => Change(Preset with
+        {
+            Uplink = string.IsNullOrWhiteSpace(value) ? MacroUplinks.Peer : value.Trim()
+        });
+    }
+
+    /// <summary>True while peer traffic is the chosen hold. Settable, for a radio button.</summary>
+    public bool UplinkIsPeer
+    {
+        get => Uplink == MacroUplinks.Peer;
+        set
+        {
+            if (value)
+            {
+                Uplink = MacroUplinks.Peer;
+            }
+        }
+    }
+
+    /// <inheritdoc cref="UplinkIsPeer"/>
+    public bool UplinkIsPlayers
+    {
+        get => Uplink == MacroUplinks.Players;
+        set
+        {
+            if (value)
+            {
+                Uplink = MacroUplinks.Players;
+            }
+        }
+    }
+
+    /// <summary>The hold's name, for the switch labels that name it.</summary>
+    public string UplinkLabel => Uplink;
+
+    /// <summary>
+    /// Said when the chosen hold is not hosted this session.
+    /// </summary>
+    /// <remarks>
+    /// Otherwise the switch reads as on, the run happens, and nothing is held - a failure with no
+    /// symptom at all. The macro still clicks, because refusing to run over a missing traffic
+    /// module would be worse than running unhidden.
+    /// </remarks>
+    public string UplinkProblem =>
+        (Preset.TickUplink || Preset.DisableBuffer) && !_isHosted(Uplink)
+            ? $"{Uplink} is not hosted this session, so nothing will be held"
+            : string.Empty;
 
     private MacroPreset Preset => _read();
 
@@ -329,6 +390,8 @@ public sealed class MacroSettingsViewModel : ObservableObject
         nameof(PresetName), nameof(ClickDelayMs), nameof(DurationMs), nameof(DurationLabel),
         nameof(OpenDelayMs), nameof(PageDelayMs), nameof(SwapEstimate), nameof(TimingWarning),
         nameof(TickUplink), nameof(DisableBuffer), nameof(CloseAfter),
+        nameof(Uplink), nameof(UplinkIsPeer), nameof(UplinkIsPlayers),
+        nameof(UplinkLabel), nameof(UplinkProblem),
         nameof(EndClicks), nameof(SettleMs), nameof(TailLabel),
         nameof(UplinkAfterMs), nameof(UplinkAfterLabel),
         nameof(OrderText), nameof(OrderProblem), nameof(EndOn), nameof(EndOnLabel));

@@ -305,6 +305,27 @@ public sealed record OverlayConfig
 }
 
 /// <summary>
+/// The uplink holds a macro can drive.
+/// </summary>
+/// <remarks>
+/// Not an enum. These are control-surface names, they have to match what the host registered, and
+/// a config naming one that is not hosted is a thing to report rather than a thing to refuse - the
+/// macro still clicks, it just holds nothing. Listing them is for the window's switch, not a
+/// restriction.
+/// </remarks>
+public static class MacroUplinks
+{
+    /// <summary>Peer traffic.</summary>
+    public const string Peer = "3074-ul";
+
+    /// <summary>Player traffic.</summary>
+    public const string Players = "27k-ul";
+
+    /// <summary>The ones the window offers.</summary>
+    public static IReadOnlyList<string> All { get; } = [Peer, Players];
+}
+
+/// <summary>
 /// One saved macro: a rotation, its timings, and the key that runs it.
 /// </summary>
 /// <remarks>
@@ -361,10 +382,21 @@ public sealed record MacroPreset
     /// <summary>How long to wait after the left arrow for the loadouts.</summary>
     public int PageDelayMs { get; init; } = 120;
 
-    /// <summary>Hold 3074's uplink for the length of the run.</summary>
+    /// <summary>
+    /// Which uplink hold this preset drives.
+    /// </summary>
+    /// <remarks>
+    /// Peer traffic and player traffic are different ports carrying different things, and which
+    /// one a swap has to be hidden behind is a question only measurement answers - so it is a
+    /// setting rather than a constant. Named the way the control surface names it, since that is
+    /// what it has to match.
+    /// </remarks>
+    public string Uplink { get; init; } = MacroUplinks.Peer;
+
+    /// <summary>Hold that uplink for the length of the run.</summary>
     public bool TickUplink { get; init; } = true;
 
-    /// <summary>Turn 3074's uplink buffer off for the length of the run.</summary>
+    /// <summary>Turn that uplink's buffer off for the length of the run.</summary>
     public bool DisableBuffer { get; init; } = true;
 
     /// <summary>
@@ -413,6 +445,7 @@ public sealed record MacroPreset
     public MacroSettings ToSettings(LoadoutGrid grid) => new()
     {
         Grid = grid,
+        Uplink = Uplink,
         Order = Order,
         EndOn = EndOn,
         Duration = TimeSpan.FromMilliseconds(DurationMs),
@@ -463,6 +496,13 @@ public sealed record MacroPreset
         {
             throw new ArgumentException(
                 $"macro preset '{Name}' has a screen delay outside 0-10000 ms");
+        }
+
+        if (string.IsNullOrWhiteSpace(Uplink))
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' names no uplink. "
+                + $"Use one of: {string.Join(", ", MacroUplinks.All)}");
         }
 
         if (EndClicks is < 1 or > 20)

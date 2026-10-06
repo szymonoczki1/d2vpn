@@ -29,7 +29,7 @@ namespace D2Vpn.Core.Macros;
 public sealed class MacroRunner : IModuleRunner
 {
     private readonly IInputSink _input;
-    private readonly Func<IControllable?> _uplink;
+    private readonly Func<string, IControllable?> _uplink;
     private readonly Func<MacroConfig> _config;
     private readonly Func<IMacroClock> _clocks;
     private readonly List<PresetControl> _controls = [];
@@ -55,15 +55,16 @@ public sealed class MacroRunner : IModuleRunner
     /// next press rather than on the next launch.
     /// </param>
     /// <param name="uplink">
-    /// How to find 3074's uplink hold, or null if it is not hosted. A function because the macro is
-    /// built alongside the traffic modules and would otherwise have to be built after them.
+    /// How to find a hold by name, or null if it is not hosted. A function because the macro is
+    /// built alongside the traffic modules and would otherwise have to be built after them, and it
+    /// takes the name because which hold a preset drives is a per-preset setting.
     /// </param>
     /// <param name="clocks">Supplies a clock per run. Replaced in tests.</param>
     public MacroRunner(
         string name,
         IInputSink input,
         Func<MacroConfig> config,
-        Func<IControllable?> uplink,
+        Func<string, IControllable?> uplink,
         Func<IMacroClock>? clocks = null)
     {
         Name = name;
@@ -200,6 +201,9 @@ public sealed class MacroRunner : IModuleRunner
         /// <summary>Why the last run stopped early, or null if it finished.</summary>
         public string? LastError { get; private set; }
 
+        /// <summary>The uplink the last run wanted and could not find, or null if it found it.</summary>
+        public string? Missing { get; private set; }
+
         public DateTimeOffset? ActiveSince
         {
             get
@@ -331,7 +335,13 @@ public sealed class MacroRunner : IModuleRunner
         /// <summary>One run, start to finish, including putting the uplink back.</summary>
         private void Execute(MacroSettings settings, CancellationToken token)
         {
-            var uplink = settings.TickUplink || settings.DisableBuffer ? owner._uplink() : null;
+            var wanted = settings.TickUplink || settings.DisableBuffer;
+            var uplink = wanted ? owner._uplink(settings.Uplink) : null;
+
+            // Asked for a hold that is not hosted. The clicks still happen - a macro that refused
+            // to run because a traffic module was missing would be worse - but it must not look
+            // like the hold happened.
+            Missing = wanted && uplink is null ? settings.Uplink : null;
 
             // Remembered rather than assumed. Turning the hold off afterwards when it was already
             // on before would release a hold the operator had started by hand.

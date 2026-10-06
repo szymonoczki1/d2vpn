@@ -847,4 +847,46 @@ public class HostConfigTests
         Assert.False(reloaded.Macro.Presets[0].Enabled);
         Assert.Equal("f8", reloaded.Macro.Presets[0].Bind);
     }
+
+    [Fact]
+    public void A_macro_preset_holds_peer_traffic_unless_told_otherwise()
+    {
+        var config = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "macro": {
+            "enabled": true,
+            "presets": [
+              { "name": "peers" },
+              { "name": "players", "uplink": "27k-ul" }
+            ]
+          }
+        }
+        """);
+
+        Assert.Equal("3074-ul", config.Macro.Presets[0].Uplink);
+        Assert.Equal("27k-ul", config.Macro.Presets[1].Uplink);
+
+        // Each preset carries its own, so one macro can hide behind peers and another behind
+        // players in the same session.
+        Assert.Equal("27k-ul", config.Macro.Presets[1].ToSettings(config.Macro.Grid).Uplink);
+    }
+
+    [Fact]
+    public void A_macro_preset_naming_no_uplink_is_refused()
+    {
+        var error = Assert.Throws<ArgumentException>(() => HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "macro": {
+            "enabled": true,
+            "presets": [ { "name": "nameless", "uplink": "" } ]
+          }
+        }
+        """));
+
+        // The message lists what it could have been, since the valid answers are a short list.
+        Assert.Contains("3074-ul", error.Message, StringComparison.Ordinal);
+        Assert.Contains("27k-ul", error.Message, StringComparison.Ordinal);
+    }
 }

@@ -201,7 +201,7 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     MacroName,
                     new SyntheticInput(),
                     () => _config.Macro,
-                    () => Find(UplinkName))));
+                    Find)));
         }
 
         try
@@ -249,7 +249,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
                     ? new MacroSettingsViewModel(
                         () => PresetAt(at),
                         updated => ApplyPreset(at, updated),
-                        _config.Macro.Grid)
+                        _config.Macro.Grid,
+                        hold => Find(hold) is not null)
                     : null
             };
 
@@ -588,9 +589,6 @@ public sealed class MainViewModel : ObservableObject, IDisposable
             && number >= 1
                 ? number - 1
                 : null;
-
-    /// <summary>The hold the macro ticks for the length of a run.</summary>
-    private const string UplinkName = "3074-ul";
 
     /// <summary>One hosted control by name, or null if it is not hosted.</summary>
     private IControllable? Find(string name) => _runners

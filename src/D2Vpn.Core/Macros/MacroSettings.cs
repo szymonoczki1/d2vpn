@@ -13,6 +13,14 @@ public readonly record struct MacroSettings
     /// <summary>Where the loadouts are on screen.</summary>
     public LoadoutGrid Grid { get; init; }
 
+    /// <summary>Which uplink hold to drive, by its control-surface name.</summary>
+    /// <remarks>
+    /// No initialiser: a struct with one needs an explicit constructor, and every caller of this
+    /// builds it from a preset which always names an uplink. Null here would mean a lookup for
+    /// nothing, which the runner reports as a missing hold.
+    /// </remarks>
+    public string Uplink { get; init; }
+
     /// <summary>The slots to cycle, in order.</summary>
     public IReadOnlyList<int> Order { get; init; }
 

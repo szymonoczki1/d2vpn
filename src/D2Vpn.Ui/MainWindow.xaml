@@ -393,9 +393,39 @@
                         <StackPanel>
                             <TextBlock Text="WHILE IT RUNS" Style="{StaticResource SectionLabel}" />
 
+                            <!-- Which hold this preset drives. Peer and player traffic are
+                                 different ports carrying different things, and which one a swap
+                                 has to be hidden behind is a question only measurement answers. -->
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,10">
+                                <RadioButton GroupName="MacroUplink"
+                                             Style="{StaticResource Segment}"
+                                             IsChecked="{Binding UplinkIsPeer, Mode=TwoWay}"
+                                             Content="3074-ul" />
+                                <RadioButton GroupName="MacroUplink"
+                                             Style="{StaticResource Segment}"
+                                             Margin="6,0,0,0"
+                                             IsChecked="{Binding UplinkIsPlayers, Mode=TwoWay}"
+                                             Content="27k-ul" />
+                                <TextBlock Text="peer traffic, or player traffic"
+                                           Style="{StaticResource Subtle}"
+                                           VerticalAlignment="Center" Margin="12,0,0,0" />
+                            </StackPanel>
+
+                            <TextBlock Text="{Binding UplinkProblem}"
+                                       Style="{StaticResource Subtle}"
+                                       Foreground="{StaticResource HoldingBrush}"
+                                       TextWrapping="Wrap" Margin="0,0,0,8"
+                                       Visibility="{Binding UplinkProblem,
+                                                    Converter={StaticResource EmptyToVisibility}}" />
+
                             <CheckBox Style="{StaticResource Switch}" Margin="0,4"
-                                      IsChecked="{Binding TickUplink, Mode=TwoWay}"
-                                      Content="Hold 3074 uplink for the whole run" />
+                                      IsChecked="{Binding TickUplink, Mode=TwoWay}">
+                                <TextBlock>
+                                    <Run Text="Hold" />
+                                    <Run Text="{Binding UplinkLabel, Mode=OneWay}" />
+                                    <Run Text="for the whole run" />
+                                </TextBlock>
+                            </CheckBox>
 
                             <Grid Margin="22,8,0,0" HorizontalAlignment="Left"
                                   IsEnabled="{Binding TickUplink}">
