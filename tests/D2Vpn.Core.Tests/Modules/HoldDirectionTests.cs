@@ -201,6 +201,33 @@ public class HoldDirectionTests
     }
 
     [Fact]
+    public void An_uplink_hold_lets_the_reconnect_opener_out()
+    {
+        // The same deadlock downlink had, from the other side. Uplink blocks outbound, and 425 is
+        // the packet that starts a reconnect - blocked, the game cannot ask at all, and the 128
+        // that would open a resync window only follows an answered 425.
+        var module = new HoldModule("test", DestinyPorts.Peer, MeasuredDefaults.Peer3074);
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Outbound(3074, Ordinary, 0)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 425, 0.1)));
+    }
+
+    [Fact]
+    public void The_whole_outbound_reconnect_exchange_crosses_an_uplink_hold()
+    {
+        // 425, 128, 136, 51, 1166 - the sequence captured going out during a reconnect. All five
+        // have to leave or the exchange stalls somewhere in the middle.
+        var module = new HoldModule("test", DestinyPorts.Peer, MeasuredDefaults.Peer3074);
+        module.IsActive = true;
+
+        foreach (var size in new[] { 425, 128, 136, 51, 1166 })
+        {
+            Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, size, 0.1)));
+        }
+    }
+
+    [Fact]
     public void Default_options_hold_uplink()
     {
         Assert.Equal(HoldDirection.Uplink, MeasuredDefaults.Peer3074.Direction);

@@ -327,7 +327,16 @@ public static class MeasuredDefaults
     /// </remarks>
     public static HoldModuleOptions Peer3074 { get; } = new()
     {
-        PassLengths = new HashSet<int> { 36, 51, 128, 136, 233, 1166 },
+        // 425 is the reconnect opener, and uplink is the direction that has to send it. The other
+        // five sizes of that exchange - 128, 136, 51, 1166 - were already here, which is why this
+        // looked complete: everything the handshake needs except the packet that starts it.
+        //
+        // It is in the standing list rather than only a trigger because the trigger cannot help
+        // here. The window opens on 128, and the 128 is only sent once the 425 has been answered -
+        // so blocking the 425 means no window ever opens, which is exactly the deadlock measured
+        // on downlink. 425 appears in none of three captures outside a reconnect, so passing it
+        // standing costs nothing in ordinary play.
+        PassLengths = new HashSet<int> { 36, 51, 128, 136, 233, 425, 1166 },
 
         // Taken from what a reference limiter actually permits, rather than from what happened to
         // be flowing. Capturing one of its uplink holds showed exactly 20 packets crossing in 30

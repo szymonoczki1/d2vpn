@@ -12,7 +12,11 @@ public class MeasuredDefaultsTests
     [Fact]
     public void Uplink_ships_a_measured_pass_list()
     {
-        Assert.Equal([36, 51, 128, 136, 233, 1166], MeasuredDefaults.Peer3074.PassLengths.Order());
+        // 425 is the reconnect opener, added after a capture showed the other five sizes of that
+        // exchange were already here and the packet starting it was not.
+        Assert.Equal(
+            [36, 51, 128, 136, 233, 425, 1166],
+            MeasuredDefaults.Peer3074.PassLengths.Order());
     }
 
     [Fact]
