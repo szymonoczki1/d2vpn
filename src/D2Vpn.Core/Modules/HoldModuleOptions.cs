@@ -481,8 +481,13 @@ public static class MeasuredDefaults
         // nothing can reopen the window.
         ResyncDuration = TimeSpan.FromSeconds(5),
 
-        // Removed: the resync is proven. A 60 second hold - twice the game's ceiling - blocked 96%
-        // of downlink, survived without an error code, and deferred a pickup until release. The
+        // Removed: the resync is proven, and then some. The run that settled it was 60 seconds -
+        // twice the game's ceiling - blocking 96% of downlink without an error code. With the
+        // standing pass list above it went far past that: fifteen minutes held, ending in the
+        // game's own inactivity kick rather than anything to do with the network. An 8.5 minute
+        // hold released with the world loading back faster than it did before.
+        //
+        // That is the difference between a session kept alive and a session merely surviving. The
         // timeout was there because the resync was unproven, and it was also what prevented
         // proving it: every earlier run ended at 25 s, safely short of the ceiling, so surviving
         // meant nothing.

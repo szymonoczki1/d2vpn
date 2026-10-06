@@ -73,51 +73,6 @@ public sealed class ModuleSlot : IDisposable
     /// <summary>Records replayed packets.</summary>
     public void CountReplayed(int count) => Replayed += count;
 
-    // ---- TEMPORARY: drain cost, for measuring the release stall --------------------------
-    //
-    // A release replays the whole buffer in one pass on the receive thread, so a large backlog
-    // both takes time and stops live traffic being read while it runs. Measured in game as
-    // instant under ~100 packets and noticeable above ~150. These two exist to put a number on
-    // that before it is fixed by draining in chunks, and should come out once it is.
-
-    /// <summary>How many packets the last release replayed.</summary>
-    public int LastDrainCount { get; private set; }
-
-    /// <summary>How long the last release took to replay them.</summary>
-    public TimeSpan LastDrainDuration { get; private set; }
-
-    /// <summary>The slowest release this slot has had.</summary>
-    public TimeSpan SlowestDrain { get; private set; }
-
-    /// <summary>How stale the oldest packet in the last release was.</summary>
-    /// <remarks>
-    /// The variable the other figures cannot show. Count did not predict the stall - 150 was slow
-    /// and 191 was instant - and the drain itself is 2-5 ms either way, so what is left is how far
-    /// back the replayed state reached. A hold longer than BufferMaxAge discards its oldest
-    /// packets before replaying, which would make a long hold replay *less* stale state than a
-    /// medium one. That is the shape this measures.
-    /// </remarks>
-    public TimeSpan LastDrainOldest { get; private set; }
-
-    /// <summary>Records what a release cost.</summary>
-    public void CountDrain(int sent, TimeSpan took, TimeSpan oldest)
-    {
-        if (sent == 0)
-        {
-            return;
-        }
-
-        LastDrainCount = sent;
-        LastDrainDuration = took;
-        LastDrainOldest = oldest;
-
-        if (took > SlowestDrain)
-        {
-            SlowestDrain = took;
-        }
-    }
-
-    // ---- end TEMPORARY ------------------------------------------------------------------
 
     /// <summary>
     /// True when this slot has just been turned off and owes its held packets a replay.

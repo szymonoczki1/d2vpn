@@ -421,22 +421,10 @@ public sealed class WinDivertTrafficController : IDisposable
         var started = System.Diagnostics.Stopwatch.StartNew();
         var sent = 0;
 
-        // TEMPORARY: how far back the replayed state reaches, which is the one variable the other
-        // figures cannot show.
-        var now = DateTimeOffset.UtcNow;
-        var oldest = TimeSpan.Zero;
-
-        foreach (var entry in buffer.TakeForReplay(now))
+        foreach (var entry in buffer.TakeForReplay(DateTimeOffset.UtcNow))
         {
             try
             {
-                var age = now - entry.HeldAt;
-
-                if (age > oldest)
-                {
-                    oldest = age;
-                }
-
                 _rewriter?.Rewrite(entry.Packet, entry.Address);
                 await _divert.SendAsync(entry.Packet, entry.Address).ConfigureAwait(false);
                 PacketsReplayed++;
@@ -454,10 +442,6 @@ public sealed class WinDivertTrafficController : IDisposable
         }
 
         slot.CountReplayed(sent);
-
-        // TEMPORARY: per slot as well as per handle, so the figure names the module that paid it.
-        slot.CountDrain(sent, started.Elapsed, oldest);
-
         Report(sent, started.Elapsed);
     }
 
@@ -627,11 +611,6 @@ public sealed class WinDivertTrafficController : IDisposable
         }
 
         slot.CountReplayed(sent);
-
-        // TEMPORARY: zero oldest - a delay line sends each packet as it comes due, so nothing it
-        // delivers is stale by definition.
-        slot.CountDrain(sent, started.Elapsed, TimeSpan.Zero);
-
         Report(sent, started.Elapsed);
     }
 
