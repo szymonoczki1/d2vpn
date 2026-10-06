@@ -196,9 +196,9 @@ public sealed class WinDivertModuleRunner : IModuleRunner, IPacketFeed
             new("last drain", slot.LastDrainCount == 0
                 ? "-"
                 : $"{slot.LastDrainCount} in {slot.LastDrainDuration.TotalMilliseconds:N0}ms"),
-            new("slowest drain", slot.SlowestDrain == TimeSpan.Zero
+            new("oldest replayed", slot.LastDrainCount == 0
                 ? "-"
-                : $"{slot.SlowestDrain.TotalMilliseconds:N0}ms"),
+                : $"{slot.LastDrainOldest.TotalSeconds:N1}s"),
 
             new("total held", ModuleMetrics.Seconds(TotalActive))
         ];

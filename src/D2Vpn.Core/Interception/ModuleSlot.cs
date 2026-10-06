@@ -89,8 +89,18 @@ public sealed class ModuleSlot : IDisposable
     /// <summary>The slowest release this slot has had.</summary>
     public TimeSpan SlowestDrain { get; private set; }
 
+    /// <summary>How stale the oldest packet in the last release was.</summary>
+    /// <remarks>
+    /// The variable the other figures cannot show. Count did not predict the stall - 150 was slow
+    /// and 191 was instant - and the drain itself is 2-5 ms either way, so what is left is how far
+    /// back the replayed state reached. A hold longer than BufferMaxAge discards its oldest
+    /// packets before replaying, which would make a long hold replay *less* stale state than a
+    /// medium one. That is the shape this measures.
+    /// </remarks>
+    public TimeSpan LastDrainOldest { get; private set; }
+
     /// <summary>Records what a release cost.</summary>
-    public void CountDrain(int sent, TimeSpan took)
+    public void CountDrain(int sent, TimeSpan took, TimeSpan oldest)
     {
         if (sent == 0)
         {
@@ -99,6 +109,7 @@ public sealed class ModuleSlot : IDisposable
 
         LastDrainCount = sent;
         LastDrainDuration = took;
+        LastDrainOldest = oldest;
 
         if (took > SlowestDrain)
         {
