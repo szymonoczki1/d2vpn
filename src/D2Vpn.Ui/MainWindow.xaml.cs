@@ -388,7 +388,7 @@ public partial class MainWindow : Window
         var step = what switch
         {
             "duration" => 1000,
-            "open" or "page" or "close" or "uplink" => 20,
+            "open" or "page" or "close" or "uplink" or "end-delay" => 20,
             "end" => 1,
             _ => 5
         };

@@ -56,7 +56,8 @@ public class LoadoutMacroTests
         int? endOn = null,
         TimeSpan? duration = null,
         bool closeAfter = false,
-        TimeSpan? closeDelay = null) =>
+        TimeSpan? closeDelay = null,
+        TimeSpan? endDelay = null) =>
         new(
             Grid,
             order,
@@ -66,7 +67,8 @@ public class LoadoutMacroTests
             TimeSpan.FromMilliseconds(400),
             TimeSpan.FromMilliseconds(120),
             closeAfter,
-            closeDelay ?? TimeSpan.FromMilliseconds(50));
+            closeDelay ?? TimeSpan.FromMilliseconds(50),
+            endDelay ?? TimeSpan.FromMilliseconds(50));
 
     // ---- the grid ----
 
@@ -203,6 +205,30 @@ public class LoadoutMacroTests
 
         Assert.Equal($"key {F1:X2}", sink.Events[^1]);
         Assert.Equal("click 117,385", sink.Events[^2]);
+    }
+
+    [Fact]
+    public void The_rotation_stops_before_the_finishing_click()
+    {
+        // Its own pause, not a click gap. Out of a stream going every few milliseconds the
+        // finishing swap is one more in the queue and as droppable as the rest - and the point of
+        // naming a loadout to end on is that this one has to land.
+        var sink = new Recorder();
+
+        new LoadoutMacro(sink, sink).Run(
+            Plan(
+                [5, 2],
+                endOn: 1,
+                closeAfter: true,
+                closeDelay: TimeSpan.FromMilliseconds(80),
+                endDelay: TimeSpan.FromMilliseconds(40)),
+            CancellationToken.None);
+
+        // ... 40 ms, the finishing click, 80 ms, then the key that closes the screen.
+        Assert.Equal(TimeSpan.FromMilliseconds(40), sink.Waits[^2]);
+        Assert.Equal(TimeSpan.FromMilliseconds(80), sink.Waits[^1]);
+        Assert.Equal("click 117,385", sink.Events[^2]);
+        Assert.Equal($"key {F1:X2}", sink.Events[^1]);
     }
 
     [Fact]

@@ -367,6 +367,17 @@ public sealed record MacroPreset
     public bool CloseAfter { get; init; } = true;
 
     /// <summary>
+    /// How long to pause before the finishing click.
+    /// </summary>
+    /// <remarks>
+    /// So the rotation has stopped before the one click that decides the outcome. Clicked straight
+    /// out of a stream going every few milliseconds, the finishing swap is just one more in the
+    /// queue and as droppable as the rest - and the whole point of naming a loadout to end on is
+    /// that this is the one that must land.
+    /// </remarks>
+    public int EndDelayMs { get; init; } = 50;
+
+    /// <summary>
     /// How long to leave the character screen up after the finishing click.
     /// </summary>
     /// <remarks>
@@ -401,6 +412,7 @@ public sealed record MacroPreset
         TickUplink = TickUplink,
         DisableBuffer = DisableBuffer,
         CloseAfter = CloseAfter,
+        EndDelay = TimeSpan.FromMilliseconds(EndDelayMs),
         CloseDelay = TimeSpan.FromMilliseconds(CloseDelayMs),
         UplinkAfter = TimeSpan.FromMilliseconds(UplinkAfterMs)
     };
@@ -441,6 +453,12 @@ public sealed record MacroPreset
         {
             throw new ArgumentException(
                 $"macro preset '{Name}' has a screen delay outside 0-10000 ms");
+        }
+
+        if (EndDelayMs is < 0 or > 10000)
+        {
+            throw new ArgumentException(
+                $"macro preset '{Name}' has endDelayMs {EndDelayMs}, outside 0-10000");
         }
 
         if (CloseDelayMs is < 0 or > 10000)

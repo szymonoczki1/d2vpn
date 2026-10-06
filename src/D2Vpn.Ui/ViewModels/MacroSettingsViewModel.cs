@@ -152,6 +152,19 @@ public sealed class MacroSettingsViewModel : ObservableObject
     }
 
     /// <summary>
+    /// How long to pause before the finishing click.
+    /// </summary>
+    /// <remarks>
+    /// So the rotation has stopped before the click that decides the outcome. Out of a stream
+    /// going every few milliseconds, the finishing swap is as droppable as any other.
+    /// </remarks>
+    public int EndDelayMs
+    {
+        get => Preset.EndDelayMs;
+        set => Change(Preset with { EndDelayMs = Math.Clamp(value, 0, 10000) });
+    }
+
+    /// <summary>
     /// How long to leave the character screen up after the finishing click.
     /// </summary>
     /// <remarks>
@@ -240,6 +253,7 @@ public sealed class MacroSettingsViewModel : ObservableObject
             case "duration": DurationMs += by; break;
             case "open": OpenDelayMs += by; break;
             case "page": PageDelayMs += by; break;
+            case "end-delay": EndDelayMs += by; break;
             case "close": CloseDelayMs += by; break;
             case "uplink": UplinkAfterMs += by; break;
             case "end": EndOn += by; break;
@@ -301,6 +315,7 @@ public sealed class MacroSettingsViewModel : ObservableObject
         nameof(PresetName), nameof(ClickDelayMs), nameof(DurationMs), nameof(DurationLabel),
         nameof(OpenDelayMs), nameof(PageDelayMs), nameof(SwapEstimate), nameof(TimingWarning),
         nameof(TickUplink), nameof(DisableBuffer), nameof(CloseAfter),
-        nameof(CloseDelayMs), nameof(UplinkAfterMs), nameof(UplinkAfterLabel),
+        nameof(EndDelayMs), nameof(CloseDelayMs),
+        nameof(UplinkAfterMs), nameof(UplinkAfterLabel),
         nameof(OrderText), nameof(OrderProblem), nameof(EndOn), nameof(EndOnLabel));
 }

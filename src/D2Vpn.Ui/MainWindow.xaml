@@ -272,6 +272,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Text="Between clicks" VerticalAlignment="Center" Margin="0,5" />
@@ -330,19 +331,36 @@
                                        Style="{StaticResource Subtle}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" />
 
-                            <TextBlock Grid.Row="4" Text="Before closing"
+                            <TextBlock Grid.Row="4" Text="Before last swap"
                                        VerticalAlignment="Center" Margin="0,5" />
                             <Button Grid.Row="4" Grid.Column="1" Content="&#x2212;"
                                     Style="{StaticResource FlatButton}"
-                                    Margin="0,3" Padding="12,4" Tag="close-" Click="OnMacroNudge" />
+                                    Margin="0,3" Padding="12,4" Tag="end-delay-"
+                                    Click="OnMacroNudge" />
                             <TextBox Grid.Row="4" Grid.Column="2" Style="{StaticResource NumberBox}"
-                                     IsEnabled="{Binding CloseAfter}"
-                                     Text="{Binding CloseDelayMs, Mode=TwoWay,
+                                     Text="{Binding EndDelayMs, Mode=TwoWay,
                                             UpdateSourceTrigger=LostFocus}" />
                             <Button Grid.Row="4" Grid.Column="3" Content="+"
                                     Style="{StaticResource FlatButton}"
+                                    Margin="0,3" Padding="12,4" Tag="end-delay+"
+                                    Click="OnMacroNudge" />
+                            <TextBlock Grid.Row="4" Grid.Column="4" Text="ms before the end loadout"
+                                       Style="{StaticResource Subtle}"
+                                       VerticalAlignment="Center" Margin="8,0,0,0" />
+
+                            <TextBlock Grid.Row="5" Text="Before closing"
+                                       VerticalAlignment="Center" Margin="0,5" />
+                            <Button Grid.Row="5" Grid.Column="1" Content="&#x2212;"
+                                    Style="{StaticResource FlatButton}"
+                                    Margin="0,3" Padding="12,4" Tag="close-" Click="OnMacroNudge" />
+                            <TextBox Grid.Row="5" Grid.Column="2" Style="{StaticResource NumberBox}"
+                                     IsEnabled="{Binding CloseAfter}"
+                                     Text="{Binding CloseDelayMs, Mode=TwoWay,
+                                            UpdateSourceTrigger=LostFocus}" />
+                            <Button Grid.Row="5" Grid.Column="3" Content="+"
+                                    Style="{StaticResource FlatButton}"
                                     Margin="0,3" Padding="12,4" Tag="close+" Click="OnMacroNudge" />
-                            <TextBlock Grid.Row="4" Grid.Column="4" Text="ms after the last click"
+                            <TextBlock Grid.Row="5" Grid.Column="4" Text="ms after the last click"
                                        Style="{StaticResource Subtle}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" />
                         </Grid>
@@ -360,7 +378,7 @@
                                    Text="The two screen delays are really how long this machine takes to draw those screens. A click sent before the screen is there goes to whatever was underneath it." />
 
                         <TextBlock Style="{StaticResource Subtle}" Margin="0,6,0,0"
-                                   Text="Before closing is longer than a click gap on purpose. A loadout applies over several frames, and shutting the screen straight after the last click means that swap never lands." />
+                                   Text="The last two are longer than a click gap on purpose. A loadout applies over several frames, so the finishing swap needs the rotation to have stopped before it, and the screen to stay up after it. Neither is true at the speed the rotation itself runs." />
                     </StackPanel>
                 </Border>
 

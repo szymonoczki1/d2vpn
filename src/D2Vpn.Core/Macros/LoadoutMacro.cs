@@ -116,7 +116,10 @@ public sealed class LoadoutMacro
     {
         if (plan.EndOn is { } slot)
         {
-            _clock.Wait(plan.ClickDelay, token);
+            // Its own pause, not a click gap. Clicked straight out of a stream going every few
+            // milliseconds, the finishing swap is one more in the queue and as droppable as the
+            // rest - and the point of naming a loadout to end on is that this one must land.
+            _clock.Wait(plan.EndDelay, token);
 
             var (x, y) = plan.Grid.PointFor(slot);
             _input.ClickAt(x, y);
@@ -146,6 +149,7 @@ public sealed class LoadoutMacro
 /// <param name="PageDelay">How long to wait after the left arrow for the loadouts.</param>
 /// <param name="CloseAfter">Press F1 again at the end, closing the character screen.</param>
 /// <param name="CloseDelay">How long to leave the screen up after the finishing click.</param>
+/// <param name="EndDelay">How long to pause before the finishing click.</param>
 public readonly record struct MacroPlan(
     LoadoutGrid Grid,
     IReadOnlyList<int> Order,
@@ -155,7 +159,8 @@ public readonly record struct MacroPlan(
     TimeSpan OpenDelay,
     TimeSpan PageDelay,
     bool CloseAfter = false,
-    TimeSpan CloseDelay = default)
+    TimeSpan CloseDelay = default,
+    TimeSpan EndDelay = default)
 {
     /// <summary>Checks the plan can be run, with a message saying what to change if not.</summary>
     public void Validate()
