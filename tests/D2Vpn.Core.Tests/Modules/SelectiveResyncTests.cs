@@ -86,7 +86,7 @@ public class SelectiveResyncTests
         var module = Downlink();
         module.IsActive = true;
 
-        foreach (var state in new[] { 68, 89, 166, 174, 1168, 1217 })
+        foreach (var state in new[] { 68, 89, 166, 174, 1168, 1217, 1233 })
         {
             Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, state, 0.5)));
         }

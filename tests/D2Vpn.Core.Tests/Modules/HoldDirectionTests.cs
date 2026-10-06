@@ -86,22 +86,22 @@ public class HoldDirectionTests
         var module = new HoldModule("test", DestinyPorts.Peer, MeasuredDefaults.Peer3074Downlink);
         module.IsActive = true;
 
-        // Blocked to start with. 36 rather than 51: 51 crosses standing now, so only 36 can show
-        // the window opening.
+        // Blocked to start with. 64 is the probe: it is the one handshake size in the window list
+        // and not the standing one, so it is all that can show a window opening.
         Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 36, 0.1)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 64, 0.1)));
 
         // The request this machine sends. It is outbound, which a downlink hold does not block,
         // so it passes - and it has to open the window on the way through.
         Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Outbound(3074, 128, 1.0)));
 
         // Inside the window the handshake crosses and nothing else does.
-        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 36, 1.1)));
+        Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 64, 1.1)));
         Assert.Equal(PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, 233, 1.2)));
         Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 1.3)));
 
         // And it closes again after ResyncDuration, 5 s.
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 36, 6.5)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 64, 6.5)));
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public class HoldDirectionTests
         module.IsActive = true;
 
         Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 128, 1.0)));
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 36, 1.1)));
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, 64, 1.1)));
     }
 
     [Fact]

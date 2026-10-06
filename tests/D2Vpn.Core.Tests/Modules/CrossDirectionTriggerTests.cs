@@ -12,9 +12,9 @@ public class CrossDirectionTriggerTests
 {
     private const int Ordinary = 600;
     private const int ReconnectRequest = 128;
-    // Not 233: that crosses standing now, so it cannot show when a window is open. 36 is in the
-    // window list and deliberately out of the standing one, which is exactly this distinction.
-    private const int HandshakeReply = 36;
+    // 64, because it is the one handshake size in the window list and not the standing one - so
+    // it is the only probe left that can tell an open window from a closed one.
+    private const int HandshakeReply = 64;
 
     private static HoldModule Downlink() =>
         new("3074 DL", DestinyPorts.Peer, MeasuredDefaults.Peer3074Downlink);

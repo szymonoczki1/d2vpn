@@ -444,12 +444,16 @@ public static class MeasuredDefaults
         // the world slow to come back on release - the client arrives at the release still
         // mid-handshake instead of done with it.
         //
-        // 36 is deliberately not here. It was 21% of ordinary downlink in this capture, so passing
-        // it standing would leak a fifth of normal traffic; it crosses inside a window instead.
-        // These five were never, or almost never, seen outside a hold: 42 and 301 never, 233 at
-        // 0.3%, 51 at 2.9%. That puts the standing leak near 3%, against the reference limiter's
-        // measured 7% of normal.
-        PassLengths = new HashSet<int> { 42, 51, 98, 233, 301 },
+        // This is the reference limiter's own signature, measured against it rather than derived:
+        // 36, 42, 51, 98, 233, 301, 1213, every one of them seen only during a hold and never in
+        // ordinary traffic, 24 packets over 33 seconds, 7% of normal.
+        //
+        // 36 was briefly left out of this on the grounds that it was 21% of ordinary downlink -
+        // but that figure came from calibrating against d2vpn's own hold, which is the run since
+        // shown to be measuring from the wrong side of the handle. The calibration that was
+        // positioned correctly says the opposite, and it is the only one of the two worth
+        // believing. 1213 is in for the same reason: it is in that signature.
+        PassLengths = new HashSet<int> { 36, 42, 51, 98, 233, 301, 1213 },
 
         // The inbound reconnect handshake, captured clean with no limiter running: 301, 42, 233,
         // 51, 36, 51, 36, 36, 98, 64 - in that order, over 3.1 s - and then a flood of 1168-1233

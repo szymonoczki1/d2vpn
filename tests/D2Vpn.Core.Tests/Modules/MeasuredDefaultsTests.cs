@@ -24,18 +24,25 @@ public class MeasuredDefaultsTests
         // exchange ran once each with no repeat, because its sizes cross throughout a hold rather
         // than only inside a window.
         Assert.Equal(
-            [42, 51, 98, 233, 301],
+            [36, 42, 51, 98, 233, 301, 1213],
             MeasuredDefaults.Peer3074Downlink.PassLengths.Order());
     }
 
     [Fact]
-    public void Downlink_keeps_the_commonest_size_out_of_the_standing_list()
+    public void The_standing_list_is_the_reference_limiters_measured_signature()
     {
-        // 36 was 21% of ordinary downlink in the capture these came from, so passing it standing
-        // would leak a fifth of normal traffic. It crosses inside a window instead, where the
-        // window itself is the bound.
-        Assert.DoesNotContain(36, MeasuredDefaults.Peer3074Downlink.PassLengths);
-        Assert.Contains(36, MeasuredDefaults.Peer3074Downlink.ResyncPassLengths!);
+        // Taken from a calibration run against it, not derived from ours. Every size in it was
+        // seen only during a hold and never in ordinary traffic, which is what distinguishes a
+        // handshake size from game data that happens to be small.
+        Assert.Equal(
+            [36, 42, 51, 98, 233, 301, 1213],
+            MeasuredDefaults.Peer3074Downlink.PassLengths.Order());
+
+        // And it is still a list, not an opening - the state flood is not in it.
+        foreach (var state in new[] { 68, 89, 166, 1168, 1217, 1233 })
+        {
+            Assert.DoesNotContain(state, MeasuredDefaults.Peer3074Downlink.PassLengths);
+        }
     }
 
     [Fact]
