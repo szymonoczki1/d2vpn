@@ -805,4 +805,46 @@ public class HostConfigTests
         Assert.Equal(20, config.Overlay.Timer.MarginX);
         Assert.True(config.Overlay.TimerAttached);
     }
+
+    [Fact]
+    public void A_macro_preset_is_enabled_unless_it_says_otherwise()
+    {
+        // Per preset, not per module: with each one separately bindable, a module-wide switch
+        // would turn off five things at once and say nothing about which.
+        var config = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "macro": {
+            "enabled": true,
+            "presets": [
+              { "name": "on by default" },
+              { "name": "turned off", "enabled": false }
+            ]
+          }
+        }
+        """);
+
+        Assert.True(config.Macro.Presets[0].Enabled);
+        Assert.False(config.Macro.Presets[1].Enabled);
+    }
+
+    [Fact]
+    public void A_disabled_preset_survives_being_written_back()
+    {
+        // The whole point: a preset switched off in the window has to still be off next launch.
+        var original = HostConfig.Parse("""
+        {
+          "modules": [ { "name": "30k" } ],
+          "macro": {
+            "enabled": true,
+            "presets": [ { "name": "two swap", "bind": "f8", "enabled": false } ]
+          }
+        }
+        """);
+
+        var reloaded = HostConfig.Parse(original.ToJson());
+
+        Assert.False(reloaded.Macro.Presets[0].Enabled);
+        Assert.Equal("f8", reloaded.Macro.Presets[0].Bind);
+    }
 }

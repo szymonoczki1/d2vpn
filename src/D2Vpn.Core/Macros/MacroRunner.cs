@@ -75,9 +75,14 @@ public sealed class MacroRunner : IModuleRunner
         // Addressed by position, not by name. A preset renamed in the window would otherwise
         // change its control address, which would lose its key and break anything driving it over
         // the pipe - a rename is not meant to be a re-bind.
-        for (var i = 0; i < config().Presets.Count; i++)
+        var presets = config().Presets;
+
+        for (var i = 0; i < presets.Count; i++)
         {
-            _controls.Add(new PresetControl(this, i, $"{name}-{i + 1}"));
+            _controls.Add(new PresetControl(this, i, $"{name}-{i + 1}")
+            {
+                IsEnabled = presets[i].Enabled
+            });
         }
     }
 

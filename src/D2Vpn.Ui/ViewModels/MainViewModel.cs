@@ -767,8 +767,9 @@ public sealed class MainViewModel : ObservableObject, IDisposable
     /// Puts each macro control's key and switch back into its own preset.
     /// </summary>
     /// <remarks>
-    /// Per preset, since each is separately bindable. Presets with no control hosted - a config
-    /// listing more than were built - are left exactly as they were rather than dropped.
+    /// Per preset, since each is separately bindable and separately switchable. Presets with no
+    /// control hosted - a config listing more than were built - are left exactly as they were
+    /// rather than dropped.
     /// </remarks>
     private IReadOnlyList<MacroPreset> PresetsWithBinds(MacroConfig macro)
     {
@@ -783,7 +784,8 @@ public sealed class MainViewModel : ObservableObject, IDisposable
 
             presets[at] = presets[at] with
             {
-                Bind = module.BindKey is { } key ? KeyName.Describe(key) : null
+                Bind = module.BindKey is { } key ? KeyName.Describe(key) : null,
+                Enabled = module.IsEnabled
             };
         }
 

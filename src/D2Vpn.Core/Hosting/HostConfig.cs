@@ -324,6 +324,16 @@ public sealed record MacroPreset
     /// <summary>What to call it in the window.</summary>
     public string Name { get; init; } = "preset";
 
+    /// <summary>
+    /// Whether this preset will run at all.
+    /// </summary>
+    /// <remarks>
+    /// Per preset rather than per module, like everything else here. It is still listed and still
+    /// has its settings - turning one off is how you keep a rotation you are not using without
+    /// risking its key, not how you delete it.
+    /// </remarks>
+    public bool Enabled { get; init; } = true;
+
     /// <summary>The key that runs this one, and stops it if it is already going.</summary>
     public string? Bind { get; init; }
 
@@ -495,10 +505,12 @@ public sealed record MacroPreset
 public sealed record MacroConfig
 {
     /// <summary>Whether to host it at all. False and it does not appear in the window.</summary>
+    /// <remarks>
+    /// Whether to host the macros; <see cref="MacroPreset.Enabled"/> is whether one of them will
+    /// run. There is no module-wide switch between the two any more - with each preset separately
+    /// bindable, one was a switch that turned off five things at once and said nothing about which.
+    /// </remarks>
     public bool Enabled { get; init; }
-
-    /// <summary>The window's own switch: hosted and listed, but refusing to run.</summary>
-    public bool ModuleEnabled { get; init; } = true;
 
     /// <summary>Where the loadouts are on screen. Shared, since there is one screen.</summary>
     public LoadoutGrid Grid { get; init; } = new();
