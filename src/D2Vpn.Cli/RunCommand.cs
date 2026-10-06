@@ -48,7 +48,7 @@ internal static class RunCommand
             + $"resyncMs={options.ResyncDuration.TotalMilliseconds:N0} "
             + $"cooldownMs={options.ResyncCooldown.TotalMilliseconds:N0} "
             + $"untickMs={untickDelayMs} pollMs={pollMs} priority={priority} "
-            + $"buffering={options.Buffering} bufferInbound={options.BufferInbound} "
+            + $"buffering={options.Buffering} "
             + $"slow={options.SlowMode} slowMs={options.SlowDelay.TotalMilliseconds:N0} "
             + $"throttle={options.SlowThrottle} "
             + $"burstMs={options.SlowBurstWindow.TotalMilliseconds:N0}");
@@ -208,8 +208,7 @@ internal static class RunCommand
                 : "hold - blocked traffic is withheld until release"));
         Console.WriteLine($"  buffering    : "
             + (options.Buffering
-                ? $"{(options.SlowMode ? Describe(options.Direction)
-                       : options.BufferInbound ? "both directions" : "uplink only")}, "
+                ? $"{Describe(options.Direction)}, "
                   + $"up to {options.BufferCapacity} packets or "
                   + $"{options.BufferMaxAge.TotalSeconds:N0}s old"
                 : "off - blocked packets are destroyed"));

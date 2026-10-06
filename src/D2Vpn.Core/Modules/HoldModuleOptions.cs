@@ -175,23 +175,15 @@ public sealed record HoldModuleOptions
     /// registers against stale context. See <c>docs/protocol.md</c>, finding 36.
     /// </para>
     /// <para>
-    /// This alone buffers outbound packets only, even on a hold covering both directions, because
-    /// outbound is the only case measured. <see cref="BufferInbound"/> extends it.
+    /// Keeps whatever the hold holds, in whichever direction it holds it. It used to keep outbound
+    /// only - the argument being that the server re-sends inbound state, so replaying it gains
+    /// nothing and could deliver a backlog of stale state on release. That may well be true, but
+    /// it left the buffer switch on a downlink hold doing nothing at all while still appearing in
+    /// the window and saving to the config, which is a worse failure than an arguable effect.
+    /// Whether replaying inbound helps or harms is now something a run can answer.
     /// </para>
     /// </remarks>
     public bool Buffering { get; init; }
-
-    /// <summary>
-    /// Also hold and replay blocked <em>inbound</em> packets, rather than outbound alone.
-    /// </summary>
-    /// <remarks>
-    /// Off even when <see cref="Buffering"/> is on, and deliberately so. Replaying inbound gains
-    /// nothing that is known - the server re-sends current state regardless, which is why a
-    /// downlink hold works at all while dropping - and delivering a backlog of stale state on
-    /// release is the one direction where replay could do harm rather than nothing. Exposed so it
-    /// can be measured, not because there is a result behind it.
-    /// </remarks>
-    public bool BufferInbound { get; init; }
 
     /// <summary>
     /// Delay blocked packets by <see cref="SlowDelay"/> instead of withholding them until release.
@@ -418,9 +410,10 @@ public static class MeasuredDefaults
     ///
     /// What a downlink hold does in play: incoming world state stops arriving, so the client keeps
     /// acting but never learns the result. Interacting with an object does not complete until the
-    /// hold is released, and buffs neither expire nor apply while it is on. The held state is not
-    /// lost - releasing replays it, which is the release dump showing up as a hundred packets in a
-    /// single second.
+    /// hold is released, and buffs neither expire nor apply while it is on. The release dump - a
+    /// hundred packets in a single second - was observed with buffering off, so it was the server
+    /// catching up rather than a replay. With buffering on it is now both, and whether that is an
+    /// improvement is the thing to measure.
     /// </para>
     /// </remarks>
     public static HoldModuleOptions Peer3074Downlink { get; } = new()

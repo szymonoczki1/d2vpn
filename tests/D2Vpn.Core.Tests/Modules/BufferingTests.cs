@@ -1,4 +1,4 @@
-using D2Vpn.Core.Modules;
+﻿using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Tests.Modules;
@@ -69,48 +69,39 @@ public class BufferingTests
     }
 
     [Fact]
-    public void A_blocked_inbound_packet_is_dropped_even_with_buffering_on()
+    public void A_downlink_hold_buffers_what_it_holds()
     {
-        // Buffering alone means outbound. Replaying inbound gains nothing known - the server
-        // re-sends current state regardless, which is why a downlink hold works while dropping.
+        // The switch used to do nothing here: buffering meant outbound, a downlink hold holds
+        // inbound, so turning it on changed no verdict while still showing in the window and
+        // saving to the config.
         var module = new HoldModule("PVE", DestinyPorts.Peer,
             MeasuredDefaults.Peer3074Downlink with { Buffering = true });
-        module.IsActive = true;
-
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
-    }
-
-    [Fact]
-    public void Inbound_is_buffered_only_when_asked_for_explicitly()
-    {
-        var module = new HoldModule("PVE", DestinyPorts.Peer,
-            MeasuredDefaults.Peer3074Downlink with { Buffering = true, BufferInbound = true });
         module.IsActive = true;
 
         Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
     }
 
     [Fact]
-    public void A_hold_on_both_directions_still_buffers_only_what_it_sends()
+    public void A_downlink_hold_still_destroys_what_it_holds_with_buffering_off()
     {
-        // The asymmetry is between directions, not between modules, so a full hold must not start
-        // queueing inbound state just because it covers that direction too.
+        var module = new HoldModule("PVE", DestinyPorts.Peer,
+            MeasuredDefaults.Peer3074Downlink with { Buffering = false });
+        module.IsActive = true;
+
+        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
+    }
+
+    [Fact]
+    public void A_hold_on_both_directions_buffers_both()
+    {
+        // Buffering keeps what the hold holds. A full hold holds both, so it keeps both - the
+        // outbound-only rule was what made the switch meaningless on anything but uplink.
         var module = new HoldModule("PVE", DestinyPorts.Peer,
             MeasuredDefaults.Peer3074Full with { Buffering = true });
         module.IsActive = true;
 
         Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Outbound(3074, Ordinary, 0)));
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
-    }
-
-    [Fact]
-    public void Inbound_buffering_alone_does_nothing_without_buffering()
-    {
-        var module = new HoldModule("PVE", DestinyPorts.Peer,
-            MeasuredDefaults.Peer3074Downlink with { Buffering = false, BufferInbound = true });
-        module.IsActive = true;
-
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
+        Assert.Equal(PacketVerdict.Buffer, module.Decide(TestPackets.Inbound(3074, Ordinary, 0)));
     }
 
     [Fact]

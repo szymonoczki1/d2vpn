@@ -367,20 +367,23 @@ public sealed class HoldModule : ITrafficModule
         /// What to do with a packet the hold is blocking: hold it for replay, or destroy it.
         /// </summary>
         /// <remarks>
-        /// Decided per packet rather than per hold, because the asymmetry is between directions
-        /// and not between modules. A hold covering both directions still buffers only what it
-        /// sends, which is the only case with a result behind it.
+        /// <para>
+        /// Buffering keeps whatever this hold holds, in whichever direction it holds it. It used
+        /// to keep outbound only, on the argument that the server re-sends inbound state so
+        /// replaying it gains nothing - which may well be true, but it made the buffer switch on a
+        /// downlink hold do nothing at all while still appearing in the window and saving to the
+        /// config. A switch that cannot be observed to work is worse than one whose effect is
+        /// arguable.
+        /// </para>
+        /// <para>
+        /// Slow implies buffering either way: a packet cannot be delivered late unless it was
+        /// kept. Scope comes from the direction gate above, so an uplink hold still only ever
+        /// delays uplink.
+        /// </para>
         /// </remarks>
         private static PacketVerdict Blocked(PacketInfo packet, HoldModuleOptions options) =>
-            // Slow implies buffering: a packet cannot be delivered late unless it was kept.
-            // It is not restricted to outbound the way plain buffering is, because the reason for
-            // that restriction - the server re-sends inbound state anyway - does not apply to a
-            // delay. Delaying inbound is the whole of what the reference limiter's 30k variant
-            // does. Scope still comes from the direction gate above, so an uplink hold delays
-            // only uplink.
-            (options.SlowMode || options.Buffering)
-                && (packet.IsOutbound || options.BufferInbound || options.SlowMode)
-                    ? PacketVerdict.Buffer
-                    : PacketVerdict.Drop;
+            options.SlowMode || options.Buffering
+                ? PacketVerdict.Buffer
+                : PacketVerdict.Drop;
     }
 }

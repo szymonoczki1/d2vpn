@@ -93,7 +93,7 @@ static void PrintUsage()
     Console.WriteLine("  d2vpn run <group> [--downlink | --full] [--key NAME] [--log-passed]");
     Console.WriteLine("                    [--untick-ms N] [--log FILE]");
     Console.WriteLine("                    [--no-buffer] [--buffer-size N] [--buffer-age-s N]");
-    Console.WriteLine("                    [--buffer-downlink] [--slow] [--slow-ms N]");
+    Console.WriteLine("                    [--slow] [--slow-ms N]");
     Console.WriteLine("                    [--slow-fixed] [--slow-burst-ms N]");
     Console.WriteLine("      Run a module until interrupted, toggled by a hotkey. This is the one");
     Console.WriteLine("      to use in play: hold runs on a timer, which is right for measuring");
@@ -112,11 +112,10 @@ static void PrintUsage()
     Console.WriteLine("      older than 30s are discarded rather than replayed, since stale");
     Console.WriteLine("      actions are worse than none. --buffer-size and --buffer-age-s change");
     Console.WriteLine("      those two limits.");
-    Console.WriteLine("      Only outbound is held, whatever direction the hold covers, so a");
-    Console.WriteLine("      downlink run is unaffected. Replaying inbound is unproven: the");
-    Console.WriteLine("      server re-sends state regardless, so there is nothing to recover,");
-    Console.WriteLine("      and a backlog of stale inbound state is the one direction where");
-    Console.WriteLine("      replay could do harm. --buffer-downlink enables it to be measured.");
+    Console.WriteLine("      Whatever the hold holds is what gets kept, in whichever direction");
+    Console.WriteLine("      it holds. Replaying inbound is unproven - the server re-sends state");
+    Console.WriteLine("      regardless - but it is now something a run can answer rather than a");
+    Console.WriteLine("      switch that silently did nothing on a downlink hold.");
     Console.WriteLine();
     Console.WriteLine("      --slow is a different mode, not a stronger hold. Nothing is blocked");
     Console.WriteLine("      and nothing is dropped: packets are queued and released late, so the");
@@ -1248,10 +1247,9 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
     }
 
     // On by default, because that is where it was measured: 12 detached shots in 15 against
-    // roughly 1 in 6 when blocked packets were destroyed (Finding 36). This covers outbound only,
-    // whatever direction the hold itself covers, so a downlink-only run is unaffected by it -
-    // replaying inbound is unproven, the server re-sends state regardless, and a backlog of stale
-    // inbound state is the one direction where replay could do harm rather than nothing.
+    // roughly 1 in 6 when blocked packets were destroyed (Finding 36). That measurement is
+    // outbound, but the switch now keeps whatever the hold holds - a downlink run buffering
+    // nothing while the switch read as on was a worse answer than an unproven one.
     var slowMs = IntOption(args, "--slow-ms", 0);
     var slow = HasFlag(args, "--slow") || HasFlag(args, "--slow-throttle")
         || HasFlag(args, "--slow-fixed") || slowMs > 0;
@@ -1270,7 +1268,6 @@ static HoldModuleOptions ResolveOptions(string[] args, PortGroup group, bool dow
     options = options with
     {
         Buffering = !HasFlag(args, "--no-buffer"),
-        BufferInbound = HasFlag(args, "--buffer-downlink"),
         BufferCapacity = IntOption(args, "--buffer-size", options.BufferCapacity),
         BufferMaxAge = TimeSpan.FromSeconds(
             IntOption(args, "--buffer-age-s", (int)options.BufferMaxAge.TotalSeconds)),
