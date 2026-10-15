@@ -1,286 +1,122 @@
 # d2vpn
 
-Network traffic control and macro management for Destiny 2, on Windows.
+Network traffic control and macro automation for Destiny 2, on Windows.
 
-Packet interception through the WinDivert kernel driver, with per-module control over specific
-port groups. Built on measurements taken from live traffic rather than on inherited constants -
-see [docs/protocol.md](docs/protocol.md).
+It intercepts UDP and TCP traffic on specific port groups through the
+[WinDivert](https://reqrypt.org/windivert.html) kernel driver, and lets you hold, delay or reset
+each group independently while the game is running. A WPF window drives it, a game overlay shows
+what is held, and an in-process macro can click loadouts while holding a port.
 
-> **Status: every module works, validated against a live game.** All four port groups, in both
-> directions where the group has two, plus reconnect and a process pause. A session host runs them
-> together and takes commands over a named pipe, driven by a config file or a hotkey.
->
-> What is *not* yet proven is the host under sustained real play - the modules were each validated
-> on their own, and the host that combines them has had only light use. There is no GUI and no
-> installer yet.
->
-> What follows describes what exists today, not what is planned.
+Every packet-length signature it uses was **measured from live traffic**, not inherited from
+another tool. Where a number appears in this codebase there is a capture behind it, and usually a
+comment saying which run - see [docs/protocol.md](docs/protocol.md).
 
-## Why calibration is the centrepiece
+---
 
-Every limiter in this space works the same way: during a block, drop the game-state payload but
-let the connection-keepalive handshake through. Block everything instead and the peer sees a dead
-connection, so the game disconnects you.
+## Install
 
-Which packets count as "handshake" is identified by **payload size**. The traffic is encrypted, so
-size and timing are the only signal available.
+**Installer** - download `d2vpn-x.y.z-setup.exe` from Releases and run it. Installs to
+`Program Files`, adds a Start Menu entry, and uninstalls cleanly.
 
-The existing tools hardcode those sizes. Measurement on one machine found that of five constants
-baked into one reference implementation, **two matched exactly and three did not** - packet sizes
-shift with game version, loadout, ornament and catalyst. A constant that is correct for its author
-is wrong for everyone else, and it fails silently.
+**Zip** - download `d2vpn-x.y.z-win-x64.zip`, extract anywhere, run `d2vpn-ui.exe`.
 
-So d2vpn derives them - and it finds the hold in the traffic rather than asking you to match a
-countdown:
+Either way there is nothing else to install. The build is self-contained, so no .NET runtime is
+needed, and the WinDivert driver is embedded and extracted on first use.
 
-```
-> d2vpn calibrate 3074 --seconds 45
+> **It needs administrator rights.** Opening a WinDivert handle is a privileged operation, so
+> Windows will prompt on launch. No other packet limiter may be running at the same time - two
+> handles on overlapping filters both receive every packet and both can drop it.
 
-   45s / 45s   uplink    0/s
+Windows 10/11, 64-bit.
 
-=== 3074 (UDP 3074) ===
-normal uplink rate: 10.0 packets/s (79 packets before the hold)
-hold detected     : 9s -> 19s (10s)
-uplink while held : 0.7 packets/s (7% of normal, 7 packets total)
+## Quick start
 
-YOUR SIGNATURE - uplink payload sizes that crossed during the hold:
-  51, 128, 136, 190, 198, 1166
+1. Launch it. Accept the elevation prompt.
+2. The sidebar lists every hosted module. Pick one and press its key, or flip the switch.
+3. **Settings → Overlay** puts a panel over the game showing what is held and for how long.
 
-These are the packets a module must let through for the session to survive
-a hold. Blocking them too would make the game disconnect.
+If a module says it could not open a handle, something else already has one - close any other
+limiter first.
 
-None of these sizes occur in normal traffic, so a length match cannot
-confuse them with game state. Selective pass-through confirmed.
+## What it can do
 
-Downlink kept flowing throughout (150 packets), as expected for an uplink-only hold.
-```
-
-**The hold is detected from the uplink rate collapsing, not from a timer.** An earlier design
-asked the operator to hold during a fixed window and then differenced the two halves. It does not
-work: reaction time smears the boundary, and payload sizes step in small increments because
-encrypted payloads pad, so a short baseline misses many ordinary sizes and reports them as
-signature. One real run produced a 105-entry "signature" reading 1193, 1194, 1195, 1196 - every
-one an ordinary data packet. Uplink collapsing from 10/s to 0.7/s is unambiguous by comparison,
-and inside a genuine hold only a handful of packets cross at all, so every one of them is signal.
-
-Calibration runs in WinDivert's **sniff** mode: packets are copied and continue up the stack
-untouched, so it cannot stall or break a live game.
-
-## Commands
-
-| Command | What it does |
-|---|---|
-| `d2vpn list` | Show the known port groups |
-| `d2vpn watch <group> [--seconds N]` | Live packet counts and a payload-size histogram |
-| `d2vpn calibrate <group> [--seconds N] [--downlink]` | Derive this machine's signature for a group, in either direction |
-| `d2vpn hold <group> [--seconds N] [--dry-run] [--downlink]` | Hold a group in one direction for a fixed time. `--dry-run` reports what it would drop without touching traffic |
-| `d2vpn run <group> [--key K] [--downlink] [--full] [--slow] [--no-buffer]` | Hold one group on a hotkey, until Ctrl+C. The most direct way to try a single module |
-| `d2vpn reconnect [group] [--key K]` | Inject a TCP reset into every live connection, so the game error-codes and reconnects |
-| `d2vpn pause [--key K] [--timeout-s N]` | Suspend the game process itself. Nothing is sent, received, drawn or simulated while held |
-| `d2vpn host <module> ... [--config FILE]` | Run several modules at once, controlled over a named pipe. The one to actually play with |
-| `d2vpn config init \| check [PATH]` | Write a commented config holding every module and its keybind, or validate one |
-| `d2vpn ctl <command ...>` | Send one command to a running host and print the reply |
-
-Groups: `3074`, `27k`, `7500`, `30k`. Anything that opens the driver needs an elevated terminal,
-because loading a kernel driver does. `config` and a `host` that runs only `pause` do not.
-
-### The host, in practice
-
-```
-d2vpn config init                       # writes d2vpn.json with every module and bind
-d2vpn host --config d2vpn.json          # hosts them; nothing holds until told to
-```
-
-Modules are named `group[-direction][-slow]`: `3074-ul`, `3074-dl`, `27k-full`, `30k-slow`, `7500`.
-TCP groups are inbound-only and take no direction. Several modules on one group share that group's
-packet handle, each with its own buffer and its own release, so uplink and downlink can be separate
-toggles.
-
-From a second elevated terminal, or from a macro:
-
-```
-d2vpn ctl status                        # ok 3074-ul=0 27k-ul=1 30k=0 pause=0
-d2vpn ctl on 3074-ul
-d2vpn ctl set 3074-ul resync off        # switches change while running
-d2vpn ctl reset 30k                     # the reconnect
-d2vpn ctl release                       # drop every hold at once
-```
-
-One line in, one line out, every reply starting `ok` or `err`, and the exit code following it. The
-protocol has no JSON because its first consumer is AutoHotkey v2, which has no JSON parser in the
-box - a script that reads one line and splits on spaces needs no library at all.
-
-## Holding uplink is a cycle, not a switch
-
-The obvious design - drop uplink while a key is held, pass a list of handshake sizes so the peer
-does not give up - **caps out at about 30 seconds**, and it took an experiment to find out why.
-
-Running the same 20-second hold with a reference limiter's `AutoResync` turned off, one reconnect
-request repeated at 3-4 packets/second for the hold's entire length: the game asking to
-re-establish, over and over, because nothing ever answered. Turn `AutoResync` back on and those
-retries nearly vanish. It is not a filter. It **answers** the exchange and drives it to
-completion.
-
-So a module is a per-peer state machine:
-
-```
-Blocking   ── saw an outbound reconnect request ──▶  Resyncing
-Resyncing  ── the exchange has had time to finish ──▶  Blocking
-```
-
-While `Blocking`, uplink is dropped except the signature sizes. While `Resyncing`, everything
-passes so the game can re-establish. A 20-second hold measured across four peers at once ran
-block / resync / block, and that is the shape this reproduces.
-
-The acceptance test needs no instrumentation: **hold for more than 30 seconds.** An error code
-means the resync is not working. No error code means it is.
-
-Measured: **451 s held, 35 completed resync cycles, 92.5% of uplink blocked, no error code**, and
-nothing crossed outside the two configured pass lists. The 35 is the result rather than the 451 -
-one long stretch is weak evidence, the renewal exchange completing thirty-five consecutive times is
-the mechanism being demonstrated.
-
-**So do not disarm it.** `--no-pass` is the right setting for a short sequence - it removes the
-standing pass list, the only thing that can leak in a hold of a second or two. `--no-resync` is a
-trap: a trigger size appears in about 0.4% of ordinary traffic, so an armed resync almost never
-fires inside a hold that short, while disarming it guarantees an error code in any hold that runs
-long. Running with neither a trigger nor a safety timeout now prints a warning saying so.
-
-State is per remote address because the game talks to several peers at once, each on its own tick,
-joining and leaving mid-session. Time comes from packet timestamps rather than a clock, so a whole
-hold can be driven through in a unit test with no driver and no game running.
-
-**Uplink and downlink are separate holds needing separate signatures.** An uplink pass list is
-what this machine must still be able to send; a downlink one is what the peer must still be able
-to send to us. Neither can be derived from the other, and the calibrator has to be told which
-direction to watch - a downlink hold leaves uplink flowing perfectly normally, so watching the
-wrong stream reports that nothing happened. Only uplink on 3074 has been measured so far.
-
-## Dropping a packet and deferring it are different tricks
-
-`run` holds blocked uplink and replays it the moment the hold is released; `hold` destroys it.
-Which behaviour is wanted depends entirely on the direction, and the asymmetry is not obvious:
-
-- **Downlink.** The server keeps sending current state, so dropping only delays what the client
-  learns; the state arrives anyway. Buffering changes little.
-- **Uplink.** Nothing re-sends the player's own actions. A dropped action is destroyed, not
-  deferred - so the shots taken during a hold simply never happened.
-
-That matters for short sequences. Some effects need the actions to *arrive late*, after the desync,
-so the peer registers them against stale context - and for those, dropping is the wrong tool no
-matter how well the block itself works. A reference limiter measured on this machine blocks uplink
-just as completely as this project does and then replays 46-65 packets in millisecond-spaced bursts
-on release; that replay was the entire difference in outcome.
-
-Rebuilding it from that observation alone took the measured success rate from roughly 1 in 6 to 12
-in 15 - past the reference limiter's own 6 in 9. So `run` does it by default, and `--no-buffer`
-turns it off. See Finding 36 in [docs/protocol.md](docs/protocol.md).
-
-Only *outbound* packets are held, whatever direction the hold itself covers - a `--full` hold
-still destroys the inbound it blocks. The asymmetry is between directions, not between modules,
-and replaying inbound is unproven: the server re-sends state regardless, so there is nothing to
-recover, and delivering a backlog of stale state on release is the one direction where replay
-could do harm rather than nothing. `--buffer-downlink` exists so that can be measured.
-
-Limits are 2048 packets and a 30 s age, settable with `--buffer-size` and `--buffer-age-s`. They
-are not peers: **the age limit is the operative one**. In a measured 295 s hold it discarded 87.7%
-of the buffer, and the capacity could hold 7.4x more than the age could ever admit - so capacity
-bounds memory against a rate spike, while age decides what is actually delivered. Eviction is
-oldest first, because what matters on release is the most recent actions.
-
-That release is measured: 252 packets reinjected in 13.6 ms (54 us each), no error code and no
-in-game symptom. A full 2048-packet drain would take ~111 ms, queuing about 2 packets against
-WinDivert's 4096-deep queue - so the drain cannot stall the receive loop at these rates.
-
-## Hold, buffer, slow - three different things
-
-| Mode | Blocked traffic | Peer sees |
+| Module | Port | What holding it does |
 |---|---|---|
-| `--no-buffer` | destroyed | a gap, and the actions never happened |
-| default | held, replayed on release | a gap, then the actions arrive late |
-| `--slow` | held, released after `--slow-ms` | no gap - a stream running behind |
+| `3074-ul` / `3074-dl` | UDP 3074 | Peer traffic, one direction at a time. Uplink: your actions stop reaching other players. Downlink: the world stops updating for you. |
+| `3074-ul-slow` / `3074-dl-slow` | UDP 3074 | Rate-caps instead of blocking - one packet per peer per interval. |
+| `27k-ul` / `27k-dl` | UDP 27015-27200 | The same for player traffic. |
+| `30k` / `30k-slow` | TCP 30000-30009 | The instance server connection. |
+| `7500` | TCP 7500-7509 | API traffic. |
+| `<group>-rc` | — | Injects a reset, forcing a reconnect without dropping the session. |
+| `pause` | — | Suspends the game process outright. |
+| `macro-1` … `macro-5` | — | Clicks loadouts on a timer, optionally holding a port for the run. |
 
-Slow is not a stronger hold, it is a different mode. Nothing is blocked and nothing is dropped, so
-there is no gap for the peer to react to: the conversation just runs behind. It covers whichever
-direction the hold does - a plain `run 3074 --slow` slows only uplink - where buffering covers
-outbound only regardless.
+Each hold has two switches that change while it runs: **autoresync**, which lets the handshake
+cross so a long hold does not kill the session, and **buffering**, which keeps withheld packets
+and replays them on release instead of destroying them.
 
-**On 3074 it is a rate cap, not a delay**, and the distinction turned out to be the whole thing. A
-fixed offset shifts the stream: the peer receives every packet, in order, correctly spaced, one
-second late - which is indistinguishable from a player on 1000 ms ping, and netcode is built to
-absorb exactly that. A rate cap releases one packet per period per peer whatever arrives, so input
-outruns output, the backlog grows, and the desync deepens for as long as the hold runs.
+The longest validated hold is **15 minutes on `3074-dl`** with no error code - it ended in the
+game's own inactivity kick.
 
-| | Fixed offset | Rate cap |
-|---|---|---|
-| Output rate | equal to input | one per period |
-| Queue while held | constant | grows |
-| How far behind the peer is | constant | grows |
-| Dumped at untick | one period's worth | as much as you held for |
+## The macro
 
-A fixed offset was built here first, tested, and produced one visible in-game effect across a whole
-session. The rate cap works. Both reference limiters do it this way - one in its source, the other
-measured on the wire at one packet per second - so the 1000 ms default is a measurement rather than
-a guess. Larger is more aggressive, not less: it is the inverse of the send rate.
+Up to five presets, each with its own key, rotation and timings. A preset opens the character
+screen, cycles the loadouts you list, finishes on the one you name, and can hold `3074-ul` or
+`27k-ul` for the length of the run.
 
-`--slow-fixed` selects the offset anyway. It is the right mechanism for 30k, whose slow genuinely is
-a fixed delay on inbound - a different module in the prior art, not a setting of the same one.
+Timings are in milliseconds because every one of them is a race against something being drawn.
+They are separate settings for a reason: the gap between rotation clicks can be single-digit, but
+the clicks that decide the outcome need the game to have caught up first.
 
-One consequence: a rate cap is the only mode here that can drop. The backlog grows until its tail
-reaches `--buffer-age-s` and then expires, so a held throttle becomes a partial block after roughly
-that long. The run summary reports how many expired.
+Input goes through `SendInput` - the same OS input queue a real mouse feeds. Nothing is attached to
+the game: no window is subclassed, no message hook is installed, no memory is read or written.
 
-## Safety
+## Configuration
 
-`hold` is the first thing here that can break a connection - in divert mode a received packet
-reaches its destination only if it is reinjected.
+`%APPDATA%\d2vpn\d2vpn.json`, created on first run and editable from the window. It holds your
+keybinds, which modules are hosted, the macro presets and the overlay position.
 
-- **`--dry-run` first.** It runs the module against sniffed traffic and reports what it *would*
-  have dropped, changing nothing.
-- **A packet that cannot be decided is passed, never dropped.** A module bug, an unparseable
-  packet, an exception mid-decision - all of them let traffic through.
-- **Closing the handle restores normal traffic**, so disposal is the kill switch, and it runs on
-  cancellation, on error, and on every exit path. Ctrl+C releases.
-- **The buffer cannot outlive the handle.** Blocked uplink is queued and replayed on release, but
-  the queue is capped, aged out, and *discarded* rather than flushed if the handle closes - so the
-  kill switch stays instant and no backlog is ever pushed into a session already in trouble.
-  `--no-buffer` goes back to deciding every packet immediately.
-- **Exit any other limiter completely** - not just idle. Two WinDivert handles on overlapping
-  filters both receive every packet and can each drop or reinject it independently.
+```jsonc
+{
+  "modules": [
+    { "name": "3074-ul", "bind": "capslock", "resync": true, "buffer": true },
+    { "name": "30k",     "bind": "f6",       "resync": true, "buffer": true }
+  ],
+  "resetBinds": [ { "module": "30k", "bind": "f9" } ],
+  "pause": { "enabled": true, "bind": "f11" }
+}
+```
 
-## Port groups
+Comments and trailing commas are allowed. Anything omitted keeps its measured default, so write a
+number here only to deliberately override one. `d2vpn config init` writes a fully commented
+template.
 
-| Group | Protocol | Ports | Role | Measured hold |
-|---|---|---|---|---|
-| `3074` | UDP | 3074 | Primary peer traffic, ~10 Hz each way | 96% blocked over 60 s; survives 20 min with resync |
-| `27k` | UDP | 27015-27200 | Additional peer traffic, many peers | 97.7% of uplink blocked; no ceiling found |
-| `7500` | TCP | 7500-7509 | Service channel, ~2.3 packets/s | Reset somewhere between 75 s and 87 s |
-| `30k` | TCP | 30000-30009 | Instance and session control | Dies in ~20 s without the 73-byte heartbeat, indefinite with it |
+## Command line
 
-Both UDP groups hold uplink, downlink or both. Both TCP groups are inbound-only, and both carry
-`reset` - the reconnect - as a capability rather than as a separate module, because the sampler it
-needs has to share the hold's packet handle.
+The window is the usual way in; the CLI is where the measurement tools live.
 
-## Design rules
+```
+d2vpn list                        show the port groups
+d2vpn hold 3074 --downlink        hold one group, report what crossed
+d2vpn calibrate 3074 --downlink   derive this machine's signature for a group
+d2vpn instance 30k                watch for instance changes
+d2vpn host --config d2vpn.json    run modules headless, serving the control pipe
+d2vpn ctl set 3074-ul resync off  drive a running session from a script
+```
 
-These are constraints, not preferences. Each exists because measurement showed the alternative
-breaks.
+`calibrate` is the one worth knowing about. Hold a module partway through a run and it reports the
+payload sizes that crossed while that direction was collapsed - the packets a module must let
+through for the session to survive. That output is where this project's constants come from.
 
-**Filters match protocol and remote port only.** Never a local address, adapter, or interface.
-WinDivert hooks the network stack rather than an adapter, so a port-keyed filter matches whether
-traffic leaves through a VPN tunnel or a physical NIC. A connection behind CGNAT needs a VPN for a
-workable NAT type, but the app must never assume one is present. Enforced by a test.
+## Building from source
 
-**Signatures are payload bytes, never frame bytes.** Frame length includes a link-layer header
-that a Raw IP VPN tunnel does not have and Ethernet does. A frame-based signature would stop
-matching the instant the VPN is toggled.
+Needs the .NET 9 SDK. [Inno Setup](https://jrsoftware.org/isinfo.php) is needed only for the
+installer; without it you still get the zip.
 
-**Timeouts belong to individual modules.** A 3074 uplink hold has survived over 20 minutes,
-because the handshake pass-through keeps renewing peer liveness. A held 30k reconnect errors out
-around 25-30 seconds, because nothing equivalent protects it. Neither number generalises.
-
-**The core has no UI dependency.** `D2Vpn.Core` targets `net9.0` and knows nothing about WPF, so
-every module and the calibrator can be tested against synthetic packets with no driver present.
+```powershell
+dotnet test                # 599 tests, none need the driver or elevation
+.\build.ps1                # test, publish, zip, installer -> dist\
+```
 
 ## Layout
 
@@ -290,71 +126,37 @@ src/D2Vpn.Core/            net9.0, no UI dependency
   Interception/            WinDivert handles, packet buffer, slot composition
   Modules/                 the traffic modules and their measured options
   Calibration/             per-peer signature finder
+  Macros/                  loadout macro, independent of any front end
+  Api/                     Bungie API client, for the instance timer
   Processes/               process suspend, for game pause
   Hosting/                 session host, control protocol, config file
-src/D2Vpn.Cli/             command-line front end  (net9.0-windows)
-tests/D2Vpn.Core.Tests/    437 tests, none needing the driver or elevation
+src/D2Vpn.Ui/              WPF window and game overlay  (net9.0-windows)
+src/D2Vpn.Cli/             command-line front end       (net9.0-windows)
+tests/D2Vpn.Core.Tests/    599 tests, none needing the driver or elevation
+installer/                 Inno Setup script
 tools/capture/             PowerShell capture and analysis scripts
-docs/                      measured findings and prior-art analysis
+docs/                      measured findings, prior-art analysis, evidence
 ```
 
-`Hosting` is the seam a GUI would attach to. `ModuleHost` holds the modules, `IControllable` is one
-addressable toggle, `IModuleOptions` is a switch that changes while running, and `HostConfig` is the
-file all of it is configured from - so a front end binds to those rather than to WinDivert.
+`Hosting` is the seam both front ends attach to. `ModuleHost` holds the modules, `IControllable` is
+one addressable toggle, `IModuleOptions` is a switch that changes while running, and `HostConfig`
+is the file all of it is configured from - so a front end binds to those rather than to WinDivert.
 
-## Building and running
-
-Needs the .NET 9 SDK.
-
-```
-dotnet build
-dotnet test
-```
-
-`d2vpn.cmd` in the repo root forwards to the built executable, so from an elevated terminal in
-this directory:
-
-```
-.\d2vpn list
-.\d2vpn calibrate 3074 --seconds 60
-```
-
-The leading `.\` is required in PowerShell for a script in the current directory.
-
-Anything that opens the driver - `watch`, `calibrate`, `hold`, `run`, `host` with a traffic module -
-needs an elevated terminal. `config`, and a `host` running only `pause`, do not.
-
-## Distributing a build
-
-```
-dotnet publish src/D2Vpn.Cli -c Release -o out
-```
-
-The Release configuration deliberately produces **no PDB and no absolute paths**. A .NET assembly
-normally embeds the absolute path of its PDB, and a shipped PDB carries the absolute path of every
-source file - so a default Release build contained the build machine's Windows username, readable
-with nothing more than `strings`. `Directory.Build.props` turns that off, and the trade is that
-stack traces from a Release build have no line numbers. Debug builds keep everything.
-
-WinDivert's driver files ship with the `WindivertDotnet` package and have to sit beside the
-executable.
-
-## Licence
-
-[MIT](LICENSE).
-
-The reference implementations this project learned from carry **no licence at all**, which means
-their authors retain every right and copying from them would have been infringement regardless of
-being public. So nothing was copied: they were read for facts - that a resync window exists, which
-payload sizes matter, that 1300 bytes opens one - and the implementation here is original.
-[docs/prior-art.md](docs/prior-art.md) marks which numbers came from reading someone else's source
-and which were measured here, and the measured ones disagree with the inherited ones often enough
-that the distinction earns its keep.
-
-Separately, and not a licence question: this manipulates the traffic of a live online game. Whether
-that is permitted is between you and the game's terms of service.
+The tests run without the driver and without elevation, which is deliberate: the interception layer
+sits behind interfaces so the state machines, the control protocol, the config and the macro
+sequence are all testable without a network or a game.
 
 ## Documentation
 
-- [docs/protocol.md](docs/protocol.md) - measured network behaviour, with each claim's evidence
-- [docs/prior-art.md](docs/prior-art.md) - how existing limiters work and what was learned from them
+- [docs/protocol.md](docs/protocol.md) - every measured finding, numbered, with the run behind it
+- [docs/prior-art.md](docs/prior-art.md) - what other limiters do, read from their source, and where this differs
+- [docs/api.md](docs/api.md) - the Bungie API half of the instance timer
+- [docs/evidence/](docs/evidence/) - raw session logs behind the measurements
+
+## Licence
+
+MIT - see [LICENSE](LICENSE).
+
+This is an independent project. It is not affiliated with or endorsed by Bungie, and Destiny 2 is
+their trademark. It modifies network traffic to and from your own machine; what that is used for,
+and whether it is within the terms you have agreed to, is your decision.

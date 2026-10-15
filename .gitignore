@@ -29,3 +29,23 @@ d2vpn.json
 # testing would otherwise be one 'git add -A' from being published.
 bungie.key
 *.key
+
+# Publish and installer output. Both are produced by build.ps1 from the tracked sources, so
+# shipping them here would be committing a build - and a 128 MB one, since the app publishes
+# self-contained so that nobody has to install a .NET runtime to run it.
+publish/
+dist/
+*.zip
+
+# Scratch. A run that is being looked at right now rather than one kept as evidence; the
+# evidence lives in docs/evidence.
+*.tsv
+!docs/evidence/*.tsv
+*.log
+*.etl
+
+# Local tool state nothing else needs.
+.idea/
+*.swp
+*.bak
+~$*
