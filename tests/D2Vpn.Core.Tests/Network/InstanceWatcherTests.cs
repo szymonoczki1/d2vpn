@@ -507,7 +507,8 @@ public class InstanceWatcherTests
     [Fact]
     public void Traffic_alone_never_starts_an_instance()
     {
-        // There was a rule that it did, copied from HarryWatch, and it was wrong on this port
+        // There was a rule that it did, taken from a reference implementation, and it was wrong
+        // on this port
         // twice: it restarted an instance from its own teardown, and then manufactured one out of
         // every burst of 30k chatter in orbit. 3074 is peer traffic and genuinely silent outside an
         // activity; 30k talks to servers in menus, so traffic arriving says nothing on its own.

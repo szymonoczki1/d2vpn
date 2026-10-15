@@ -788,10 +788,10 @@ static async Task<int> HoldAsync(string[] args)
         Console.WriteLine("NOTE: nothing is passed outside a resync window, so this blocks outright.");
         Console.WriteLine(full
             ? "For a full hold that is deliberate: one pass list cannot serve both directions,"
-            : "For 3074 downlink that is deliberate - measurement showed nothing needs to cross,");
+            : "On 27k that is deliberate - its sizes did not replicate between two calibrations,");
         Console.WriteLine(full
             ? "since each needs a different one. Elsewhere it means no calibration has been done."
-            : "and the handshake crosses during a resync instead.");
+            : "so the handshake crosses during a resync instead. Elsewhere: not yet calibrated.");
         Console.WriteLine();
     }
 

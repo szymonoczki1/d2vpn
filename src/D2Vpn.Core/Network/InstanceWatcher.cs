@@ -417,7 +417,8 @@ public sealed class InstanceWatcher
             }
 
             // Traffic resuming after the instance ended starts a new one, whether or not it is a
-            // connection opening. HarryWatch's whole rule is this and nothing else - any packet
+            // connection opening. A reference implementation's whole rule is this and nothing
+            // else - any packet
             // after a gap - and without it there is a hole here: end on silence, have traffic come
             // back on a connection that was never re-opened, and the timer would stay stopped with
             // nothing able to restart it.
@@ -428,7 +429,8 @@ public sealed class InstanceWatcher
             // server being one this session has not used.
             //
             // Both of those were tried and both were wrong. Treating any packet as a start - copied
-            // from HarryWatch, which watches 3074 where the port really is silent between
+            // from a reference implementation, which watches 3074 where the port is genuinely
+            // silent between
             // activities - restarted an instance from the acknowledgements finishing its own close,
             // and then manufactured instances from ordinary 30k chatter, because 30k talks to
             // servers in menus and in orbit.

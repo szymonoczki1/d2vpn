@@ -1,4 +1,4 @@
-using D2Vpn.Core.Calibration;
+﻿using D2Vpn.Core.Calibration;
 using D2Vpn.Core.Interception;
 using D2Vpn.Core.Network;
 
@@ -425,7 +425,7 @@ public class SignatureCalibratorTests
     }
 
     [Fact]
-    public void Two_of_HarryWatchs_five_hardcoded_constants_match_this_machine()
+    public void Two_of_a_reference_implementations_five_constants_match_this_machine()
     {
         // Documents why signatures are configuration rather than constants. A reference tool
         // hardcodes 42/128/136/233/1258 as payload lengths; 128 and 136 appear here exactly,

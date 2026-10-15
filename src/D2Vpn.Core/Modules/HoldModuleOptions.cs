@@ -112,9 +112,8 @@ public sealed record HoldModuleOptions
     /// </para>
     /// <para>
     /// The union does have a shape. Every size observed is either under 400 bytes or is one of two
-    /// large ones, 1185 and 1300, with nothing in between. The prior art agrees: the stopwatch
-    /// <c>KickModule</c> allowlists 9, 11 and 25, notes 100, 284 and 315 in a comment, and passes
-    /// 1300. Small control packets carry variable-length fields, so their exact sizes shuffle run
+    /// large ones, 1185 and 1300, with nothing in between. A reference implementation agrees:
+    /// it allowlists 9, 11 and 25, notes 100, 284 and 315 in a comment, and passes 1300. Small control packets carry variable-length fields, so their exact sizes shuffle run
     /// to run while the class stays put - which is what two runs sharing only 1300 looks like.
     /// </para>
     /// <para>
@@ -245,8 +244,8 @@ public sealed record HoldModuleOptions
     /// On, each packet leaves <see cref="SlowDelay"/> after the previous one for that peer, so the
     /// rate is capped whatever arrives. Input outruns output, the backlog grows, and the effective
     /// delay climbs for as long as the hold runs. The peer is not receiving late data, it is
-    /// receiving a starved stream - which compounds rather than being absorbed. This is HarryWatch's
-    /// behaviour, read from its source, where the delay is 1 s.
+    /// receiving a starved stream - which compounds rather than being absorbed. This is a
+    /// reference implementation's behaviour, read from its source, where the delay is 1 s.
     /// </para>
     /// <para>
     /// A throttled delay wants to be much shorter than a fixed one: the desync builds on its own,
@@ -270,7 +269,7 @@ public sealed record HoldModuleOptions
     /// Without it a burst is smeared across as many delays as it has packets - four packets 2 ms
     /// apart would leave four seconds apart at a 1 s delay - which throttles far harder than the
     /// rate suggests and destroys any structure a burst carries. Packets arriving inside this
-    /// window are spaced by the window instead. 10 ms is HarryWatch's value.
+    /// window are spaced by the window instead. 10 ms is a reference implementation's value.
     /// </remarks>
     public TimeSpan SlowBurstWindow { get; init; } = TimeSpan.FromMilliseconds(10);
 
@@ -392,50 +391,27 @@ public static class MeasuredDefaults
     };
 
     /// <summary>
-    /// UDP 3074 downlink. Blocks outright, because nothing is known to need passing.
+    /// UDP 3074 downlink. Blocks incoming world state, passing only the handshake.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The pass list is deliberately empty. Two runs with a reference limiter's resync enabled
-    /// showed 51 and 233 crossing during held windows, and an earlier version of this shipped them
-    /// as a signature. A third run with that resync <em>disabled</em> contradicted it: downlink
-    /// passed <b>nothing at all</b> for nineteen straight seconds on both peers. Packets that were
-    /// genuinely required to keep the session alive would have crossed regardless, so 51 and 233
-    /// are resync-window traffic rather than a pass list.
+    /// In play: world state stops arriving, so the client keeps acting but never learns the
+    /// result. Interacting with an object does not complete until release, and buffs neither
+    /// expire nor apply while the hold is on.
     /// </para>
     /// <para>
-    /// The resync trigger, however, <em>is</em> known, and is the same 128 as uplink. Whichever
-    /// direction is held, it is this machine that notices a peer has gone quiet and asks to
-    /// reconnect - so the request is outbound either way. During a downlink hold with resync
-    /// disabled, 128-byte packets were seen repeating outbound to several peers at a time while
-    /// inbound carried nothing at all. Hence <see cref="HoldModuleOptions.ResyncTriggerDirection"/>: the module has
-    /// to watch a direction it is not blocking.
+    /// Two triggers open a resync window, and both are outbound - whichever direction is held, it
+    /// is this machine that notices a peer has gone quiet and asks. 128 and 136 are the
+    /// peer-went-quiet request. <b>425 is a reconnect</b>, and it is needed because the 128 only
+    /// follows an answered 425: holding downlink blocks the answer, so no 128 is ever sent and a
+    /// window keyed on 128 alone could never open. Measured over three captures - with the hold
+    /// up, the 425 repeated once a second, fifteen times, until it was lifted by hand. With no
+    /// safety timeout here, that deadlock is permanent.
     /// </para>
     /// <para>
-    /// <b>425 is the other trigger, and it is the one a reconnect needs.</b> Measured over three
-    /// captures of the same event: a reconnect opens with an outbound 425, and the 128 follows
-    /// 230 ms later - but only if the 425 was answered. With downlink held the reply is blocked,
-    /// no 128 is ever sent, and the 425 repeats every second indefinitely; fifteen in a row were
-    /// captured before the hold was lifted by hand. 128 alone is therefore unreachable during a
-    /// reconnect: it is downstream of the very traffic the window exists to let through, so the
-    /// window could never open. With no safety timeout on this module, that deadlock is permanent.
-    /// </para>
-    /// <para>
-    /// 425 appeared in none of the three captures outside a reconnect, so it opens a window
-    /// exactly when one is wanted rather than weakening the hold in ordinary play.
-    /// </para>
-    /// <para>
-    /// Nothing crosses outside a resync window. Inside one, only the handshake does - see
-    /// <see cref="HoldModuleOptions.ResyncPassLengths"/> - which keeps the block near-total while
-    /// still letting the exchange complete. Validated at 96% blocked over a 60 second hold, twice
-    /// the ~30 second ceiling a hold without a working resync dies at.
-    ///
-    /// What a downlink hold does in play: incoming world state stops arriving, so the client keeps
-    /// acting but never learns the result. Interacting with an object does not complete until the
-    /// hold is released, and buffs neither expire nor apply while it is on. The release dump - a
-    /// hundred packets in a single second - was observed with buffering off, so it was the server
-    /// catching up rather than a replay. With buffering on it is now both, and whether that is an
-    /// improvement is the thing to measure.
+    /// Validated at fifteen minutes held with no error code, ending in the game's own inactivity
+    /// kick. See <see cref="HoldModuleOptions.PassLengths"/> for what crosses while it runs, and why that list is
+    /// not empty despite an earlier reading that nothing needed to.
     /// </para>
     /// </remarks>
     public static HoldModuleOptions Peer3074Downlink { get; } = new()
