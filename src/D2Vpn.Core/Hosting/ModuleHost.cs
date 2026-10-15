@@ -7,27 +7,26 @@
 /// <para>
 /// Every command before this one owned a single module, its own WinDivert handle and its own
 /// hotkey loop, which is why running two modules together meant writing a third command. The host
-/// is the one place that holds a set of modules, so the AutoHotkey manager and the WPF UI are
-/// front-ends over it rather than reimplementations of it.
+/// is the one place that holds a set of them, so the window and the CLI are front ends over it
+/// rather than reimplementations of it.
 /// </para>
 /// <para>
-/// <b>It binds no hotkeys.</b> The design decision behind this project is that a macro triggers a
-/// module directly rather than synthesising a keypress for a global listener to notice, so the host
-/// exposes <see cref="Toggle"/> and leaves input to whatever is driving it. The single-module
-/// <c>run</c> command keeps its own hotkeys for use without a macro.
+/// <b>It binds no hotkeys.</b> A macro triggers a module directly rather than synthesising a
+/// keypress for a global listener to notice, so the host exposes <see cref="Toggle"/> and leaves
+/// input to whatever is driving it. The single-module <c>run</c> command keeps its own hotkeys for
+/// use without one.
 /// </para>
 /// <para>
-/// <b>One handle per module, not one shared handle.</b> A combined filter would be fewer handles,
-/// but it would also mean rewriting the receive loop and re-establishing drop semantics that are
-/// already measured. Separate handles reuse the controller unchanged.
+/// <b>One handle per port group, shared by every module on it.</b> A filter is built from the
+/// group alone - protocol and port range, never direction - so <c>3074-ul</c> and <c>3074-dl</c>
+/// produce byte-identical filters and cannot each have a handle. One runner owns the handle and
+/// exposes an <see cref="IControllable"/> per module behind it, which is what makes them
+/// independent toggles; see <see cref="WinDivertModuleRunner"/>.
 /// </para>
 /// <para>
-/// The cost is real and worth stating plainly: a filter is built from a port group alone, so every
-/// module on one group wants the same handle. <c>3074-ul</c> and <c>3074-dl</c> cannot both be
-/// hosted, nor <c>30k</c> and <c>30k-slow</c>. The constructor refuses such a set rather than
-/// letting one module silently sit behind another - see <see cref="IModuleRunner.HandleKey"/>.
-/// Independent per-direction toggles on one group would need a runner that owns several modules
-/// behind a single handle, which does not exist yet.
+/// What the host still refuses is two <em>runners</em> claiming the same filter, which would leave
+/// the second seeing only what the first chose to reinject - a module that appears to do nothing,
+/// with no error to explain it. See <see cref="IModuleRunner.HandleKey"/>.
 /// </para>
 /// <para>
 /// Toggling is safe from any thread: a control connection, a UI thread and the shutdown path all

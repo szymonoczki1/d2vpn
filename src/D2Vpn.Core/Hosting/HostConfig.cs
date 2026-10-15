@@ -597,10 +597,9 @@ public sealed record ResetBind
 /// </summary>
 /// <remarks>
 /// <para>
-/// One source of truth for binds. The host reads this and binds the keys itself, so it works with
-/// no macro tooling at all; the AutoHotkey manager will generate a script from the same file rather
-/// than keeping a second copy of the mapping. A file that two things disagree about is worse than
-/// no file.
+/// One source of truth for binds. The host reads this and binds the keys itself, and the window
+/// writes changes straight back to it, so the two cannot drift. A file that two things disagree
+/// about is worse than no file.
 /// </para>
 /// <para>
 /// JSON because it is in the box - no package, and a config a WPF front-end can read with the same

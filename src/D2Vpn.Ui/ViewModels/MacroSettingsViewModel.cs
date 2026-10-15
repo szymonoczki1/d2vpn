@@ -222,14 +222,14 @@ public sealed class MacroSettingsViewModel : ObservableObject
 
     // ---- what it drives ----
 
-    /// <summary>Hold 3074's uplink for the length of the run.</summary>
+    /// <summary>Hold the chosen uplink for the length of the run.</summary>
     public bool TickUplink
     {
         get => Preset.TickUplink;
         set => Change(Preset with { TickUplink = value });
     }
 
-    /// <summary>Turn 3074's uplink buffer off for the length of the run.</summary>
+    /// <summary>Turn the chosen uplink's buffer off for the length of the run.</summary>
     public bool DisableBuffer
     {
         get => Preset.DisableBuffer;
@@ -284,7 +284,7 @@ public sealed class MacroSettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>How long 3074's uplink stays held after the clicking stops.</summary>
+    /// <summary>How long the chosen uplink stays held after the clicking stops.</summary>
     public int UplinkAfterMs
     {
         get => Preset.UplinkAfterMs;

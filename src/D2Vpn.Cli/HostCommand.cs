@@ -12,7 +12,7 @@ namespace D2Vpn.Cli;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The surface the AutoHotkey manager and the WPF UI are both built on. Every other command owns
+/// The surface the window and any external script are both built on. Every other command owns
 /// one module and its own hotkey loop, which is why combining two meant writing a third command.
 /// </para>
 /// <para>

@@ -39,10 +39,10 @@ public readonly record struct MacroSettings
     /// <summary>How long to wait after the left arrow for the loadouts to appear.</summary>
     public TimeSpan PageDelay { get; init; }
 
-    /// <summary>Hold 3074's uplink for the length of the run.</summary>
+    /// <summary>Hold <see cref="Uplink"/> for the length of the run.</summary>
     public bool TickUplink { get; init; }
 
-    /// <summary>Turn 3074's uplink buffer off for the length of the run.</summary>
+    /// <summary>Turn <see cref="Uplink"/>'s buffer off for the length of the run.</summary>
     public bool DisableBuffer { get; init; }
 
     /// <summary>Press F1 again at the end, closing the character screen.</summary>

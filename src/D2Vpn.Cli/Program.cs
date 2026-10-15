@@ -305,9 +305,8 @@ static void PrintUsage()
     Console.WriteLine("  d2vpn config init [PATH] [--force]   |   d2vpn config check [PATH]");
     Console.WriteLine("      Writes a commented config holding every module and its bind, or");
     Console.WriteLine("      validates one. Defaults to d2vpn.json. This is the one place binds");
-    Console.WriteLine("      live: the host reads it and binds the keys itself, and the AHK");
-    Console.WriteLine("      manager will generate a script from the same file rather than");
-    Console.WriteLine("      keeping a second copy of the mapping.");
+    Console.WriteLine("      live: the host reads it and binds the keys itself, and the window");
+    Console.WriteLine("      writes changes straight back to it, so the two cannot drift.");
     Console.WriteLine("");
     Console.WriteLine("      Anything omitted keeps the value measured in docs/protocol.md, so");
     Console.WriteLine("      only write a number you have deliberately changed.");
@@ -315,9 +314,9 @@ static void PrintUsage()
     Console.WriteLine("  d2vpn host --config FILE [--log FILE]");
     Console.WriteLine("  d2vpn host <module> ... [--pause] [--pipe NAME] [--log FILE]");
     Console.WriteLine("      Runs several modules at once, controlled over a named pipe instead");
-    Console.WriteLine("      of by hotkeys. This is what the AutoHotkey manager and the UI are");
-    Console.WriteLine("      built on: a macro toggles a module directly rather than faking a");
-    Console.WriteLine("      keypress for a listener to notice.");
+    Console.WriteLine("      of by hotkeys. This is what the window is built on: a macro");
+    Console.WriteLine("      toggles a module directly rather than faking a keypress for a");
+    Console.WriteLine("      listener to notice.");
     Console.WriteLine("");
     Console.WriteLine("      Modules are named group[-direction][-slow]:");
     Console.WriteLine("        3074-ul  3074-dl  3074-full   (+ -slow)");

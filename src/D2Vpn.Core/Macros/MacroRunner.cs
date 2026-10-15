@@ -21,7 +21,8 @@ namespace D2Vpn.Core.Macros;
 /// <para>
 /// It opens no handle, so <see cref="HandleKey"/> is null and it cannot collide with a traffic
 /// module. The hold it drives is the reason this lives inside d2vpn rather than beside it: ticking
-/// 3074's uplink for exactly the length of the swap is a method call here, where from a separate
+/// the chosen uplink for exactly the length of the swap is a method call here, where from a
+/// separate
 /// script it would be a round trip through a pipe an unelevated script cannot open.
 /// </para>
 /// </remarks>
@@ -430,7 +431,7 @@ public sealed class MacroRunner : IModuleRunner
         /// </summary>
         /// <remarks>
         /// In a finally, and swallowing its own failures, because this is the half that matters. A
-        /// macro that threw halfway and left 3074's uplink held is a connection that stays broken
+        /// macro that threw halfway and left the uplink held is a connection that stays broken
         /// until somebody notices and releases it by hand.
         /// </remarks>
         private static void Restore(IControllable? uplink, bool? wasActive, bool? hadBuffer)

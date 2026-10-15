@@ -139,8 +139,9 @@ public sealed record HoldModuleOptions
     /// <para>
     /// Without this a hold barely blocks anything. The game asks to reconnect every couple of
     /// seconds while it is being held, and opening a window on every request leaves the module
-    /// open almost permanently: a measured downlink hold ran six resyncs of 3.5 s inside a
-    /// 25 second hold and dropped only 39% of traffic. An object picked up during it registered
+    /// open almost permanently: a measured downlink hold ran six resyncs inside a 25 second hold
+    /// and dropped only 39% of traffic. (That was with the 3.5 s window downlink had at the time;
+    /// it is 5 s now, which makes the case for a cooldown stronger, not weaker.) An object picked up during it registered
     /// instantly, because downlink was flowing for most of the hold.
     /// </para>
     /// <para>

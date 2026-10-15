@@ -94,8 +94,14 @@ public class CrossDirectionTriggerTests
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 1.0));
         module.Decide(TestPackets.Outbound(3074, ReconnectRequest, 3.0));
 
-        // Still expires 3.5 s after the request that opened it.
-        Assert.Equal(PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, Ordinary, 5.0)));
+        // Probed with HandshakeReply, not Ordinary: Ordinary is blocked whether a window is open
+        // or shut, so asserting on it passed no matter what the second request did. The window
+        // runs 5 s from the first request, so it is open at 5 and shut at 7 - and would be open
+        // at 7 if the second request had extended it.
+        Assert.Equal(
+            PacketVerdict.Pass, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 5.0)));
+        Assert.Equal(
+            PacketVerdict.Drop, module.Decide(TestPackets.Inbound(3074, HandshakeReply, 7.0)));
     }
 
     [Fact]

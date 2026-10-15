@@ -1,4 +1,4 @@
-using D2Vpn.Core.Modules;
+﻿using D2Vpn.Core.Modules;
 using D2Vpn.Core.Network;
 
 namespace D2Vpn.Core.Tests.Modules;
@@ -6,8 +6,9 @@ namespace D2Vpn.Core.Tests.Modules;
 /// <summary>
 /// Without a cooldown a hold barely blocks. The game asks to reconnect every couple of seconds
 /// while held, and opening a window on every request leaves the module open almost permanently:
-/// a measured downlink hold ran six 3.5 s resyncs inside 25 seconds and dropped only 39% of
-/// traffic. An object picked up during it registered instantly.
+/// a measured downlink hold ran six resyncs inside 25 seconds and dropped only 39% of traffic.
+/// An object picked up during it registered instantly. These tests use the uplink defaults, whose
+/// window is the 3.5 s that measurement was taken with; downlink's is 5 s now.
 /// </summary>
 public class ResyncCooldownTests
 {
